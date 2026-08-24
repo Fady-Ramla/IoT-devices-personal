@@ -143,26 +143,11 @@ def setup_servers(net):
     )
 
     # --------------------------------------------------------
-    # HTTP
+    # Web/API Server (Flask)
     # --------------------------------------------------------
 
-    info('Starting HTTP server on h2...\n')
-
-    h2.cmd(
-        'mkdir -p /tmp/http_server'
-    )
-
-    h2.cmd(
-        'echo "HTTP Server - IoT SDN Graduation Project" '
-        '> /tmp/http_server/index.html'
-    )
-
-    h2.cmd(
-        'cd /tmp/http_server && '
-        'python3 -m http.server 80 '
-        '--bind 10.0.0.2 '
-        '> /tmp/http.log 2>&1 &'
-    )
+    info('Starting Web/API server on h2...\n')
+    h2.cmd('python3 /home/fady/IoT-devices/mininet/servers/web_api_server.py > /tmp/web_api.log 2>&1 &')
 
     # --------------------------------------------------------
     # HTTPS
@@ -245,7 +230,7 @@ def show_info(net):
 
     info('Servers:\n')
     info('  h1  DNS    -> 10.0.0.1:53\n')
-    info('  h2  HTTP   -> 10.0.0.2:80\n')
+    info('  h2  Web/API -> 10.0.0.2:80 (Flask)\n')
     info('  h3  HTTPS  -> 10.0.0.3:443\n')
     info('  h4  SSH    -> 10.0.0.4:22 (root/root)\n')
 
