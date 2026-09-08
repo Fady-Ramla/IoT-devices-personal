@@ -132,7 +132,7 @@ class TrafficMonitor(app_manager.RyuApp):
         while True:
             for dp in self.datapaths.values():
                 self._request_stats(dp)
-            hub.sleep(5)
+            hub.sleep(2)
 
     def _request_stats(self, datapath):
         parser = datapath.ofproto_parser

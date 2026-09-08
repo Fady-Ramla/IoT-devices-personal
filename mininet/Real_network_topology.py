@@ -9,15 +9,26 @@ from mininet.link import TCLink
 
 import time
 
+from attack_manager import run_attack
+
 
 # ============================================================
 # STP ENABLED SWITCH
 # ============================================================
 
 class STPSwitch(OVSSwitch):
+
     def start(self, controllers):
-        OVSSwitch.start(self, controllers)
-        self.cmd('ovs-vsctl set Bridge %s stp_enable=true' % self.name)
+
+        OVSSwitch.start(
+            self,
+            controllers
+        )
+
+        self.cmd(
+            'ovs-vsctl set Bridge %s stp_enable=true'
+            % self.name
+        )
 
 
 # ============================================================
@@ -42,25 +53,10 @@ class PartialMeshTopo(Topo):
         # Servers
         # ----------------------------------------------------
 
-        h1 = self.addHost(
-            'h1',
-            ip='10.0.0.1/24'
-        )
-
-        h2 = self.addHost(
-            'h2',
-            ip='10.0.0.2/24'
-        )
-
-        h3 = self.addHost(
-            'h3',
-            ip='10.0.0.3/24'
-        )
-
-        h4 = self.addHost(
-            'h4',
-            ip='10.0.0.4/24'
-        )
+        h1 = self.addHost('h1', ip='10.0.0.1/24')
+        h2 = self.addHost('h2', ip='10.0.0.2/24')
+        h3 = self.addHost('h3', ip='10.0.0.3/24')
+        h4 = self.addHost('h4', ip='10.0.0.4/24')
 
         # ----------------------------------------------------
         # Clients
@@ -74,7 +70,7 @@ class PartialMeshTopo(Topo):
         h10 = self.addHost('h10', ip='10.0.0.10/24')
 
         # ----------------------------------------------------
-        # Server connections
+        # Host connections
         # ----------------------------------------------------
 
         self.addLink(h1, s1)
@@ -82,10 +78,6 @@ class PartialMeshTopo(Topo):
 
         self.addLink(h3, s2)
         self.addLink(h4, s2)
-
-        # ----------------------------------------------------
-        # Client connections
-        # ----------------------------------------------------
 
         self.addLink(h5, s3)
         self.addLink(h6, s3)
@@ -97,7 +89,7 @@ class PartialMeshTopo(Topo):
         self.addLink(h10, s5)
 
         # ----------------------------------------------------
-        # Main chain
+        # Main switch chain
         # ----------------------------------------------------
 
         self.addLink(s1, s2)
@@ -107,7 +99,6 @@ class PartialMeshTopo(Topo):
 
         # ----------------------------------------------------
         # Redundant links
-        # STP should block some of these to prevent loops
         # ----------------------------------------------------
 
         self.addLink(s1, s3)
@@ -132,25 +123,31 @@ def setup_servers(net):
     h4 = net.get('h4')
 
     # --------------------------------------------------------
-    # DNS
+    # DNS Server
     # --------------------------------------------------------
 
     info('Starting DNS server on h1...\n')
 
     h1.cmd(
-        'python3 /home/fady/IoT-devices/mininet/servers/dns_server.py '
+        'python3 '
+        '/home/fady/IoT-devices/mininet/servers/dns_server.py '
         '> /tmp/dns.log 2>&1 &'
     )
 
     # --------------------------------------------------------
-    # Web/API Server (Flask)
+    # Flask Web/API Server
     # --------------------------------------------------------
 
     info('Starting Web/API server on h2...\n')
-    h2.cmd('python3 /home/fady/IoT-devices/mininet/servers/web_api_server.py > /tmp/web_api.log 2>&1 &')
+
+    h2.cmd(
+        '/home/fady/.pyenv/versions/3.8.20/bin/python3 '
+        '/home/fady/IoT-devices/mininet/servers/web_api_server.py '
+        '> /tmp/web_api.log 2>&1 &'
+    )
 
     # --------------------------------------------------------
-    # HTTPS
+    # HTTPS Server
     # --------------------------------------------------------
 
     info('Starting HTTPS server on h3...\n')
@@ -164,7 +161,6 @@ def setup_servers(net):
         '> /tmp/https_server/index.html'
     )
 
-    # Generate self-signed certificate
     h3.cmd(
         'openssl req -x509 '
         '-newkey rsa:2048 '
@@ -178,12 +174,13 @@ def setup_servers(net):
 
     h3.cmd(
         'cd /tmp/https_server && '
-        'python3 /home/fady/IoT-devices/mininet/servers/https_server.py '
+        'python3 '
+        '/home/fady/IoT-devices/mininet/servers/https_server.py '
         '> /tmp/https.log 2>&1 &'
     )
 
     # --------------------------------------------------------
-    # SSH
+    # SSH Server
     # --------------------------------------------------------
 
     info('Starting SSH server on h4...\n')
@@ -197,13 +194,16 @@ def setup_servers(net):
         '> /dev/null 2>&1'
     )
 
-    # Allow root login with password
     h4.cmd(
-        'echo "PermitRootLogin yes" >> /etc/ssh/sshd_config'
+        'echo "PermitRootLogin yes" '
+        '>> /etc/ssh/sshd_config'
     )
+
     h4.cmd(
-        'echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config'
+        'echo "PasswordAuthentication yes" '
+        '>> /etc/ssh/sshd_config'
     )
+
     h4.cmd(
         'echo "root:root" | chpasswd'
     )
@@ -218,6 +218,175 @@ def setup_servers(net):
 
 
 # ============================================================
+# CUSTOM ATTACK CLI
+# ============================================================
+
+class AttackCLI(CLI):
+
+    def do_attack(self, line):
+
+        args = line.split()
+
+        if len(args) < 3:
+            print(
+                "Usage: attack <attacker> "
+                "<attack_type> <target> [endpoint]"
+            )
+            return
+
+        attacker_name = args[0]
+        attack_type = args[1]
+        target_name = args[2]
+
+        # ----------------------------------------------------
+        # Any host can be the attacker
+        # ----------------------------------------------------
+
+        try:
+            attacker = self.mn.get(attacker_name)
+
+        except KeyError:
+            print("Unknown attacker:", attacker_name)
+            return
+
+        # ----------------------------------------------------
+        # Any host can be the target
+        # ----------------------------------------------------
+
+        try:
+            target = self.mn.get(target_name)
+
+        except KeyError:
+            print("Unknown target:", target_name)
+            return
+
+        # ----------------------------------------------------
+        # Destination IP is obtained internally
+        # ----------------------------------------------------
+
+        dst_ip = target.IP()
+
+        # ====================================================
+        # SYN FLOOD
+        # ====================================================
+
+        if attack_type == "syn_flood":
+
+            command = (
+                "timeout 10 "
+                "hping3 -S "
+                "-p 5000 "
+                "-i u1000 "
+                "--flood "
+                + dst_ip
+            )
+
+            run_attack(
+                attacker=attacker,
+                attack_type="syn_flood",
+                dst_ip=dst_ip,
+                command=command,
+
+                # Actual source port is NOT predetermined
+                src_port="*",
+
+                # Flask destination port
+                dst_port="5000",
+
+                protocol="TCP"
+            )
+
+        # ====================================================
+        # PORT SCAN
+        # ====================================================
+
+        elif attack_type == "port_scan":
+
+            command = (
+                "nmap "
+                + dst_ip
+            )
+
+            run_attack(
+                attacker=attacker,
+                attack_type="port_scan",
+                dst_ip=dst_ip,
+                command=command,
+
+                # Actual source port is dynamic
+                src_port="*",
+
+                # Multiple destination ports
+                dst_port="*",
+
+                protocol="TCP"
+            )
+
+        # ====================================================
+        # MALICIOUS POST
+        # ====================================================
+
+        elif attack_type == "malicious_post":
+
+            if len(args) < 4:
+
+                print(
+                    "Usage: attack "
+                    "<attacker> malicious_post "
+                    "<target> <endpoint>"
+                )
+
+                return
+
+            endpoint = args[3]
+
+            command = (
+   		 "for i in $(seq 1 100); do "
+ 	         "curl -s -o /dev/null -X POST "
+  	         "\"http://"
+                 + dst_ip
+                 + ":5000"
+                 + endpoint
+                 + "\"; "
+                 "done"
+              )
+
+            run_attack(
+                attacker=attacker,
+                attack_type="malicious_post",
+                dst_ip=dst_ip,
+                command=command,
+
+                # Actual source port is dynamic
+                src_port="*",
+
+                # Flask destination port
+                dst_port="5000",
+
+                protocol="TCP"
+            )
+
+        # ====================================================
+        # UNKNOWN ATTACK
+        # ====================================================
+
+        else:
+
+            print(
+                "Unknown attack type:",
+                attack_type
+            )
+
+            print(
+                "Available attack types:"
+            )
+
+            print("  syn_flood")
+            print("  port_scan")
+            print("  malicious_post")
+
+
+# ============================================================
 # SHOW NETWORK INFORMATION
 # ============================================================
 
@@ -229,23 +398,40 @@ def show_info(net):
     info('============================================\n')
 
     info('Servers:\n')
-    info('  h1  DNS    -> 10.0.0.1:53\n')
-    info('  h2  Web/API -> 10.0.0.2:80 (Flask)\n')
-    info('  h3  HTTPS  -> 10.0.0.3:443\n')
-    info('  h4  SSH    -> 10.0.0.4:22 (root/root)\n')
+
+    info(
+        '  h1  DNS       -> 10.0.0.1:53\n'
+    )
+
+    info(
+        '  h2  Web/API   -> 10.0.0.2:5000 (Flask)\n'
+    )
+
+    info(
+        '  h3  HTTPS     -> 10.0.0.3:443\n'
+    )
+
+    info(
+        '  h4  SSH       -> 10.0.0.4:22\n'
+    )
 
     info('\nClients:\n')
-    info('  h5  -> 10.0.0.5\n')
-    info('  h6  -> 10.0.0.6\n')
-    info('  h7  -> 10.0.0.7\n')
-    info('  h8  -> 10.0.0.8\n')
-    info('  h9  -> 10.0.0.9\n')
-    info('  h10 -> 10.0.0.10\n')
+
+    info('  h5\n')
+    info('  h6\n')
+    info('  h7\n')
+    info('  h8\n')
+    info('  h9\n')
+    info('  h10\n')
 
     info('\nTraffic is MANUAL.\n')
-    info('No application traffic will start automatically.\n')
+
+    info(
+        'No application traffic will start automatically.\n'
+    )
 
     info('\nUseful commands:\n')
+
     info('  pingall\n')
     info('  net\n')
     info('  nodes\n')
@@ -277,51 +463,74 @@ def run():
     # Ryu Controller
     # --------------------------------------------------------
 
-    c0 = net.addController(
+    net.addController(
         'c0',
         controller=RemoteController,
         ip='127.0.0.1',
         port=6633
     )
 
-    info('\n*** Starting Mininet network...\n')
+    # --------------------------------------------------------
+    # Start Network
+    # --------------------------------------------------------
+
+    info(
+        '\n*** Starting Mininet network...\n'
+    )
 
     net.start()
 
-    # =========================================================
-    # Enable STP on all switches
-    # =========================================================
+    # --------------------------------------------------------
+    # Enable STP
+    # --------------------------------------------------------
 
-    info('\n*** Enabling STP on all switches...\n')
+    info(
+        '\n*** Enabling STP on all switches...\n'
+    )
+
     for switch in net.switches:
-        switch.cmd('ovs-vsctl set Bridge %s stp_enable=true' % switch.name)
 
-    info('\n*** Waiting for STP convergence (30 seconds)...\n')
+        switch.cmd(
+            'ovs-vsctl set Bridge %s stp_enable=true'
+            % switch.name
+        )
+
+    # --------------------------------------------------------
+    # STP Convergence
+    # --------------------------------------------------------
+
+    info(
+        '\n*** Waiting for STP convergence '
+        '(30 seconds)...\n'
+    )
+
     time.sleep(30)
 
     # --------------------------------------------------------
-    # Start servers
+    # Start Servers
     # --------------------------------------------------------
 
     setup_servers(net)
 
     # --------------------------------------------------------
-    # Show network information
+    # Network Information
     # --------------------------------------------------------
 
     show_info(net)
 
     # --------------------------------------------------------
-    # CLI
+    # Start CLI
     # --------------------------------------------------------
 
-    CLI(net)
+    AttackCLI(net)
 
     # --------------------------------------------------------
-    # Cleanup
+    # Stop Network
     # --------------------------------------------------------
 
-    info('\n*** Stopping network...\n')
+    info(
+        '\n*** Stopping network...\n'
+    )
 
     net.stop()
 
