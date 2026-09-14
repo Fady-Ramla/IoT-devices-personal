@@ -1,0 +1,5 @@
+run_id,timestamp,switch,src_mac,dst_mac,src_ip,dst_ip,src_port,dst_port,ip_proto,ttl,tcp,udp,icmp,arp,http,https,dns,ssh,telnet,smtp,syn_flag_number,ack_flag_number,fin_flag_number,rst_flag_number,psh_flag_number,packet_length,payload_length
+,1789385415.773739,,,,,,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,52,0
+,1789385417.90487,,,,,,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,52,0
+,1789385420.74404,,,,,,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,52,0
+,1789385422.971795,,,,,,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,52,0

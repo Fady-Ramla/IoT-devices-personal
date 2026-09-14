@@ -303,9 +303,9 @@ class AttackCLI(CLI):
         elif attack_type == "port_scan":
 
             command = (
-                "nmap "
+                "nmap -sS -p 1-1000 --scan-delay 100ms "
                 + dst_ip
-            )
+           )
 
             run_attack(
                 attacker=attacker,
