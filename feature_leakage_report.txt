@@ -1,0 +1,432 @@
+
+################################################################################
+#                      FEATURE SELECTION & LEAKAGE ANALYSIS                    #
+################################################################################
+
+================================================================================
+  PACKET ML
+================================================================================
+File: /home/fady/IoT-devices/ML_FINAL/labeled_packet_features_ML.csv
+
+Rows    : 142,987
+Columns : 29
+
+--------------------------------------------------------------------------------
+1. COLUMN INVENTORY
+--------------------------------------------------------------------------------
+#   Column                  Dtype           Unique       NaN  Role
+--------------------------------------------------------------------------------
+1   run_id                  object              28    52,379  GROUPING/ID
+2   timestamp               float64        142,954         0  GROUPING/ID
+3   switch                  float64              0   142,987  IDENTIFIER / REVIEW
+4   src_mac                 object               7         0  IDENTIFIER / REVIEW
+5   dst_mac                 object               8         0  IDENTIFIER / REVIEW
+6   src_ip                  object               7         0  IDENTIFIER / REVIEW
+7   dst_ip                  object               7         0  IDENTIFIER / REVIEW
+8   src_port                int64           14,938         0  FEATURE
+9   dst_port                int64            9,061         0  FEATURE
+10  ip_proto                int64                3         0  FEATURE
+11  ttl                     int64               25         0  FEATURE
+12  tcp                     int64                2         0  FEATURE
+13  udp                     int64                1         0  FEATURE
+14  icmp                    int64                2         0  FEATURE
+15  arp                     int64                2         0  FEATURE
+16  http                    int64                2         0  FEATURE
+17  https                   int64                2         0  FEATURE
+18  dns                     int64                1         0  FEATURE
+19  ssh                     int64                2         0  FEATURE
+20  telnet                  int64                2         0  FEATURE
+21  smtp                    int64                2         0  FEATURE
+22  syn_flag_number         int64                2         0  FEATURE
+23  ack_flag_number         int64                2         0  FEATURE
+24  fin_flag_number         int64                2         0  FEATURE
+25  rst_flag_number         int64                2         0  FEATURE
+26  psh_flag_number         int64                2         0  FEATURE
+27  packet_length           int64               19         0  FEATURE
+28  payload_length          int64               13         0  FEATURE
+29  label                   object               4         0  TARGET
+
+--------------------------------------------------------------------------------
+2. LABEL DISTRIBUTION
+--------------------------------------------------------------------------------
+syn_flood               68,181 ( 47.68%)
+normal                  52,379 ( 36.63%)
+port_scan               11,451 (  8.01%)
+malicious_post          10,976 (  7.68%)
+
+--------------------------------------------------------------------------------
+3. PER-LABEL MEANS
+--------------------------------------------------------------------------------
+Feature                          normal      syn_flood      port_scan    malicious_post
+------------------------------------------------------------------------------------------
+src_port                      8867.3982     10875.4747     37321.7449        47048.5847
+dst_port                     18279.5730      7205.0445     10799.1704         5000.0000
+ip_proto                         5.9244         5.9962         5.9958            6.0000
+ttl                             62.8417        63.9596        49.4435           64.0000
+tcp                              0.9868         0.9994         0.9993            1.0000
+udp                              0.0000         0.0000         0.0000            0.0000
+icmp                             0.0036         0.0000         0.0000            0.0000
+arp                              0.0096         0.0006         0.0007            0.0000
+http                             0.7853         0.9994         0.0034            1.0000
+https                            0.0001         0.0000         0.0008            0.0000
+dns                              0.0000         0.0000         0.0000            0.0000
+ssh                              0.0001         0.0000         0.0008            0.0000
+telnet                           0.0001         0.0000         0.0008            0.0000
+smtp                             0.0001         0.0000         0.0008            0.0000
+syn_flag_number                  0.6576         0.9606         0.9066            0.1423
+ack_flag_number                  0.7106         0.2539         0.0910            0.8476
+fin_flag_number                  0.0289         0.0000         0.0000            0.1367
+rst_flag_number                  0.1722         0.0104         0.0927            0.0101
+psh_flag_number                  0.0584         0.0000         0.0000            0.1367
+packet_length                   66.0415        54.8947        57.6182           78.2773
+payload_length                   8.5740         0.0000         0.0000           11.2154
+
+--------------------------------------------------------------------------------
+4. LABEL ASSOCIATION — F-SCORE
+--------------------------------------------------------------------------------
+Rank  Feature                                  F-Score
+----------------------------------------------------------
+1     udp                                          inf
+2     dns                                          inf
+3     http                                    1.142405
+4     src_port                                0.972283
+5     ttl                                     0.619709
+6     syn_flag_number                         0.458986
+7     ack_flag_number                         0.360407
+8     dst_port                                0.153710
+9     rst_flag_number                         0.089714
+10    packet_length                           0.083383
+11    fin_flag_number                         0.067017
+12    psh_flag_number                         0.057068
+13    payload_length                          0.037359
+14    tcp                                     0.007229
+15    ip_proto                                0.007112
+16    arp                                     0.004971
+17    icmp                                    0.002258
+18    https                                   0.000389
+19    ssh                                     0.000389
+20    telnet                                  0.000389
+21    smtp                                    0.000389
+
+--------------------------------------------------------------------------------
+5. REDUNDANCY — |CORRELATION| >= 0.9
+--------------------------------------------------------------------------------
+Feature A                     Feature B                            |r|
+------------------------------------------------------------------------
+ip_proto                      tcp                               0.9972
+packet_length                 payload_length                    0.9850
+psh_flag_number               payload_length                    0.9055
+psh_flag_number               packet_length                     0.9050
+ip_proto                      arp                               0.9004
+
+--------------------------------------------------------------------------------
+6. RANDOM FOREST FEATURE IMPORTANCE
+--------------------------------------------------------------------------------
+
+[INFO] Analysis-only grouping enabled
+       Attack rows → real run_id
+       Normal rows → groups of 5,000 rows
+       Total groups: 39
+
+[INFO] Group-aware split completed successfully
+       Groups used: 39
+
+[INFO] Training rows: 77,058
+[INFO] Testing rows : 65,929
+
+[INFO] RF trained in 1.84 seconds
+
+Rank  Feature                               Importance
+----------------------------------------------------------
+1     src_port                              0.32998240
+2     packet_length                         0.19589875
+3     ttl                                   0.10852384
+4     http                                  0.10556887
+5     dst_port                              0.10466573
+6     ack_flag_number                       0.07116849
+7     syn_flag_number                       0.05451900
+8     rst_flag_number                       0.01346741
+9     payload_length                        0.00604557
+10    fin_flag_number                       0.00329532
+11    psh_flag_number                       0.00320055
+12    tcp                                   0.00165951
+13    ip_proto                              0.00122753
+14    arp                                   0.00056522
+15    icmp                                  0.00014203
+16    ssh                                   0.00002394
+17    smtp                                  0.00001670
+18    https                                 0.00001646
+19    telnet                                0.00001267
+20    udp                                   0.00000000
+21    dns                                   0.00000000
+
+--------------------------------------------------------------------------------
+6b. CLASSIFICATION REPORT (analysis only)
+--------------------------------------------------------------------------------
+                precision    recall  f1-score   support
+
+malicious_post     0.9827    1.0000    0.9913      1422
+        normal     0.2420    0.9303    0.3841     15000
+     port_scan     0.9455    1.0000    0.9720      1162
+     syn_flood     0.8249    0.0953    0.1709     48345
+
+      accuracy                         0.3207     65929
+     macro avg     0.7488    0.7564    0.6295     65929
+  weighted avg     0.6978    0.3207    0.2512     65929
+
+
+--------------------------------------------------------------------------------
+7. LEAKAGE / IDENTIFIER REVIEW
+--------------------------------------------------------------------------------
+[DROP FROM MODEL] label
+[DROP FROM MODEL] run_id
+[DROP FROM MODEL] timestamp
+[REVIEW / LIKELY DROP] dst_ip
+[REVIEW / LIKELY DROP] dst_mac
+[REVIEW / LIKELY DROP] src_ip
+[REVIEW / LIKELY DROP] src_mac
+[REVIEW / LIKELY DROP] switch
+
+--------------------------------------------------------------------------------
+8. INITIAL RECOMMENDATION
+--------------------------------------------------------------------------------
+src_port                      F=      0.9723  RF=  0.329982  → REVIEW
+dst_port                      F=      0.1537  RF=  0.104666  → REVIEW
+ip_proto                      F=      0.0071  RF=  0.001228  → REVIEW
+ttl                           F=      0.6197  RF=  0.108524  → REVIEW
+tcp                           F=      0.0072  RF=  0.001660  → REVIEW
+udp                           F=         inf  RF=  0.000000  → REVIEW
+icmp                          F=      0.0023  RF=  0.000142  → REVIEW
+arp                           F=      0.0050  RF=  0.000565  → REVIEW
+http                          F=      1.1424  RF=  0.105569  → REVIEW
+https                         F=      0.0004  RF=  0.000016  → REVIEW
+dns                           F=         inf  RF=  0.000000  → REVIEW
+ssh                           F=      0.0004  RF=  0.000024  → REVIEW
+telnet                        F=      0.0004  RF=  0.000013  → REVIEW
+smtp                          F=      0.0004  RF=  0.000017  → REVIEW
+syn_flag_number               F=      0.4590  RF=  0.054519  → REVIEW
+ack_flag_number               F=      0.3604  RF=  0.071168  → REVIEW
+fin_flag_number               F=      0.0670  RF=  0.003295  → REVIEW
+rst_flag_number               F=      0.0897  RF=  0.013467  → REVIEW
+psh_flag_number               F=      0.0571  RF=  0.003201  → REVIEW
+packet_length                 F=      0.0834  RF=  0.195899  → REVIEW
+payload_length                F=      0.0374  RF=  0.006046  → REVIEW
+
+================================================================================
+  FLOW ML
+================================================================================
+File: /home/fady/IoT-devices/ML_FINAL/labeled_traffic_features_ML.csv
+
+Rows    : 183,072
+Columns : 24
+
+--------------------------------------------------------------------------------
+1. COLUMN INVENTORY
+--------------------------------------------------------------------------------
+#   Column                  Dtype           Unique       NaN  Role
+--------------------------------------------------------------------------------
+1   timestamp               float64        183,072         0  GROUPING/ID
+2   switch                  int64                5         0  IDENTIFIER / REVIEW
+3   src_ip                  object              10         0  IDENTIFIER / REVIEW
+4   dst_ip                  object              10         0  IDENTIFIER / REVIEW
+5   src_port                int64           25,331         0  FEATURE
+6   dst_port                int64            7,012         0  FEATURE
+7   ip_proto                int64                2         0  FEATURE
+8   tcp                     int64                2         0  FEATURE
+9   udp                     int64                1         0  FEATURE
+10  icmp                    int64                2         0  FEATURE
+11  http                    int64                2         0  FEATURE
+12  https                   int64                2         0  FEATURE
+13  dns                     int64                1         0  FEATURE
+14  ssh                     int64                2         0  FEATURE
+15  telnet                  int64                1         0  FEATURE
+16  smtp                    int64                2         0  FEATURE
+17  flow_duration           float64         21,126         0  FEATURE
+18  total_pkts              int64               97         0  FEATURE
+19  total_bytes             int64              556         0  FEATURE
+20  packet_rate             float64         34,761         0  FEATURE
+21  byte_rate               float64         47,652         0  FEATURE
+22  avg_packet_size         float64            474         0  FEATURE
+23  label                   object               4         0  TARGET
+24  run_id                  object              60   157,489  GROUPING/ID
+
+--------------------------------------------------------------------------------
+2. LABEL DISTRIBUTION
+--------------------------------------------------------------------------------
+normal                 157,489 ( 86.03%)
+malicious_post          13,519 (  7.38%)
+syn_flood               10,722 (  5.86%)
+port_scan                1,342 (  0.73%)
+
+--------------------------------------------------------------------------------
+3. PER-LABEL MEANS
+--------------------------------------------------------------------------------
+Feature                          normal      syn_flood      port_scan    malicious_post
+------------------------------------------------------------------------------------------
+src_port                     18459.0809      8212.4055     43733.2727        46893.9306
+dst_port                      9563.3085      5000.0000      6207.3614         5000.0000
+ip_proto                         5.9254         6.0000         6.0000            6.0000
+tcp                              0.9851         1.0000         1.0000            1.0000
+udp                              0.0000         0.0000         0.0000            0.0000
+icmp                             0.0149         0.0000         0.0000            0.0000
+http                             0.0119         0.0000         0.0000            0.0000
+https                            0.0002         0.0000         0.0000            0.0000
+dns                              0.0000         0.0000         0.0000            0.0000
+ssh                              0.0003         0.0000         0.0000            0.0000
+telnet                           0.0000         0.0000         0.0000            0.0000
+smtp                             0.0000         0.0000         0.0015            0.0000
+flow_duration                   87.5311        40.6090      2975.3071          351.4283
+total_pkts                      11.5339         3.4439         6.4031            6.6805
+total_bytes                    662.4421       192.4688       460.0507          517.9169
+packet_rate                      3.0152         1.9464         3.0468           13.7738
+byte_rate                      264.8533       105.1478       176.7061         1095.9323
+avg_packet_size                 62.8536        54.5653        70.9144           78.3659
+
+--------------------------------------------------------------------------------
+4. LABEL ASSOCIATION — F-SCORE
+--------------------------------------------------------------------------------
+Rank  Feature                                  F-Score
+----------------------------------------------------------
+1     udp                                          inf
+2     dns                                          inf
+3     telnet                                       inf
+4     src_port                                0.320526
+5     flow_duration                           0.195439
+6     avg_packet_size                         0.044202
+7     dst_port                                0.015601
+8     byte_rate                               0.006210
+9     total_pkts                              0.005977
+10    total_bytes                             0.005428
+11    packet_rate                             0.005281
+12    ip_proto                                0.002116
+13    tcp                                     0.002116
+14    icmp                                    0.002116
+15    http                                    0.001685
+16    smtp                                    0.000730
+17    ssh                                     0.000043
+18    https                                   0.000030
+
+--------------------------------------------------------------------------------
+5. REDUNDANCY — |CORRELATION| >= 0.9
+--------------------------------------------------------------------------------
+Feature A                     Feature B                            |r|
+------------------------------------------------------------------------
+tcp                           icmp                              1.0000
+ip_proto                      icmp                              1.0000
+ip_proto                      tcp                               1.0000
+total_pkts                    total_bytes                       0.9975
+packet_rate                   byte_rate                         0.9209
+
+--------------------------------------------------------------------------------
+6. RANDOM FOREST FEATURE IMPORTANCE
+--------------------------------------------------------------------------------
+
+[INFO] Analysis-only grouping enabled
+       Attack rows → real run_id
+       Normal rows → groups of 5,000 rows
+       Total groups: 92
+
+[INFO] Group-aware split completed successfully
+       Groups used: 92
+
+[INFO] Training rows: 150,189
+[INFO] Testing rows : 32,883
+
+[INFO] RF trained in 5.23 seconds
+
+Rank  Feature                               Importance
+----------------------------------------------------------
+1     src_port                              0.21716270
+2     avg_packet_size                       0.19481802
+3     flow_duration                         0.15672649
+4     byte_rate                             0.12262732
+5     packet_rate                           0.11986565
+6     total_bytes                           0.08102127
+7     total_pkts                            0.06867767
+8     dst_port                              0.03627071
+9     icmp                                  0.00095358
+10    tcp                                   0.00083296
+11    http                                  0.00068726
+12    ip_proto                              0.00032349
+13    ssh                                   0.00001660
+14    https                                 0.00001497
+15    smtp                                  0.00000131
+16    udp                                   0.00000000
+17    dns                                   0.00000000
+18    telnet                                0.00000000
+
+--------------------------------------------------------------------------------
+6b. CLASSIFICATION REPORT (analysis only)
+--------------------------------------------------------------------------------
+                precision    recall  f1-score   support
+
+malicious_post     0.8118    0.8118    0.8118      2444
+        normal     0.8266    0.9830    0.8981     25000
+     port_scan     0.9505    0.1684    0.2861       570
+     syn_flood     0.0000    0.0000    0.0000      4869
+
+      accuracy                         0.8106     32883
+     macro avg     0.6472    0.4908    0.4990     32883
+  weighted avg     0.7053    0.8106    0.7481     32883
+
+
+--------------------------------------------------------------------------------
+7. LEAKAGE / IDENTIFIER REVIEW
+--------------------------------------------------------------------------------
+[DROP FROM MODEL] label
+[DROP FROM MODEL] run_id
+[DROP FROM MODEL] timestamp
+[REVIEW / LIKELY DROP] dst_ip
+[REVIEW / LIKELY DROP] src_ip
+[REVIEW / LIKELY DROP] switch
+
+--------------------------------------------------------------------------------
+8. INITIAL RECOMMENDATION
+--------------------------------------------------------------------------------
+src_port                      F=      0.3205  RF=  0.217163  → REVIEW
+dst_port                      F=      0.0156  RF=  0.036271  → REVIEW
+ip_proto                      F=      0.0021  RF=  0.000323  → REVIEW
+tcp                           F=      0.0021  RF=  0.000833  → REVIEW
+udp                           F=         inf  RF=  0.000000  → REVIEW
+icmp                          F=      0.0021  RF=  0.000954  → REVIEW
+http                          F=      0.0017  RF=  0.000687  → REVIEW
+https                         F=      0.0000  RF=  0.000015  → REVIEW
+dns                           F=         inf  RF=  0.000000  → REVIEW
+ssh                           F=      0.0000  RF=  0.000017  → REVIEW
+telnet                        F=         inf  RF=  0.000000  → REVIEW
+smtp                          F=      0.0007  RF=  0.000001  → REVIEW
+flow_duration                 F=      0.1954  RF=  0.156726  → REVIEW
+total_pkts                    F=      0.0060  RF=  0.068678  → REVIEW
+total_bytes                   F=      0.0054  RF=  0.081021  → REVIEW
+packet_rate                   F=      0.0053  RF=  0.119866  → REVIEW
+byte_rate                     F=      0.0062  RF=  0.122627  → REVIEW
+avg_packet_size               F=      0.0442  RF=  0.194818  → REVIEW
+
+================================================================================
+  PACKET vs FLOW FEATURE COMPARISON
+================================================================================
+
+Common features : 18
+Packet-only     : 11
+Flow-only       : 6
+
+Packet-only:
+  - ack_flag_number
+  - arp
+  - dst_mac
+  - fin_flag_number
+  - packet_length
+  - payload_length
+  - psh_flag_number
+  - rst_flag_number
+  - src_mac
+  - syn_flag_number
+  - ttl
+
+Flow-only:
+  - avg_packet_size
+  - byte_rate
+  - flow_duration
+  - packet_rate
+  - total_bytes
+  - total_pkts

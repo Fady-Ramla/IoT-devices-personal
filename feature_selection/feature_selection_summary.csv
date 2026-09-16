@@ -1,0 +1,40 @@
+dataset,feature,rf,f_score,online,decision,reason
+packet,src_port,0.3299824001541566,0.9722831532684414,True,KEEP,Strong RF importance (0.3300)
+packet,dst_port,0.10466573266078033,0.15371046810491745,True,KEEP,Strong RF importance (0.1047)
+packet,ip_proto,0.0012275297998195261,0.007112085084488852,True,REVIEW,Weak but non-zero signal
+packet,ttl,0.10852384289434208,0.6197085612213858,True,KEEP,Strong RF importance (0.1085)
+packet,tcp,0.0016595094539463967,0.007229495878922879,True,REVIEW,Weak but non-zero signal
+packet,udp,0.0,inf,True,DROP,No signal (constant / zero)
+packet,icmp,0.00014202865451174056,0.002258243005579945,True,REVIEW,Weak but non-zero signal
+packet,arp,0.0005652214238453388,0.004971093329047677,True,REVIEW,Weak but non-zero signal
+packet,http,0.10556887080649617,1.1424054610918488,True,KEEP,Strong RF importance (0.1056)
+packet,https,1.6458050939984304e-05,0.0003888655845761321,True,REVIEW,Unclear — review manually
+packet,dns,0.0,inf,True,DROP,No signal (constant / zero)
+packet,ssh,2.3939765994253777e-05,0.0003888655845761321,True,REVIEW,Unclear — review manually
+packet,telnet,1.267217355712973e-05,0.0003888655845761321,True,REVIEW,Unclear — review manually
+packet,smtp,1.6704692516741422e-05,0.0003888655845761321,True,REVIEW,Unclear — review manually
+packet,syn_flag_number,0.05451899686189523,0.4589860079245639,True,KEEP,Strong RF importance (0.0545)
+packet,ack_flag_number,0.07116849429256478,0.36040700474589055,True,KEEP,Strong RF importance (0.0712)
+packet,fin_flag_number,0.0032953224450570774,0.06701678309369175,True,REVIEW,Weak but non-zero signal
+packet,rst_flag_number,0.01346740614403611,0.08971400023947139,True,KEEP,"Moderate signal (RF=0.0135, F=0.0897)"
+packet,psh_flag_number,0.0032005504014827853,0.0570676220493284,True,REVIEW,Weak but non-zero signal
+packet,packet_length,0.1958987517552105,0.08338263134227679,True,KEEP,Strong RF importance (0.1959)
+packet,payload_length,0.0060455675688472965,0.037359323323272575,True,KEEP,"Moderate signal (RF=0.0060, F=0.0374)"
+flow,src_port,0.21716269725580342,0.3205264090991331,True,KEEP,Strong RF importance (0.2172)
+flow,dst_port,0.03627070956561416,0.015601388593410575,True,KEEP,"Moderate signal (RF=0.0363, F=0.0156)"
+flow,ip_proto,0.00032349068501990626,0.0021158689938461893,True,REVIEW,Weak but non-zero signal
+flow,tcp,0.0008329593187974805,0.002115868993846181,True,REVIEW,Weak but non-zero signal
+flow,udp,0.0,inf,True,DROP,No signal (constant / zero)
+flow,icmp,0.0009535826569079867,0.002115868993846178,True,REVIEW,Weak but non-zero signal
+flow,http,0.000687259367979931,0.0016846764441100074,True,REVIEW,Weak but non-zero signal
+flow,https,1.4966812651497478e-05,3.0175328419579196e-05,True,REVIEW,Unclear — review manually
+flow,dns,0.0,inf,True,DROP,No signal (constant / zero)
+flow,ssh,1.6602842687421136e-05,4.2604251778095125e-05,True,REVIEW,Unclear — review manually
+flow,telnet,0.0,inf,True,DROP,No signal (constant / zero)
+flow,smtp,1.3078433953165967e-06,0.0007302055595936366,True,REVIEW,Unclear — review manually
+flow,flow_duration,0.156726492915465,0.19543906856468973,True,KEEP,Strong RF importance (0.1567)
+flow,total_pkts,0.06867766989771973,0.005977044572721179,True,KEEP,Strong RF importance (0.0687)
+flow,total_bytes,0.08102127161053041,0.005427934855523878,True,KEEP,Strong RF importance (0.0810)
+flow,packet_rate,0.11986564757623502,0.005280985527591017,True,KEEP,Strong RF importance (0.1199)
+flow,byte_rate,0.12262731747137831,0.006209573024669153,True,KEEP,Strong RF importance (0.1226)
+flow,avg_packet_size,0.1948180241798144,0.04420237295653245,True,KEEP,Strong RF importance (0.1948)

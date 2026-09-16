@@ -1,0 +1,23 @@
+The final labeled datasets are ready for the AI/ML stage.
+
+Files:
+
+- "packet_final.csv" — 142,987 rows, 12 ML features + "run_id" + "label"
+- "flow_final.csv" — 183,072 rows, 7 ML features + "run_id" + "label"
+
+Labels:
+
+- "normal"
+- "syn_flood"
+- "port_scan"
+- "malicious_post"
+
+Final checks:
+
+- NaN in ML features: 0
+- Inf in ML features: 0
+- Attack rows without "run_id": 0
+- "syn_ack_ratio" is included in the Packet dataset.
+- "ML_FINAL" was kept unchanged.
+
+The datasets are ready for the ML preprocessing/training stage.
