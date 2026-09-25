@@ -1,71 +1,164 @@
-# traffic_monitor.py
+# traffic_monitor_merged.py
 # =============================================================
-# Ryu Traffic Monitor + OpenFlow Quarantine + REST API
+# Ryu Traffic Monitor - Merged Network Monitor
 #
-# PacketIn  -> packet_features.csv
-# FlowStats -> traffic_features.csv
+# Responsibilities:
+#   1. PacketIn monitoring
+#   2. Packet-level feature extraction
+#   3. FlowStats monitoring
+#   4. Flow-level feature extraction
+#   5. CSV dataset collection
+#   6. Normal forwarding
+#   7. Host learning for forwarding
+#   8. Zero-Trust state enforcement
+#   9. Quarantine / Restore
+#  10. Security -> Network action execution
+#  11. Reroute request delegation to TopologyMonitor
 #
-# PacketIn : first/unmatched packets + packet-level features
-# FlowStats: OVS flow counters + interval-based rates
+# IMPORTANT ARCHITECTURE:
 #
-# Priority architecture:
-#   200 -> QUARANTINE / DROP
-#   100 -> SELF-HEALING / REROUTING (TopologyMonitor)
-#    10 -> NORMAL FORWARDING
-#     0 -> TABLE-MISS
+# TrafficMonitorMerged DOES NOT:
+#   - discover switch topology
+#   - maintain switch-to-switch links
+#   - build NetworkX graph
+#   - calculate Dijkstra
+#   - install dynamic priority-100 rerouting paths
 #
-# Notes:
-#   - First FlowStats observation = baseline only
-#   - Later observations = deltas
-#   - CSV buffering for performance
-#   - Stale flow cleanup
-#   - Graceful shutdown flushes buffers
-#   - Host IP/MAC tracking
-#   - OpenFlow quarantine + REST API
-#   - Normal IPv4 flows include:
-#       IP / protocol / TCP-UDP ports
-#     so FlowStats can collect them correctly
+# TopologyMonitor owns:
+#   - topology discovery
+#   - link failure detection
+#   - active-flow routing
+#   - NetworkX / Dijkstra
+#   - priority-100 rerouting
 #
-# Online Feature Engineering:
-#   syn_ack_ratio = syn_flag / (ack_flag + 1)
+# REROUTE FLOW:
 #
-#   This is calculated directly inside Ryu from the same
-#   syn_flag_number and ack_flag_number features used during
-#   offline feature engineering.
+# Security
+#    |
+#    v
+# TrafficMonitorMerged
+#    |
+#    | EventRerouteHost
+#    v
+# TopologyMonitor
+#    |
+#    v
+# Dijkstra
+#    |
+#    v
+# OpenFlow priority 100
+#
+# OpenFlow version: 1.3
 # =============================================================
+
 
 import csv
-import os
-import time
 import json
-
-from webob import Response
+import os
+import threading
+import time
 
 from ryu.base import app_manager
+
+from api.network_api import NetworkActionController
+
 from ryu.controller import ofp_event
+from ryu.controller import handler
+
 from ryu.controller.handler import (
     CONFIG_DISPATCHER,
     MAIN_DISPATCHER,
-    DEAD_DISPATCHER,
-    set_ev_cls,
+    DEAD_DISPATCHER
 )
-from ryu.ofproto import ofproto_v1_3
+
+from ryu.lib import hub
+
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
-from ryu.lib.packet import ether_types
 from ryu.lib.packet import ipv4
+from ryu.lib.packet import ipv6
 from ryu.lib.packet import tcp
 from ryu.lib.packet import udp
 from ryu.lib.packet import icmp
 from ryu.lib.packet import arp
-from ryu.lib import hub
 
-from ryu.app.wsgi import ControllerBase
-from ryu.app.wsgi import WSGIApplication
-from ryu.app.wsgi import route
+from ryu.ofproto import ofproto_v1_3
+
+from ryu.app.wsgi import (
+    ControllerBase,
+    WSGIApplication,
+    route
+)
+
+from webob import Response
 
 
-class TrafficMonitor(app_manager.RyuApp):
+# =============================================================
+# IMPORT REROUTE EVENT FROM TOPOLOGY MONITOR
+# =============================================================
+
+from topology_monitor import EventRerouteHost
+
+
+# =============================================================
+# CONSTANTS
+# =============================================================
+
+PACKET_CSV = "packet_features.csv"
+FLOW_CSV = "traffic_features.csv"
+
+FLOW_POLL_INTERVAL = 2.0
+
+FLOW_IDLE_TIMEOUT = 15
+STALE_FLOW_MAX_AGE = 60
+
+CSV_FLUSH_EVERY = 50
+
+NORMAL_PRIORITY = 10
+QUARANTINE_PRIORITY = 200
+TABLE_MISS_PRIORITY = 0
+
+OPENFLOW_VERSION = "1.3"
+
+
+# =============================================================
+# NETWORK TEST
+# =============================================================
+
+NETWORK_TEST_ENABLED = False
+
+NETWORK_TEST_HOST = "10.0.0.2"
+
+NETWORK_TEST_REQUEST_ID = "NETWORK-TEST-001"
+
+
+# =============================================================
+# TRUST STATES
+# =============================================================
+
+TRUSTED = "TRUSTED"
+UNTRUSTED = "UNTRUSTED"
+QUARANTINED = "QUARANTINED"
+
+
+# =============================================================
+# SECURITY ACTIONS
+# =============================================================
+
+KEEP_UNTRUSTED = "KEEP_UNTRUSTED"
+ALLOW = "ALLOW"
+QUARANTINE = "QUARANTINE"
+REROUTE = "REROUTE"
+RESTORE = "RESTORE"
+
+
+# =============================================================
+# TRAFFIC MONITOR MERGED
+# =============================================================
+
+class TrafficMonitorMerged(
+    app_manager.RyuApp
+):
 
     OFP_VERSIONS = [
         ofproto_v1_3.OFP_VERSION
@@ -75,220 +168,256 @@ class TrafficMonitor(app_manager.RyuApp):
         "wsgi": WSGIApplication
     }
 
-    # =========================================================
-    # CONFIG
-    # =========================================================
+    _EVENTS = [
+        EventRerouteHost
+    ]
 
-    FLOW_POLL_INTERVAL = 2.0
-    FLOW_IDLE_TIMEOUT = 15
-    STALE_FLOW_MAX_AGE = 60
-    CSV_FLUSH_EVERY = 50
-
-    # ---------------------------------------------------------
-    # OpenFlow priorities
-    #
-    # 200 -> Quarantine / DROP
-    # 100 -> Rerouting (TopologyMonitor)
-    #  10 -> Normal forwarding
-    #   0 -> Table miss
-    # ---------------------------------------------------------
-
-    QUARANTINE_PRIORITY = 200
-    NORMAL_PRIORITY = 10
-
-    RESTORE_SAFE_TIME = 30
-
-    # =========================================================
-    # INITIALIZATION
-    # =========================================================
-
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        *args,
+        **kwargs
+    ):
 
         super(
-            TrafficMonitor,
+            TrafficMonitorMerged,
             self
-        ).__init__(*args, **kwargs)
+        ).__init__(
+            *args,
+            **kwargs
+        )
 
-        # ---------------- MAC / datapath ----------------
-
-        self.mac_to_port = {}
         self.datapaths = {}
 
-        # ---------------- Host tracking ----------------
+        self.hosts = {}
 
-        self.host_locations = {}
         self.ip_to_mac = {}
-        self.ip_locations = {}
 
-        # ---------------- Quarantine ----------------
+        self.mac_to_ip = {}
 
-        self.quarantined_hosts = {}
-        self.restore_candidates = {}
+        self.trust_state = {}
 
-        # ---------------- FlowStats deltas ----------------
+        self.trust_scores = {}
 
-        self.previous_flow_stats = {}
+        self.quarantined_hosts = set()
 
-        # ---------------- CSV ----------------
+        self.quarantine_rules_installed = {}
 
-        self.packet_csv_file = (
-            "packet_features.csv"
+        self.flow_baselines = {}
+
+        self.flow_last_seen = {}
+
+        self.action_history = {}
+
+        self.network_test_done = False
+
+        self.packet_file = None
+        self.flow_file = None
+
+        self.packet_writer = None
+        self.flow_writer = None
+
+        self.packet_rows_since_flush = 0
+        self.flow_rows_since_flush = 0
+
+        self.csv_lock = threading.Lock()
+
+        wsgi = kwargs[
+            "wsgi"
+        ]
+
+        wsgi.register(
+            NetworkActionController,
+            {
+                "traffic_monitor": self
+            }
         )
-
-        self.flow_csv_file = (
-            "traffic_features.csv"
-        )
-
-        self._packet_buffer = []
-        self._flow_buffer = []
 
         self._initialize_csv_files()
 
-        # ---------------- REST API ----------------
-
-        wsgi = kwargs["wsgi"]
-
-        wsgi.register(
-            RestIsolationController,
-            {
-                "traffic_monitor_api_app": self
-            },
-        )
-
-        # ---------------- Monitor thread ----------------
-
         self.monitor_thread = hub.spawn(
-            self._monitor
+            self._flow_stats_loop
+        )
+
+        self.logger.info(
+            "================================================="
+        )
+
+        self.logger.info(
+            "TrafficMonitorMerged initialized"
+        )
+
+        self.logger.info(
+            "OpenFlow version: %s",
+            OPENFLOW_VERSION
+        )
+
+        self.logger.info(
+            "Packet CSV: %s",
+            PACKET_CSV
+        )
+
+        self.logger.info(
+            "Flow CSV: %s",
+            FLOW_CSV
+        )
+
+        self.logger.info(
+            "Topology/Dijkstra owner: TopologyMonitor"
+        )
+
+        self.logger.info(
+            "Reroute: delegated to TopologyMonitor"
+        )
+
+        self.logger.info(
+            "================================================="
         )
 
     # =========================================================
-    # CSV INIT
+    # CSV INITIALIZATION
     # =========================================================
 
-    def _initialize_csv_files(self):
+    def _initialize_csv_files(
+        self
+    ):
 
-        if not os.path.exists(
-            self.packet_csv_file
+        packet_exists = os.path.exists(
+            PACKET_CSV
+        )
+
+        flow_exists = os.path.exists(
+            FLOW_CSV
+        )
+
+        self.packet_file = open(
+            PACKET_CSV,
+            "a",
+            newline=""
+        )
+
+        self.flow_file = open(
+            FLOW_CSV,
+            "a",
+            newline=""
+        )
+
+        self.packet_writer = csv.writer(
+            self.packet_file
+        )
+
+        self.flow_writer = csv.writer(
+            self.flow_file
+        )
+
+        if (
+            not packet_exists
+            or os.path.getsize(PACKET_CSV) == 0
         ):
 
-            with open(
-                self.packet_csv_file,
-                "w",
-                newline=""
-            ) as f:
+            self.packet_writer.writerow([
+                "timestamp",
+                "switch_dpid",
+                "in_port",
+                "src_mac",
+                "dst_mac",
+                "src_ip",
+                "dst_ip",
+                "protocol",
+                "src_port",
+                "dst_port",
+                "packet_length",
+                "tcp_flags",
+                "icmp_type",
+                "arp_operation"
+            ])
 
-                csv.writer(f).writerow([
+            self.packet_file.flush()
 
-                    "timestamp",
-                    "switch",
-
-                    "src_mac",
-                    "dst_mac",
-
-                    "src_ip",
-                    "dst_ip",
-
-                    "src_port",
-                    "dst_port",
-
-                    "ip_proto",
-                    "ttl",
-
-                    "tcp",
-                    "udp",
-                    "icmp",
-                    "arp",
-
-                    "http",
-                    "https",
-                    "dns",
-                    "ssh",
-                    "telnet",
-                    "smtp",
-
-                    "syn_flag_number",
-                    "ack_flag_number",
-                    "fin_flag_number",
-                    "rst_flag_number",
-                    "psh_flag_number",
-
-                    "packet_length",
-                    "payload_length",
-
-                    # NEW:
-                    # Online engineered feature
-                    "syn_ack_ratio",
-                ])
-
-        if not os.path.exists(
-            self.flow_csv_file
+        if (
+            not flow_exists
+            or os.path.getsize(FLOW_CSV) == 0
         ):
 
-            with open(
-                self.flow_csv_file,
-                "w",
-                newline=""
-            ) as f:
+            self.flow_writer.writerow([
+                "timestamp",
+                "switch_dpid",
+                "src_ip",
+                "dst_ip",
+                "src_port",
+                "dst_port",
+                "protocol",
+                "priority",
+                "packet_count",
+                "byte_count",
+                "packet_rate",
+                "byte_rate",
+                "duration_sec"
+            ])
 
-                csv.writer(f).writerow([
-
-                    "timestamp",
-                    "switch",
-
-                    "src_ip",
-                    "dst_ip",
-
-                    "src_port",
-                    "dst_port",
-
-                    "ip_proto",
-
-                    "tcp",
-                    "udp",
-                    "icmp",
-
-                    "http",
-                    "https",
-                    "dns",
-                    "ssh",
-                    "telnet",
-                    "smtp",
-
-                    "flow_duration",
-
-                    "total_pkts",
-                    "total_bytes",
-
-                    "packet_rate",
-                    "byte_rate",
-
-                    "avg_packet_size",
-                ])
+            self.flow_file.flush()
 
     # =========================================================
-    # DATAPATH REGISTRATION
+    # SWITCH FEATURES
     # =========================================================
 
-    @set_ev_cls(
-        ofp_event.EventOFPStateChange,
-        [MAIN_DISPATCHER, DEAD_DISPATCHER],
+    @handler.set_ev_cls(
+        ofp_event.EventOFPSwitchFeatures,
+        CONFIG_DISPATCHER
     )
-    def _state_change_handler(self, ev):
+    def switch_features_handler(
+        self,
+        ev
+    ):
+
+        datapath = ev.msg.datapath
+
+        self.datapaths[
+            datapath.id
+        ] = datapath
+
+        self.logger.info(
+            "Switch connected: s%d",
+            datapath.id
+        )
+
+        self._install_table_miss(
+            datapath
+        )
+
+        for host_ip in list(
+            self.quarantined_hosts
+        ):
+
+            self._install_drop_rule(
+                datapath,
+                host_ip
+            )
+
+    # =========================================================
+    # DATAPATH STATE CHANGE
+    # =========================================================
+
+    @handler.set_ev_cls(
+        ofp_event.EventOFPStateChange,
+        [MAIN_DISPATCHER, DEAD_DISPATCHER]
+    )
+    def state_change_handler(
+        self,
+        ev
+    ):
 
         datapath = ev.datapath
 
         if ev.state == MAIN_DISPATCHER:
 
-            if datapath.id not in self.datapaths:
+            self.datapaths[
+                datapath.id
+            ] = datapath
 
-                self.datapaths[
-                    datapath.id
-                ] = datapath
-
-                self.logger.info(
-                    "REGISTERED SWITCH: %016x",
-                    datapath.id,
-                )
+            self.logger.info(
+                "Datapath registered: s%d",
+                datapath.id
+            )
 
         elif ev.state == DEAD_DISPATCHER:
 
@@ -298,27 +427,33 @@ class TrafficMonitor(app_manager.RyuApp):
                     datapath.id
                 ]
 
-                self.logger.info(
-                    "UNREGISTERED SWITCH: %016x",
-                    datapath.id,
+            self.logger.info(
+                "Datapath removed: s%d",
+                datapath.id
+            )
+
+            for host_ip in list(
+                self.quarantine_rules_installed
+            ):
+
+                switches = (
+                    self.quarantine_rules_installed[
+                        host_ip
+                    ]
+                )
+
+                switches.discard(
+                    datapath.id
                 )
 
     # =========================================================
-    # SWITCH FEATURES
-    # Table-miss -> controller
+    # TABLE MISS
     # =========================================================
 
-    @set_ev_cls(
-        ofp_event.EventOFPSwitchFeatures,
-        CONFIG_DISPATCHER,
-    )
-    def switch_features_handler(self, ev):
-
-        datapath = ev.msg.datapath
-
-        self.datapaths[
-            datapath.id
-        ] = datapath
+    def _install_table_miss(
+        self,
+        datapath
+    ):
 
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -326,129 +461,370 @@ class TrafficMonitor(app_manager.RyuApp):
         match = parser.OFPMatch()
 
         actions = [
-
             parser.OFPActionOutput(
                 ofproto.OFPP_CONTROLLER,
-                ofproto.OFPCML_NO_BUFFER,
+                ofproto.OFPCML_NO_BUFFER
             )
-
         ]
 
-        self.add_flow(
-            datapath,
-            0,
-            match,
-            actions,
+        instructions = [
+            parser.OFPInstructionActions(
+                ofproto.OFPIT_APPLY_ACTIONS,
+                actions
+            )
+        ]
+
+        mod = parser.OFPFlowMod(
+            datapath=datapath,
+            priority=TABLE_MISS_PRIORITY,
+            match=match,
+            instructions=instructions
+        )
+
+        datapath.send_msg(
+            mod
         )
 
         self.logger.info(
-            "SWITCH FEATURES INSTALLED: %016x",
-            datapath.id,
+            "Table-miss rule installed on s%d",
+            datapath.id
         )
 
     # =========================================================
-    # FLOW HELPERS
+    # GENERIC FLOW ADD
     # =========================================================
 
-    def add_flow(
+    def _add_flow(
         self,
         datapath,
         priority,
         match,
-        actions,
-        idle_timeout=0,
-        hard_timeout=0,
+        actions
     ):
 
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        inst = [
-
+        instructions = [
             parser.OFPInstructionActions(
                 ofproto.OFPIT_APPLY_ACTIONS,
-                actions,
+                actions
             )
-
         ]
 
         mod = parser.OFPFlowMod(
-
             datapath=datapath,
-
             priority=priority,
-
             match=match,
-
-            instructions=inst,
-
-            idle_timeout=idle_timeout,
-
-            hard_timeout=hard_timeout,
+            instructions=instructions
         )
 
-        datapath.send_msg(mod)
+        datapath.send_msg(
+            mod
+        )
 
-    def delete_flow(
+    # =========================================================
+    # PACKET IN
+    # =========================================================
+
+    @handler.set_ev_cls(
+        ofp_event.EventOFPPacketIn,
+        MAIN_DISPATCHER
+    )
+    def packet_in_handler(
+        self,
+        ev
+    ):
+
+        msg = ev.msg
+
+        datapath = msg.datapath
+
+        dpid = datapath.id
+
+        in_port = msg.match.get(
+            "in_port"
+        )
+
+        pkt = packet.Packet(
+            msg.data
+        )
+
+        eth_pkt = pkt.get_protocol(
+            ethernet.ethernet
+        )
+
+        if eth_pkt is None:
+            return
+
+        if eth_pkt.ethertype == 0x88CC:
+            return
+
+        src_mac = eth_pkt.src
+        dst_mac = eth_pkt.dst
+
+        self.hosts[
+            src_mac
+        ] = {
+            "dpid": dpid,
+            "port": in_port
+        }
+
+        src_ip = ""
+        dst_ip = ""
+        protocol = ""
+        src_port = ""
+        dst_port = ""
+
+        tcp_flags = ""
+        icmp_type = ""
+        arp_operation = ""
+
+        ipv4_pkt = pkt.get_protocol(
+            ipv4.ipv4
+        )
+
+        if ipv4_pkt is not None:
+
+            src_ip = ipv4_pkt.src
+            dst_ip = ipv4_pkt.dst
+
+            protocol = ipv4_pkt.proto
+
+            self.ip_to_mac[
+                src_ip
+            ] = src_mac
+
+            self.mac_to_ip[
+                src_mac
+            ] = src_ip
+
+            tcp_pkt = pkt.get_protocol(
+                tcp.tcp
+            )
+
+            if tcp_pkt is not None:
+
+                src_port = tcp_pkt.src_port
+                dst_port = tcp_pkt.dst_port
+
+                tcp_flags = tcp_pkt.bits
+
+            udp_pkt = pkt.get_protocol(
+                udp.udp
+            )
+
+            if udp_pkt is not None:
+
+                src_port = udp_pkt.src_port
+                dst_port = udp_pkt.dst_port
+
+            icmp_pkt = pkt.get_protocol(
+                icmp.icmp
+            )
+
+            if icmp_pkt is not None:
+
+                icmp_type = icmp_pkt.type
+
+        ipv6_pkt = pkt.get_protocol(
+            ipv6.ipv6
+        )
+
+        if ipv6_pkt is not None:
+
+            src_ip = ipv6_pkt.src
+            dst_ip = ipv6_pkt.dst
+
+            protocol = ipv6_pkt.nxt
+
+        arp_pkt = pkt.get_protocol(
+            arp.arp
+        )
+
+        if arp_pkt is not None:
+
+            src_ip = arp_pkt.src_ip
+            dst_ip = arp_pkt.dst_ip
+
+            arp_operation = arp_pkt.opcode
+
+            self.ip_to_mac[
+                src_ip
+            ] = src_mac
+
+            self.mac_to_ip[
+                src_mac
+            ] = src_ip
+
+        packet_length = len(
+            msg.data
+        )
+
+        self._write_packet_feature([
+            time.time(),
+            dpid,
+            in_port,
+            src_mac,
+            dst_mac,
+            src_ip,
+            dst_ip,
+            protocol,
+            src_port,
+            dst_port,
+            packet_length,
+            tcp_flags,
+            icmp_type,
+            arp_operation
+        ])
+
+        if src_ip:
+
+            if src_ip not in self.trust_state:
+
+                self.trust_state[
+                    src_ip
+                ] = UNTRUSTED
+
+        if (
+            src_ip
+            and src_ip in self.quarantined_hosts
+        ):
+
+            return
+
+        self._forward_packet(
+            datapath,
+            msg,
+            in_port,
+            dst_mac
+        )
+
+    # =========================================================
+    # NORMAL FORWARDING
+    # =========================================================
+
+    def _forward_packet(
         self,
         datapath,
-        match,
-        priority,
+        msg,
+        in_port,
+        dst_mac
     ):
+
+        dpid = datapath.id
 
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
-        mod = parser.OFPFlowMod(
+        if dst_mac in self.hosts:
 
+            dst_info = self.hosts[
+                dst_mac
+            ]
+
+            dst_dpid = dst_info[
+                "dpid"
+            ]
+
+            dst_port = dst_info[
+                "port"
+            ]
+
+            if dst_dpid == dpid:
+
+                out_port = dst_port
+
+            else:
+
+                out_port = ofproto.OFPP_FLOOD
+
+        else:
+
+            out_port = ofproto.OFPP_FLOOD
+
+        actions = [
+            parser.OFPActionOutput(
+                out_port
+            )
+        ]
+
+        if (
+            dst_mac in self.hosts
+            and self.hosts[dst_mac]["dpid"] == dpid
+        ):
+
+            match = parser.OFPMatch(
+                in_port=in_port,
+                eth_dst=dst_mac
+            )
+
+            self._add_flow(
+                datapath,
+                NORMAL_PRIORITY,
+                match,
+                actions
+            )
+
+        data = None
+
+        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
+
+            data = msg.data
+
+        out = parser.OFPPacketOut(
             datapath=datapath,
-
-            command=ofproto.OFPFC_DELETE,
-
-            out_port=ofproto.OFPP_ANY,
-
-            out_group=ofproto.OFPG_ANY,
-
-            priority=priority,
-
-            match=match,
+            buffer_id=msg.buffer_id,
+            in_port=in_port,
+            actions=actions,
+            data=data
         )
 
-        datapath.send_msg(mod)
+        datapath.send_msg(
+            out
+        )
 
     # =========================================================
-    # MONITOR LOOP
+    # FLOW STATS LOOP
     # =========================================================
 
-    def _monitor(self):
+    def _flow_stats_loop(
+        self
+    ):
 
         while True:
 
-            for datapath in list(
-                self.datapaths.values()
-            ):
+            try:
 
-                try:
+                for datapath in list(
+                    self.datapaths.values()
+                ):
 
-                    self._request_stats(
+                    self._request_flow_stats(
                         datapath
                     )
 
-                except Exception as e:
+                self._cleanup_stale_flows()
 
-                    self.logger.error(
-                        "STATS ERROR on switch %s: %s",
-                        datapath.id,
-                        e,
-                    )
+            except Exception as e:
 
-            self._check_restore_candidates()
+                self.logger.exception(
+                    "FlowStats loop error: %s",
+                    e
+                )
 
             hub.sleep(
-                self.FLOW_POLL_INTERVAL
+                FLOW_POLL_INTERVAL
             )
 
-    def _request_stats(self, datapath):
+    # =========================================================
+    # REQUEST FLOW STATS
+    # =========================================================
+
+    def _request_flow_stats(
+        self,
+        datapath
+    ):
 
         parser = datapath.ofproto_parser
 
@@ -456,1961 +832,822 @@ class TrafficMonitor(app_manager.RyuApp):
             datapath
         )
 
-        datapath.send_msg(req)
-
-    # =========================================================
-    # PACKET FEATURE EXTRACTION
-    # =========================================================
-
-    def extract_packet_features(self, pkt):
-
-        pkt_ipv4 = pkt.get_protocol(
-            ipv4.ipv4
+        datapath.send_msg(
+            req
         )
-
-        pkt_tcp = pkt.get_protocol(
-            tcp.tcp
-        )
-
-        pkt_udp = pkt.get_protocol(
-            udp.udp
-        )
-
-        pkt_icmp = pkt.get_protocol(
-            icmp.icmp
-        )
-
-        pkt_arp = pkt.get_protocol(
-            arp.arp
-        )
-
-        features = {
-
-            "src_ip": "",
-            "dst_ip": "",
-
-            "src_port": 0,
-            "dst_port": 0,
-
-            "ip_proto": 0,
-            "ttl": 0,
-
-            "tcp": 0,
-            "udp": 0,
-            "icmp": 0,
-            "arp": 0,
-
-            "http": 0,
-            "https": 0,
-            "dns": 0,
-            "ssh": 0,
-            "telnet": 0,
-            "smtp": 0,
-
-            "syn_flag": 0,
-            "ack_flag": 0,
-            "fin_flag": 0,
-            "rst_flag": 0,
-            "psh_flag": 0,
-
-            "packet_length": 0,
-            "payload_length": 0,
-
-            # NEW:
-            # Will be calculated after TCP flags are known.
-            "syn_ack_ratio": 0.0,
-        }
-
-        # ---------------- IPv4 ----------------
-
-        if pkt_ipv4:
-
-            features["src_ip"] = (
-                pkt_ipv4.src
-            )
-
-            features["dst_ip"] = (
-                pkt_ipv4.dst
-            )
-
-            features["ip_proto"] = (
-                pkt_ipv4.proto
-            )
-
-            features["ttl"] = (
-                pkt_ipv4.ttl
-            )
-
-            ip_header_len = (
-                pkt_ipv4.header_length * 4
-            )
-
-            transport_header_len = 0
-
-            # -------- TCP --------
-
-            if pkt_tcp:
-
-                features["src_port"] = (
-                    pkt_tcp.src_port
-                )
-
-                features["dst_port"] = (
-                    pkt_tcp.dst_port
-                )
-
-                features["tcp"] = 1
-
-                sp = pkt_tcp.src_port
-                dp = pkt_tcp.dst_port
-
-                if (
-                    sp in (80, 8080)
-                    or dp in (80, 8080)
-                ):
-
-                    features["http"] = 1
-
-                if (
-                    sp == 443
-                    or dp == 443
-                ):
-
-                    features["https"] = 1
-
-                if (
-                    sp == 22
-                    or dp == 22
-                ):
-
-                    features["ssh"] = 1
-
-                if (
-                    sp == 23
-                    or dp == 23
-                ):
-
-                    features["telnet"] = 1
-
-                if (
-                    sp == 25
-                    or dp == 25
-                ):
-
-                    features["smtp"] = 1
-
-                bits = pkt_tcp.bits
-
-                features["syn_flag"] = (
-                    1
-                    if bits & tcp.TCP_SYN
-                    else 0
-                )
-
-                features["ack_flag"] = (
-                    1
-                    if bits & tcp.TCP_ACK
-                    else 0
-                )
-
-                features["fin_flag"] = (
-                    1
-                    if bits & tcp.TCP_FIN
-                    else 0
-                )
-
-                features["rst_flag"] = (
-                    1
-                    if bits & tcp.TCP_RST
-                    else 0
-                )
-
-                features["psh_flag"] = (
-                    1
-                    if bits & tcp.TCP_PSH
-                    else 0
-                )
-
-                # =================================================
-                # ONLINE FEATURE ENGINEERING
-                # =================================================
-                #
-                # Same formula used offline:
-                #
-                # syn_ack_ratio =
-                #     syn_flag_number /
-                #     (ack_flag_number + 1)
-                #
-                # The +1 prevents division by zero.
-                # =================================================
-
-                features["syn_ack_ratio"] = (
-                    features["syn_flag"]
-                    / (
-                        features["ack_flag"]
-                        + 1
-                    )
-                )
-
-                transport_header_len = (
-                    pkt_tcp.offset * 4
-                )
-
-            # -------- UDP --------
-
-            elif pkt_udp:
-
-                features["src_port"] = (
-                    pkt_udp.src_port
-                )
-
-                features["dst_port"] = (
-                    pkt_udp.dst_port
-                )
-
-                features["udp"] = 1
-
-                sp = pkt_udp.src_port
-                dp = pkt_udp.dst_port
-
-                if (
-                    sp == 53
-                    or dp == 53
-                ):
-
-                    features["dns"] = 1
-
-                transport_header_len = 8
-
-            # -------- ICMP --------
-
-            elif pkt_icmp:
-
-                features["icmp"] = 1
-
-                transport_header_len = 8
-
-            # -------- Payload --------
-
-            ip_payload_length = (
-                pkt_ipv4.total_length
-                - ip_header_len
-            )
-
-            features["payload_length"] = max(
-
-                0,
-
-                ip_payload_length
-                - transport_header_len,
-            )
-
-        # ---------------- ARP ----------------
-
-        elif pkt_arp:
-
-            features["arp"] = 1
-
-            features["src_ip"] = str(
-                pkt_arp.src_ip
-            )
-
-            features["dst_ip"] = str(
-                pkt_arp.dst_ip
-            )
-
-            features["ip_proto"] = 0
-
-        return features
-
-    # =========================================================
-    # PACKET IN HANDLER
-    # =========================================================
-
-    @set_ev_cls(
-        ofp_event.EventOFPPacketIn,
-        MAIN_DISPATCHER,
-    )
-    def _packet_in_handler(self, ev):
-
-        msg = ev.msg
-
-        datapath = msg.datapath
-
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-
-        in_port = msg.match[
-            "in_port"
-        ]
-
-        dpid = datapath.id
-
-        pkt = packet.Packet(
-            msg.data
-        )
-
-        eth = pkt.get_protocol(
-            ethernet.ethernet
-        )
-
-        # ---------------- Ignore LLDP ----------------
-
-        if (
-            eth is None
-            or eth.ethertype
-                == ether_types.ETH_TYPE_LLDP
-            or eth.dst
-                == "01:80:c2:00:00:00"
-        ):
-
-            return
-
-        src = eth.src
-        dst = eth.dst
-
-        # =====================================================
-        # MAC LEARNING
-        # =====================================================
-
-        self.mac_to_port.setdefault(
-            dpid,
-            {},
-        )
-
-        self.mac_to_port[
-            dpid
-        ][src] = in_port
-
-        self.host_locations[
-            src
-        ] = (
-            dpid,
-            in_port,
-        )
-
-        # =====================================================
-        # IP / MAC TRACKING
-        # =====================================================
-
-        pkt_ipv4 = pkt.get_protocol(
-            ipv4.ipv4
-        )
-
-        pkt_arp = pkt.get_protocol(
-            arp.arp
-        )
-
-        if pkt_ipv4:
-
-            self.ip_to_mac[
-                pkt_ipv4.src
-            ] = src
-
-            self.ip_locations[
-                pkt_ipv4.src
-            ] = (
-                dpid,
-                in_port,
-            )
-
-        elif (
-            pkt_arp
-            and pkt_arp.src_ip
-        ):
-
-            self.ip_to_mac[
-                str(pkt_arp.src_ip)
-            ] = src
-
-            self.ip_locations[
-                str(pkt_arp.src_ip)
-            ] = (
-                dpid,
-                in_port,
-            )
-
-        # =====================================================
-        # QUARANTINE CHECK
-        # =====================================================
-
-        check_src_ip = (
-
-            pkt_ipv4.src
-
-            if pkt_ipv4
-
-            else (
-
-                str(pkt_arp.src_ip)
-
-                if pkt_arp
-
-                else None
-            )
-        )
-
-        check_dst_ip = (
-
-            pkt_ipv4.dst
-
-            if pkt_ipv4
-
-            else (
-
-                str(pkt_arp.dst_ip)
-
-                if pkt_arp
-
-                else None
-            )
-        )
-
-        if (
-
-            self._is_quarantined_ip(
-                check_src_ip
-            )
-
-            or
-
-            self._is_quarantined_ip(
-                check_dst_ip
-            )
-        ):
-
-            return
-
-        # =====================================================
-        # OUTPUT PORT
-        # =====================================================
-
-        if (
-            dst
-            in self.mac_to_port[dpid]
-        ):
-
-            out_port = (
-                self.mac_to_port[
-                    dpid
-                ][dst]
-            )
-
-        else:
-
-            out_port = (
-                ofproto.OFPP_FLOOD
-            )
-
-        actions = [
-
-            parser.OFPActionOutput(
-                out_port
-            )
-
-        ]
-
-        # =====================================================
-        # INSTALL NORMAL FLOW
-        # =====================================================
-
-        if (
-            out_port
-            != ofproto.OFPP_FLOOD
-        ):
-
-            pkt_tcp = pkt.get_protocol(
-                tcp.tcp
-            )
-
-            pkt_udp = pkt.get_protocol(
-                udp.udp
-            )
-
-            pkt_icmp = pkt.get_protocol(
-                icmp.icmp
-            )
-
-            # -------------------------------------------------
-            # IPv4 + TCP
-            # -------------------------------------------------
-
-            if (
-                pkt_ipv4
-                and pkt_tcp
-            ):
-
-                match = parser.OFPMatch(
-
-                    eth_type=(
-                        ether_types.ETH_TYPE_IP
-                    ),
-
-                    eth_dst=dst,
-
-                    ipv4_src=(
-                        pkt_ipv4.src
-                    ),
-
-                    ipv4_dst=(
-                        pkt_ipv4.dst
-                    ),
-
-                    ip_proto=6,
-
-                    tcp_src=(
-                        pkt_tcp.src_port
-                    ),
-
-                    tcp_dst=(
-                        pkt_tcp.dst_port
-                    ),
-                )
-
-            # -------------------------------------------------
-            # IPv4 + UDP
-            # -------------------------------------------------
-
-            elif (
-                pkt_ipv4
-                and pkt_udp
-            ):
-
-                match = parser.OFPMatch(
-
-                    eth_type=(
-                        ether_types.ETH_TYPE_IP
-                    ),
-
-                    eth_dst=dst,
-
-                    ipv4_src=(
-                        pkt_ipv4.src
-                    ),
-
-                    ipv4_dst=(
-                        pkt_ipv4.dst
-                    ),
-
-                    ip_proto=17,
-
-                    udp_src=(
-                        pkt_udp.src_port
-                    ),
-
-                    udp_dst=(
-                        pkt_udp.dst_port
-                    ),
-                )
-
-            # -------------------------------------------------
-            # IPv4 + ICMP
-            # -------------------------------------------------
-
-            elif (
-                pkt_ipv4
-                and pkt_icmp
-            ):
-
-                match = parser.OFPMatch(
-
-                    eth_type=(
-                        ether_types.ETH_TYPE_IP
-                    ),
-
-                    eth_dst=dst,
-
-                    ipv4_src=(
-                        pkt_ipv4.src
-                    ),
-
-                    ipv4_dst=(
-                        pkt_ipv4.dst
-                    ),
-
-                    ip_proto=1,
-                )
-
-            # -------------------------------------------------
-            # Other IPv4
-            # -------------------------------------------------
-
-            elif pkt_ipv4:
-
-                match = parser.OFPMatch(
-
-                    eth_type=(
-                        ether_types.ETH_TYPE_IP
-                    ),
-
-                    eth_dst=dst,
-
-                    ipv4_src=(
-                        pkt_ipv4.src
-                    ),
-
-                    ipv4_dst=(
-                        pkt_ipv4.dst
-                    ),
-
-                    ip_proto=(
-                        pkt_ipv4.proto
-                    ),
-                )
-
-            # -------------------------------------------------
-            # Non-IPv4 traffic
-            # -------------------------------------------------
-
-            else:
-
-                match = parser.OFPMatch(
-                    eth_dst=dst
-                )
-
-            self.add_flow(
-
-                datapath,
-
-                self.NORMAL_PRIORITY,
-
-                match,
-
-                actions,
-
-                idle_timeout=(
-                    self.FLOW_IDLE_TIMEOUT
-                ),
-            )
-
-        # =====================================================
-        # EXTRACT FEATURES
-        # =====================================================
-
-        features = (
-            self.extract_packet_features(
-                pkt
-            )
-        )
-
-        features["src_mac"] = src
-        features["dst_mac"] = dst
-
-        features["switch"] = dpid
-
-        features["packet_length"] = (
-            len(msg.data)
-        )
-
-        features["timestamp"] = (
-            time.time()
-        )
-
-        self._buffer_packet_row(
-            dpid,
-            features,
-        )
-
-        # =====================================================
-        # FORWARD PACKET
-        # =====================================================
-
-        data = None
-
-        if (
-            msg.buffer_id
-            == ofproto.OFP_NO_BUFFER
-        ):
-
-            data = msg.data
-
-        out = parser.OFPPacketOut(
-
-            datapath=datapath,
-
-            buffer_id=msg.buffer_id,
-
-            in_port=in_port,
-
-            actions=actions,
-
-            data=data,
-        )
-
-        datapath.send_msg(out)
-
-    # =========================================================
-    # CSV BUFFERING
-    # =========================================================
-
-    def _buffer_packet_row(
-        self,
-        dpid,
-        f,
-    ):
-
-        self._packet_buffer.append([
-
-            f["timestamp"],
-
-            format(
-                dpid,
-                "016x",
-            ),
-
-            f["src_mac"],
-            f["dst_mac"],
-
-            f["src_ip"],
-            f["dst_ip"],
-
-            f["src_port"],
-            f["dst_port"],
-
-            f["ip_proto"],
-            f["ttl"],
-
-            f["tcp"],
-            f["udp"],
-            f["icmp"],
-            f["arp"],
-
-            f["http"],
-            f["https"],
-            f["dns"],
-
-            f["ssh"],
-            f["telnet"],
-            f["smtp"],
-
-            f["syn_flag"],
-            f["ack_flag"],
-            f["fin_flag"],
-            f["rst_flag"],
-            f["psh_flag"],
-
-            f["packet_length"],
-            f["payload_length"],
-
-            # NEW:
-            f["syn_ack_ratio"],
-        ])
-
-        if (
-            len(self._packet_buffer)
-            >= self.CSV_FLUSH_EVERY
-        ):
-
-            self._flush_packet_buffer()
-
-    def _flush_packet_buffer(self):
-
-        if not self._packet_buffer:
-
-            return
-
-        with open(
-            self.packet_csv_file,
-            "a",
-            newline="",
-        ) as file:
-
-            csv.writer(
-                file
-            ).writerows(
-                self._packet_buffer
-            )
-
-        self._packet_buffer.clear()
-
-    def _buffer_flow_row(
-        self,
-        row,
-    ):
-
-        self._flow_buffer.append(
-            row
-        )
-
-        if (
-            len(self._flow_buffer)
-            >= self.CSV_FLUSH_EVERY
-        ):
-
-            self._flush_flow_buffer()
-
-    def _flush_flow_buffer(self):
-
-        if not self._flow_buffer:
-
-            return
-
-        with open(
-            self.flow_csv_file,
-            "a",
-            newline="",
-        ) as file:
-
-            csv.writer(
-                file
-            ).writerows(
-                self._flow_buffer
-            )
-
-        self._flow_buffer.clear()
-
-    # =========================================================
-    # QUARANTINE / RESTORE
-    # =========================================================
-
-    def _is_quarantined_ip(
-        self,
-        host_ip,
-    ):
-
-        if not host_ip:
-
-            return False
-
-        return (
-            host_ip
-            in self.quarantined_hosts
-        )
-
-    def quarantine_host(
-        self,
-        host_ip,
-        host_mac=None,
-    ):
-
-        if (
-            not host_ip
-            or host_ip
-                in self.quarantined_hosts
-        ):
-
-            return False
-
-        if host_mac is None:
-
-            host_mac = (
-                self.ip_to_mac.get(
-                    host_ip
-                )
-            )
-
-        self.quarantined_hosts[
-            host_ip
-        ] = {
-
-            "mac": host_mac,
-
-            "timestamp":
-                time.time(),
-        }
-
-        self.restore_candidates.pop(
-            host_ip,
-            None,
-        )
-
-        self.logger.warning(
-
-            ">>> [OPENFLOW] "
-            "AUTOMATIC QUARANTINE "
-            "FOR IP: %s <<<",
-
-            host_ip,
-        )
-
-        # =====================================================
-        # INSTALL QUARANTINE RULES
-        #
-        # Priority = 200
-        #
-        # This is intentionally higher than:
-        # Rerouting = 100
-        # Normal    = 10
-        # =====================================================
-
-        for datapath in list(
-            self.datapaths.values()
-        ):
-
-            parser = (
-                datapath.ofproto_parser
-            )
-
-            # -------------------------------------------------
-            # IPv4 source
-            # -------------------------------------------------
-
-            match_src = parser.OFPMatch(
-
-                eth_type=0x0800,
-
-                ipv4_src=host_ip,
-            )
-
-            self.add_flow(
-
-                datapath,
-
-                self.QUARANTINE_PRIORITY,
-
-                match_src,
-
-                [],
-            )
-
-            # -------------------------------------------------
-            # IPv4 destination
-            # -------------------------------------------------
-
-            match_dst = parser.OFPMatch(
-
-                eth_type=0x0800,
-
-                ipv4_dst=host_ip,
-            )
-
-            self.add_flow(
-
-                datapath,
-
-                self.QUARANTINE_PRIORITY,
-
-                match_dst,
-
-                [],
-            )
-
-            # -------------------------------------------------
-            # ARP source
-            # -------------------------------------------------
-
-            match_arp_src = parser.OFPMatch(
-
-                eth_type=0x0806,
-
-                arp_spa=host_ip,
-            )
-
-            self.add_flow(
-
-                datapath,
-
-                self.QUARANTINE_PRIORITY,
-
-                match_arp_src,
-
-                [],
-            )
-
-            # -------------------------------------------------
-            # ARP destination
-            # -------------------------------------------------
-
-            match_arp_dst = parser.OFPMatch(
-
-                eth_type=0x0806,
-
-                arp_tpa=host_ip,
-            )
-
-            self.add_flow(
-
-                datapath,
-
-                self.QUARANTINE_PRIORITY,
-
-                match_arp_dst,
-
-                [],
-            )
-
-        return True
-
-    def restore_host(
-        self,
-        host_ip,
-    ):
-
-        if (
-            host_ip
-            not in self.quarantined_hosts
-        ):
-
-            return False
-
-        self.logger.info(
-
-            ">>> [OPENFLOW] "
-            "RESTORING HOST IP: %s <<<",
-
-            host_ip,
-        )
-
-        # =====================================================
-        # DELETE QUARANTINE RULES
-        # =====================================================
-
-        for datapath in list(
-            self.datapaths.values()
-        ):
-
-            parser = (
-                datapath.ofproto_parser
-            )
-
-            matches = (
-
-                parser.OFPMatch(
-
-                    eth_type=0x0800,
-
-                    ipv4_src=host_ip,
-                ),
-
-                parser.OFPMatch(
-
-                    eth_type=0x0800,
-
-                    ipv4_dst=host_ip,
-                ),
-
-                parser.OFPMatch(
-
-                    eth_type=0x0806,
-
-                    arp_spa=host_ip,
-                ),
-
-                parser.OFPMatch(
-
-                    eth_type=0x0806,
-
-                    arp_tpa=host_ip,
-                ),
-            )
-
-            for match in matches:
-
-                self.delete_flow(
-
-                    datapath,
-
-                    match,
-
-                    self.QUARANTINE_PRIORITY,
-                )
-
-        del self.quarantined_hosts[
-            host_ip
-        ]
-
-        self.restore_candidates.pop(
-            host_ip,
-            None,
-        )
-
-        return True
-
-    # =========================================================
-    # OPTIONAL SAFE RESTORE
-    # =========================================================
-
-    def mark_host_safe(
-        self,
-        host_ip,
-    ):
-
-        if (
-
-            host_ip
-            in self.quarantined_hosts
-
-            and
-
-            host_ip
-            not in self.restore_candidates
-
-        ):
-
-            self.restore_candidates[
-                host_ip
-            ] = time.time()
-
-    def _check_restore_candidates(
-        self,
-    ):
-
-        now = time.time()
-
-        for host_ip in list(
-            self.restore_candidates.keys()
-        ):
-
-            safe_since = (
-                self.restore_candidates[
-                    host_ip
-                ]
-            )
-
-            if (
-                now - safe_since
-                >= self.RESTORE_SAFE_TIME
-            ):
-
-                self.restore_host(
-                    host_ip
-                )
 
     # =========================================================
     # FLOW STATS REPLY
     # =========================================================
 
-    @set_ev_cls(
+    @handler.set_ev_cls(
         ofp_event.EventOFPFlowStatsReply,
-        MAIN_DISPATCHER,
+        MAIN_DISPATCHER
     )
-    def _flow_stats_reply_handler(
+    def flow_stats_reply_handler(
         self,
-        ev,
+        ev
     ):
-
-        body = ev.msg.body
 
         datapath = ev.msg.datapath
 
         dpid = datapath.id
 
-        current_time = time.time()
+        now = time.time()
 
-        active_keys = set()
+        for stat in ev.msg.body:
 
-        for stat in body:
+            if stat.priority == TABLE_MISS_PRIORITY:
+                continue
 
-            # =================================================
-            # Skip:
-            #   0   = table miss
-            #   200 = quarantine
-            # =================================================
+            match = stat.match
 
-            if stat.priority in (
+            src_ip = match.get(
+                "ipv4_src",
+                ""
+            )
 
-                0,
+            dst_ip = match.get(
+                "ipv4_dst",
+                ""
+            )
 
-                self.QUARANTINE_PRIORITY,
+            protocol = match.get(
+                "ip_proto",
+                ""
+            )
 
-            ):
+            src_port = ""
+            dst_port = ""
+
+            if protocol == 6:
+
+                src_port = match.get(
+                    "tcp_src",
+                    ""
+                )
+
+                dst_port = match.get(
+                    "tcp_dst",
+                    ""
+                )
+
+            elif protocol == 17:
+
+                src_port = match.get(
+                    "udp_src",
+                    ""
+                )
+
+                dst_port = match.get(
+                    "udp_dst",
+                    ""
+                )
+
+            if not src_ip and not dst_ip:
 
                 continue
 
-            # =================================================
-            # Only IPv4 flows
-            # =================================================
+            packet_count = stat.packet_count
+            byte_count = stat.byte_count
 
-            if (
-                "ipv4_src"
-                not in stat.match
-            ):
-
-                continue
-
-            # =================================================
-            # Stable flow key
-            # =================================================
+            duration_sec = (
+                stat.duration_sec
+                + (
+                    stat.duration_nsec
+                    / 1_000_000_000.0
+                )
+            )
 
             flow_key = (
-
                 dpid,
-
-                stat.match.get(
-                    "ipv4_src",
-                    "",
-                ),
-
-                stat.match.get(
-                    "ipv4_dst",
-                    "",
-                ),
-
-                stat.match.get(
-                    "ip_proto",
-                    0,
-                ),
-
-                stat.match.get(
-
-                    "tcp_src",
-
-                    stat.match.get(
-                        "udp_src",
-                        0,
-                    ),
-                ),
-
-                stat.match.get(
-
-                    "tcp_dst",
-
-                    stat.match.get(
-                        "udp_dst",
-                        0,
-                    ),
-                ),
-            )
-
-            active_keys.add(
-                flow_key
-            )
-
-            current_packets = (
-                stat.packet_count
-            )
-
-            current_bytes = (
-                stat.byte_count
-            )
-
-            previous = (
-                self.previous_flow_stats.get(
-                    flow_key
-                )
-            )
-
-            # =================================================
-            # First observation = baseline
-            # =================================================
-
-            if previous is None:
-
-                self.previous_flow_stats[
-                    flow_key
-                ] = {
-
-                    "packets":
-                        current_packets,
-
-                    "bytes":
-                        current_bytes,
-
-                    "timestamp":
-                        current_time,
-                }
-
-                self.logger.debug(
-
-                    "FLOW BASELINE | "
-                    "switch=%016x "
-                    "pkts=%s "
-                    "bytes=%s",
-
-                    dpid,
-
-                    current_packets,
-
-                    current_bytes,
-                )
-
-                continue
-
-            # =================================================
-            # Delta time
-            # =================================================
-
-            delta_time = (
-
-                current_time
-                - previous["timestamp"]
-            )
-
-            if delta_time <= 0:
-
-                continue
-
-            # =================================================
-            # Delta counters
-            # =================================================
-
-            delta_packets = max(
-
-                0,
-
-                current_packets
-                - previous["packets"],
-            )
-
-            delta_bytes = max(
-
-                0,
-
-                current_bytes
-                - previous["bytes"],
-            )
-
-            # =================================================
-            # Update previous
-            # =================================================
-
-            self.previous_flow_stats[
-                flow_key
-            ] = {
-
-                "packets":
-                    current_packets,
-
-                "bytes":
-                    current_bytes,
-
-                "timestamp":
-                    current_time,
-            }
-
-            # =================================================
-            # Skip idle flow
-            # =================================================
-
-            if (
-
-                delta_packets == 0
-
-                and
-
-                delta_bytes == 0
-
-            ):
-
-                continue
-
-            self.logger.debug(
-
-                "FLOW DELTA | "
-                "switch=%016x "
-                "d_pkts=%s "
-                "d_bytes=%s "
-                "d_t=%.4f",
-
-                dpid,
-
-                delta_packets,
-
-                delta_bytes,
-
-                delta_time,
-            )
-
-            # =================================================
-            # Match fields
-            # =================================================
-
-            src_ip = stat.match.get(
-                "ipv4_src",
-                "",
-            )
-
-            dst_ip = stat.match.get(
-                "ipv4_dst",
-                "",
-            )
-
-            ip_proto = stat.match.get(
-                "ip_proto",
-                0,
-            )
-
-            src_port = 0
-            dst_port = 0
-
-            tcp_flow = 0
-            udp_flow = 0
-            icmp_flow = 0
-
-            http = 0
-            https = 0
-            dns = 0
-            ssh = 0
-            telnet = 0
-            smtp = 0
-
-            # =================================================
-            # ICMP
-            # =================================================
-
-            if ip_proto == 1:
-
-                icmp_flow = 1
-
-            # =================================================
-            # TCP
-            # =================================================
-
-            if (
-                "tcp_src"
-                in stat.match
-            ):
-
-                src_port = (
-                    stat.match.get(
-                        "tcp_src",
-                        0,
-                    )
-                )
-
-                dst_port = (
-                    stat.match.get(
-                        "tcp_dst",
-                        0,
-                    )
-                )
-
-                tcp_flow = 1
-
-                if (
-
-                    src_port
-                    in (80, 8080)
-
-                    or
-
-                    dst_port
-                    in (80, 8080)
-
-                ):
-
-                    http = 1
-
-                if (
-
-                    src_port == 443
-
-                    or
-
-                    dst_port == 443
-
-                ):
-
-                    https = 1
-
-                if (
-
-                    src_port == 22
-
-                    or
-
-                    dst_port == 22
-
-                ):
-
-                    ssh = 1
-
-                if (
-
-                    src_port == 23
-
-                    or
-
-                    dst_port == 23
-
-                ):
-
-                    telnet = 1
-
-                if (
-
-                    src_port == 25
-
-                    or
-
-                    dst_port == 25
-
-                ):
-
-                    smtp = 1
-
-            # =================================================
-            # UDP
-            # =================================================
-
-            elif (
-                "udp_src"
-                in stat.match
-            ):
-
-                src_port = (
-                    stat.match.get(
-                        "udp_src",
-                        0,
-                    )
-                )
-
-                dst_port = (
-                    stat.match.get(
-                        "udp_dst",
-                        0,
-                    )
-                )
-
-                udp_flow = 1
-
-                if (
-
-                    src_port == 53
-
-                    or
-
-                    dst_port == 53
-
-                ):
-
-                    dns = 1
-
-            # =================================================
-            # Duration
-            # =================================================
-
-            flow_duration = (
-
-                stat.duration_sec
-
-                +
-
-                (
-                    stat.duration_nsec
-                    / 1e9
-                )
-            )
-
-            # =================================================
-            # Rates
-            # =================================================
-
-            packet_rate = (
-
-                delta_packets
-                / delta_time
-            )
-
-            byte_rate = (
-
-                delta_bytes
-                / delta_time
-            )
-
-            avg_packet_size = (
-
-                delta_bytes
-                / delta_packets
-
-                if delta_packets > 0
-
-                else 0
-            )
-
-            # =================================================
-            # Buffer Flow Row
-            # =================================================
-
-            self._buffer_flow_row([
-
-                current_time,
-
-                format(
-                    dpid,
-                    "016x",
-                ),
-
+                stat.priority,
                 src_ip,
                 dst_ip,
-
                 src_port,
                 dst_port,
+                protocol
+            )
 
-                ip_proto,
+            if flow_key not in self.flow_baselines:
 
-                tcp_flow,
-                udp_flow,
-                icmp_flow,
+                self.flow_baselines[
+                    flow_key
+                ] = {
+                    "timestamp": now,
+                    "packet_count": packet_count,
+                    "byte_count": byte_count
+                }
 
-                http,
-                https,
-                dns,
+                self.flow_last_seen[
+                    flow_key
+                ] = now
 
-                ssh,
-                telnet,
-                smtp,
+                continue
 
-                flow_duration,
+            previous = self.flow_baselines[
+                flow_key
+            ]
 
-                current_packets,
-                current_bytes,
+            previous_packets = previous[
+                "packet_count"
+            ]
 
+            previous_bytes = previous[
+                "byte_count"
+            ]
+
+            previous_time = previous[
+                "timestamp"
+            ]
+
+            packet_delta = (
+                packet_count
+                - previous_packets
+            )
+
+            byte_delta = (
+                byte_count
+                - previous_bytes
+            )
+
+            time_delta = (
+                now
+                - previous_time
+            )
+
+            if packet_delta < 0:
+
+                packet_delta = packet_count
+
+            if byte_delta < 0:
+
+                byte_delta = byte_count
+
+            if time_delta > 0:
+
+                packet_rate = (
+                    packet_delta
+                    / time_delta
+                )
+
+                byte_rate = (
+                    byte_delta
+                    / time_delta
+                )
+
+            else:
+
+                packet_rate = 0.0
+                byte_rate = 0.0
+
+            self.flow_baselines[
+                flow_key
+            ] = {
+                "timestamp": now,
+                "packet_count": packet_count,
+                "byte_count": byte_count
+            }
+
+            self.flow_last_seen[
+                flow_key
+            ] = now
+
+            self._write_flow_feature([
+                now,
+                dpid,
+                src_ip,
+                dst_ip,
+                src_port,
+                dst_port,
+                protocol,
+                stat.priority,
+                packet_count,
+                byte_count,
                 packet_rate,
                 byte_rate,
-
-                avg_packet_size,
+                duration_sec
             ])
 
-        # =====================================================
-        # Cleanup stale flows
-        # =====================================================
+    # =========================================================
+    # WRITE PACKET FEATURE
+    # =========================================================
 
-        self._cleanup_stale_flows(
+    def _write_packet_feature(
+        self,
+        row
+    ):
 
-            active_keys,
+        with self.csv_lock:
 
-            current_time,
-        )
+            self.packet_writer.writerow(
+                row
+            )
+
+            self.packet_rows_since_flush += 1
+
+            if (
+                self.packet_rows_since_flush
+                >= CSV_FLUSH_EVERY
+            ):
+
+                self.packet_file.flush()
+
+                self.packet_rows_since_flush = 0
+
+    # =========================================================
+    # WRITE FLOW FEATURE
+    # =========================================================
+
+    def _write_flow_feature(
+        self,
+        row
+    ):
+
+        with self.csv_lock:
+
+            self.flow_writer.writerow(
+                row
+            )
+
+            self.flow_rows_since_flush += 1
+
+            if (
+                self.flow_rows_since_flush
+                >= CSV_FLUSH_EVERY
+            ):
+
+                self.flow_file.flush()
+
+                self.flow_rows_since_flush = 0
 
     # =========================================================
     # CLEANUP STALE FLOWS
     # =========================================================
 
     def _cleanup_stale_flows(
-        self,
-        active_keys,
-        now,
+        self
     ):
 
-        stale = [
+        now = time.time()
 
-            k
+        stale_keys = []
 
-            for k, v
-            in self.previous_flow_stats.items()
+        for flow_key, last_seen in list(
+            self.flow_last_seen.items()
+        ):
 
             if (
+                now - last_seen
+                > STALE_FLOW_MAX_AGE
+            ):
 
-                k not in active_keys
-
-                and
-
-                (
-                    now - v["timestamp"]
+                stale_keys.append(
+                    flow_key
                 )
-                > self.STALE_FLOW_MAX_AGE
+
+        for flow_key in stale_keys:
+
+            self.flow_last_seen.pop(
+                flow_key,
+                None
             )
-        ]
 
-        for k in stale:
-
-            del self.previous_flow_stats[
-                k
-            ]
-
-        if stale:
-
-            self.logger.debug(
-
-                "Cleaned up %d "
-                "stale flow entries",
-
-                len(stale),
+            self.flow_baselines.pop(
+                flow_key,
+                None
             )
 
     # =========================================================
-    # GRACEFUL SHUTDOWN
+    # INSTALL DROP RULE
+    # =========================================================
+
+    def _install_drop_rule(
+        self,
+        datapath,
+        host_ip
+    ):
+
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(
+            eth_type=0x0800,
+            ipv4_src=host_ip
+        )
+
+        actions = []
+
+        self._add_flow(
+            datapath,
+            QUARANTINE_PRIORITY,
+            match,
+            actions
+        )
+
+        if host_ip not in (
+            self.quarantine_rules_installed
+        ):
+
+            self.quarantine_rules_installed[
+                host_ip
+            ] = set()
+
+        self.quarantine_rules_installed[
+            host_ip
+        ].add(
+            datapath.id
+        )
+
+        self.logger.warning(
+            "QUARANTINE rule installed on s%d for %s",
+            datapath.id,
+            host_ip
+        )
+
+    # =========================================================
+    # QUARANTINE HOST
+    # =========================================================
+
+    def quarantine_host(
+        self,
+        host_ip,
+        request_id=None,
+        reason=None
+    ):
+
+        self.quarantined_hosts.add(
+            host_ip
+        )
+
+        self.trust_state[
+            host_ip
+        ] = QUARANTINED
+
+        for datapath in list(
+            self.datapaths.values()
+        ):
+
+            self._install_drop_rule(
+                datapath,
+                host_ip
+            )
+
+        self._record_action(
+            request_id=request_id,
+            host_ip=host_ip,
+            action=QUARANTINE,
+            status="executed",
+            reason=reason
+        )
+
+        self.logger.warning(
+            "Host quarantined: %s",
+            host_ip
+        )
+
+        return True
+
+    # =========================================================
+    # DELETE QUARANTINE RULES
+    # =========================================================
+
+    def _delete_quarantine_rules(
+        self,
+        datapath,
+        host_ip
+    ):
+
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+
+        match = parser.OFPMatch(
+            eth_type=0x0800,
+            ipv4_src=host_ip
+        )
+
+        mod = parser.OFPFlowMod(
+            datapath=datapath,
+            command=ofproto.OFPFC_DELETE,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            priority=QUARANTINE_PRIORITY,
+            match=match
+        )
+
+        datapath.send_msg(
+            mod
+        )
+
+    # =========================================================
+    # RESTORE HOST
+    # =========================================================
+
+    def restore_host(
+        self,
+        host_ip,
+        request_id=None,
+        reason=None
+    ):
+
+        self.quarantined_hosts.discard(
+            host_ip
+        )
+
+        self.trust_state[
+            host_ip
+        ] = TRUSTED
+
+        for datapath in list(
+            self.datapaths.values()
+        ):
+
+            self._delete_quarantine_rules(
+                datapath,
+                host_ip
+            )
+
+        self.quarantine_rules_installed.pop(
+            host_ip,
+            None
+        )
+
+        self._record_action(
+            request_id=request_id,
+            host_ip=host_ip,
+            action=RESTORE,
+            status="executed",
+            reason=reason
+        )
+
+        self.logger.info(
+            "Host restored: %s",
+            host_ip
+        )
+
+        return True
+
+    # =========================================================
+    # UPDATE TRUST STATE
+    # =========================================================
+
+    def update_trust_state(
+        self,
+        host_ip,
+        state,
+        trust_score=None
+    ):
+
+        valid_states = {
+            TRUSTED,
+            UNTRUSTED,
+            QUARANTINED
+        }
+
+        if state not in valid_states:
+
+            return {
+                "success": False,
+                "message": (
+                    "Invalid trust state: %s"
+                    % state
+                )
+            }
+
+        self.trust_state[
+            host_ip
+        ] = state
+
+        if trust_score is not None:
+
+            self.trust_scores[
+                host_ip
+            ] = trust_score
+
+        if state == QUARANTINED:
+
+            self.quarantined_hosts.add(
+                host_ip
+            )
+
+        else:
+
+            self.quarantined_hosts.discard(
+                host_ip
+            )
+
+        return {
+            "success": True,
+            "host_ip": host_ip,
+            "trust_state": state,
+            "trust_score": trust_score
+        }
+
+    # =========================================================
+    # EXECUTE SECURITY ACTION
+    # =========================================================
+
+    def execute_security_action(
+        self,
+        host_ip,
+        action,
+        request_id=None,
+        trust_state=None,
+        trust_score=None,
+        reason=None
+    ):
+
+        action = str(
+            action
+        ).upper()
+
+        valid_actions = {
+            KEEP_UNTRUSTED,
+            ALLOW,
+            QUARANTINE,
+            REROUTE,
+            RESTORE
+        }
+
+        if action not in valid_actions:
+
+            return {
+                "success": False,
+                "status": "rejected",
+                "message": (
+                    "Unsupported action: %s"
+                    % action
+                )
+            }
+
+        if trust_score is not None:
+
+            self.trust_scores[
+                host_ip
+            ] = trust_score
+
+        if trust_state is not None:
+
+            state_result = self.update_trust_state(
+                host_ip,
+                trust_state,
+                trust_score
+            )
+
+            if not state_result[
+                "success"
+            ]:
+
+                return state_result
+
+        if action == KEEP_UNTRUSTED:
+
+            if host_ip not in self.trust_state:
+
+                self.trust_state[
+                    host_ip
+                ] = UNTRUSTED
+
+            self._record_action(
+                request_id=request_id,
+                host_ip=host_ip,
+                action=action,
+                status="executed",
+                reason=reason
+            )
+
+            return {
+                "success": True,
+                "status": "executed",
+                "action": action,
+                "host_ip": host_ip
+            }
+
+        if action == ALLOW:
+
+            self.trust_state[
+                host_ip
+            ] = TRUSTED
+
+            self._record_action(
+                request_id=request_id,
+                host_ip=host_ip,
+                action=action,
+                status="executed",
+                reason=reason
+            )
+
+            return {
+                "success": True,
+                "status": "executed",
+                "action": action,
+                "host_ip": host_ip
+            }
+
+        if action == QUARANTINE:
+
+            success = self.quarantine_host(
+                host_ip=host_ip,
+                request_id=request_id,
+                reason=reason
+            )
+
+            return {
+                "success": success,
+                "status": (
+                    "executed"
+                    if success
+                    else "failed"
+                ),
+                "action": action,
+                "host_ip": host_ip
+            }
+
+        if action == RESTORE:
+
+            success = self.restore_host(
+                host_ip=host_ip,
+                request_id=request_id,
+                reason=reason
+            )
+
+            return {
+                "success": success,
+                "status": (
+                    "executed"
+                    if success
+                    else "failed"
+                ),
+                "action": action,
+                "host_ip": host_ip
+            }
+
+        if action == REROUTE:
+
+            success = self.reroute_host(
+                host_ip=host_ip,
+                request_id=request_id,
+                reason=reason
+            )
+
+            status = (
+                "requested"
+                if success
+                else "failed"
+            )
+
+            self._record_action(
+                request_id=request_id,
+                host_ip=host_ip,
+                action=action,
+                status=status,
+                reason=reason
+            )
+
+            return {
+                "success": success,
+                "status": status,
+                "action": action,
+                "host_ip": host_ip,
+                "request_id": request_id
+            }
+
+        return {
+            "success": False,
+            "status": "failed",
+            "message": "Unhandled action"
+        }
+
+    # =========================================================
+    # REROUTE REQUEST
+    # =========================================================
+
+    def reroute_host(
+        self,
+        host_ip,
+        request_id=None,
+        reason=None
+    ):
+
+        self.logger.info(
+            "REROUTE request received: "
+            "host=%s request_id=%s reason=%s",
+            host_ip,
+            request_id,
+            reason
+        )
+
+        try:
+
+            reroute_event = EventRerouteHost(
+                host_ip=host_ip,
+                request_id=request_id
+            )
+
+            self.send_event_to_observers(
+                reroute_event
+            )
+
+            self.logger.info(
+                "REROUTE request delegated to TopologyMonitor: "
+                "host=%s request_id=%s",
+                host_ip,
+                request_id
+            )
+
+            return True
+
+        except Exception as e:
+
+            self.logger.exception(
+                "Failed to delegate REROUTE request: %s",
+                e
+            )
+
+            return False
+
+    # =========================================================
+    # RECORD ACTION
+    # =========================================================
+
+    def _record_action(
+        self,
+        request_id,
+        host_ip,
+        action,
+        status,
+        reason=None
+    ):
+
+        if request_id is None:
+
+            request_id = (
+                "AUTO-%d"
+                % int(time.time() * 1000)
+            )
+
+        self.action_history[
+            request_id
+        ] = {
+            "request_id": request_id,
+            "host_ip": host_ip,
+            "action": action,
+            "status": status,
+            "reason": reason,
+            "timestamp": time.time()
+        }
+
+    # =========================================================
+    # PUBLIC HELPERS
+    # =========================================================
+
+    def get_switches(self):
+
+        return list(
+            self.datapaths.keys()
+        )
+
+    def get_hosts(self):
+
+        return self.hosts.copy()
+
+    def get_action(
+        self,
+        request_id
+    ):
+
+        return self.action_history.get(
+            request_id
+        )
+
+    # =========================================================
+    # CLOSE
     # =========================================================
 
     def close(self):
 
         try:
 
-            self._flush_packet_buffer()
+            self.packet_file.flush()
+            self.flow_file.flush()
 
-            self._flush_flow_buffer()
+        except Exception:
 
-        except Exception as e:
+            pass
 
-            self.logger.error(
+        try:
 
-                "Error flushing buffers "
-                "on close: %s",
+            self.packet_file.close()
+            self.flow_file.close()
 
-                e,
-            )
+        except Exception:
 
-        if hasattr(
-            self,
-            "monitor_thread",
-        ):
+            pass
 
-            self.monitor_thread.kill()
+        self.logger.info(
+            "TrafficMonitorMerged closed"
+        )
 
         super(
-            TrafficMonitor,
-            self,
+            TrafficMonitorMerged,
+            self
         ).close()
-
-
-# =============================================================
-# REST API CONTROLLER
-# =============================================================
-
-class RestIsolationController(
-    ControllerBase
-):
-
-    def __init__(
-        self,
-        req,
-        link,
-        data,
-        **config,
-    ):
-
-        super(
-            RestIsolationController,
-            self,
-        ).__init__(
-            req,
-            link,
-            data,
-            **config,
-        )
-
-        self.app = data[
-            "traffic_monitor_api_app"
-        ]
-
-    # =========================================================
-    # POST /quarantine/{ip}
-    # =========================================================
-
-    @route(
-        "quarantine",
-        "/quarantine/{ip}",
-        methods=["POST"],
-    )
-    def quarantine(
-        self,
-        req,
-        **kwargs,
-    ):
-
-        host_ip = kwargs.get(
-            "ip"
-        )
-
-        if not host_ip:
-
-            return Response(
-
-                content_type=(
-                    "application/json"
-                ),
-
-                charset="utf-8",
-
-                body=json.dumps({
-
-                    "status":
-                        "error",
-
-                    "message":
-                        "IP address is required",
-                }),
-            )
-
-        try:
-
-            result = (
-                self.app.quarantine_host(
-                    host_ip
-                )
-            )
-
-            if result:
-
-                body = {
-
-                    "status":
-                        "success",
-
-                    "action":
-                        "quarantine",
-
-                    "ip":
-                        host_ip,
-
-                    "message":
-                        "Host quarantined successfully",
-                }
-
-            else:
-
-                body = {
-
-                    "status":
-                        "info",
-
-                    "action":
-                        "quarantine",
-
-                    "ip":
-                        host_ip,
-
-                    "message":
-                        "Host is already quarantined "
-                        "or invalid IP",
-                }
-
-            return Response(
-
-                content_type=(
-                    "application/json"
-                ),
-
-                charset="utf-8",
-
-                body=json.dumps(
-                    body
-                ),
-            )
-
-        except Exception as e:
-
-            self.app.logger.exception(
-                "QUARANTINE API ERROR"
-            )
-
-            return Response(
-
-                status=500,
-
-                content_type=(
-                    "application/json"
-                ),
-
-                charset="utf-8",
-
-                body=json.dumps({
-
-                    "status":
-                        "error",
-
-                    "message":
-                        str(e),
-                }),
-            )
-
-    # =========================================================
-    # POST /restore/{ip}
-    # =========================================================
-
-    @route(
-        "restore",
-        "/restore/{ip}",
-        methods=["POST"],
-    )
-    def restore(
-        self,
-        req,
-        **kwargs,
-    ):
-
-        host_ip = kwargs.get(
-            "ip"
-        )
-
-        if not host_ip:
-
-            return Response(
-
-                content_type=(
-                    "application/json"
-                ),
-
-                charset="utf-8",
-
-                body=json.dumps({
-
-                    "status":
-                        "error",
-
-                    "message":
-                        "IP address is required",
-                }),
-            )
-
-        try:
-
-            result = (
-                self.app.restore_host(
-                    host_ip
-                )
-            )
-
-            if result:
-
-                body = {
-
-                    "status":
-                        "success",
-
-                    "action":
-                        "restore",
-
-                    "ip":
-                        host_ip,
-
-                    "message":
-                        "Host restored successfully",
-                }
-
-            else:
-
-                body = {
-
-                    "status":
-                        "info",
-
-                    "action":
-                        "restore",
-
-                    "ip":
-                        host_ip,
-
-                    "message":
-                        "Host is not quarantined",
-                }
-
-            return Response(
-
-                content_type=(
-                    "application/json"
-                ),
-
-                charset="utf-8",
-
-                body=json.dumps(
-                    body
-                ),
-            )
-
-        except Exception as e:
-
-            self.app.logger.exception(
-                "RESTORE API ERROR"
-            )
-
-            return Response(
-
-                status=500,
-
-                content_type=(
-                    "application/json"
-                ),
-
-                charset="utf-8",
-
-                body=json.dumps({
-
-                    "status":
-                        "error",
-
-                    "message":
-                        str(e),
-                }),
-            )

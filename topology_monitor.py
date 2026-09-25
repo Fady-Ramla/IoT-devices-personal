@@ -1,7 +1,36 @@
+# topology_monitor.py
+# =============================================================
+# Ryu Topology Monitor
+#
+# Responsibilities:
+#   - Discover and maintain switch-to-switch topology
+#   - Learn host locations
+#   - Track active host-to-host flows
+#   - Detect physical link failures
+#   - Calculate shortest paths using NetworkX / Dijkstra
+#   - Install dynamic rerouting rules using OpenFlow 1.3
+#
+# Reroute integration:
+#   TrafficMonitorMerged
+#          |
+#          v
+#   EventRerouteHost
+#          |
+#          v
+#   TopologyMonitor
+#
+# TrafficMonitorMerged does NOT calculate topology or Dijkstra.
+# =============================================================
+
 from ryu.base import app_manager
+
+from ryu.controller import event as controller_event
 from ryu.controller import handler
 from ryu.controller import ofp_event
-from ryu.controller.handler import MAIN_DISPATCHER, DEAD_DISPATCHER
+from ryu.controller.handler import (
+    MAIN_DISPATCHER,
+    DEAD_DISPATCHER
+)
 
 from ryu.topology import event
 from ryu.topology.api import get_switch, get_link
@@ -9,74 +38,137 @@ from ryu.topology.api import get_switch, get_link
 from ryu.lib import hub
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
+from ryu.lib.packet import ipv4
+
+from ryu.ofproto import ofproto_v1_3
 
 import networkx as nx
 
 
+# =============================================================
+# CUSTOM REROUTE EVENT
+# =============================================================
+
+class EventRerouteHost(controller_event.EventBase):
+    """
+    Custom event sent by TrafficMonitorMerged to request
+    rerouting of traffic associated with a specific host.
+    """
+
+    def __init__(self, host_ip, request_id=None):
+
+        super(EventRerouteHost, self).__init__()
+
+        self.host_ip = host_ip
+        self.request_id = request_id
+
+
+# =============================================================
+# TOPOLOGY MONITOR
+# =============================================================
+
 class TopologyMonitor(app_manager.RyuApp):
 
-    OFP_VERSIONS = [4]
+    OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
+
         super(TopologyMonitor, self).__init__(*args, **kwargs)
 
-        # ========================================================
-        # TOPOLOGY STATE
-        # ========================================================
+        # -----------------------------------------------------
+        # Expected project topology
+        # -----------------------------------------------------
+
+        self.EXPECTED_SWITCHES = 5
+        self.EXPECTED_PHYSICAL_LINKS = 7
+
+        # -----------------------------------------------------
+        # Topology state
+        # -----------------------------------------------------
 
         self.topology_ready = False
 
-        # Active physical switch-to-switch links.
+        # -----------------------------------------------------
+        # Physical switch-to-switch links.
+        #
+        # Each physical link is stored only once:
+        #
+        #     (1, 2)
+        #     (1, 3)
+        #     (2, 3)
+        #
+        # The reverse direction is NOT stored separately.
+        # -----------------------------------------------------
+
         self.edges = set()
 
-        # ========================================================
-        # SWITCH LINK PORT MAPPING
-        # ========================================================
-
-        # (switch_dpid, port_no) -> ('sX', 'sY')
-        self.port_to_link = {}
-
-        # ('sX', 'sY') -> output port on sX
-        self.link_to_port = {}
-
-        # ========================================================
-        # HOST LEARNING
-        # ========================================================
-
-        # host MAC -> (switch_dpid, host_port)
-        self.host_location = {}
-
-        # ========================================================
-        # DATAPATHS
-        # ========================================================
-
-        # switch DPID -> Ryu datapath object
-        self.datapaths = {}
-
-        # ========================================================
-        # ACTIVE FLOWS
-        # ========================================================
-
-        # Set of learned unicast communication pairs.
+        # -----------------------------------------------------
+        # Port mapping:
+        #
+        #     (dpid, port_no) -> physical edge
         #
         # Example:
-        # (h5_mac, h9_mac)
         #
-        # These flows will be rerouted automatically
-        # when a physical link fails.
+        #     (1, 3) -> (1, 2)
+        # -----------------------------------------------------
+
+        self.port_to_link = {}
+
+        # -----------------------------------------------------
+        # Output port mapping:
+        #
+        #     ("s1", "s2") -> 3
+        #
+        # Means:
+        #
+        #     To go from s1 to s2,
+        #     use port 3 on s1.
+        # -----------------------------------------------------
+
+        self.link_to_port = {}
+
+        # -----------------------------------------------------
+        # Host state
+        # -----------------------------------------------------
+
+        # MAC -> (switch_dpid, host_port)
+        self.host_location = {}
+
+        # IP -> MAC
+        self.ip_to_mac = {}
+
+        # -----------------------------------------------------
+        # Datapaths
+        # -----------------------------------------------------
+
+        # DPID -> datapath
+        self.datapaths = {}
+
+        # -----------------------------------------------------
+        # Active flows
+        # -----------------------------------------------------
+
+        # Set of:
+        #
+        #     (src_mac, dst_mac)
+        #
         self.active_flows = set()
 
-        # ========================================================
-        # TOPOLOGY MONITOR THREAD
-        # ========================================================
+        # -----------------------------------------------------
+        # Background topology initialization
+        # -----------------------------------------------------
 
-        self.monitor_thread = hub.spawn(
+        self.topology_thread = hub.spawn(
             self.initialize_topology
         )
 
-    # ============================================================
-    # DATAPATH STATE
-    # ============================================================
+        self.logger.info(
+            "TopologyMonitor initialized"
+        )
+
+    # =========================================================
+    # SWITCH STATE
+    # =========================================================
 
     @handler.set_ev_cls(
         ofp_event.EventOFPStateChange,
@@ -88,46 +180,218 @@ class TopologyMonitor(app_manager.RyuApp):
 
         if ev.state == MAIN_DISPATCHER:
 
-            self.datapaths[datapath.id] = datapath
+            if datapath.id not in self.datapaths:
 
-            print(
-                "Datapath connected:",
-                "s" + str(datapath.id)
-            )
+                self.datapaths[datapath.id] = datapath
+
+                self.logger.info(
+                    "Switch connected: s%d",
+                    datapath.id
+                )
 
         elif ev.state == DEAD_DISPATCHER:
 
-            self.datapaths.pop(
-                datapath.id,
-                None
-            )
+            if datapath.id in self.datapaths:
 
-            print(
-                "Datapath disconnected:",
-                "s" + str(datapath.id)
-            )
+                del self.datapaths[datapath.id]
 
-    # ============================================================
-    # SWITCH DISCOVERY
-    # ============================================================
+                self.logger.info(
+                    "Switch disconnected: s%d",
+                    datapath.id
+                )
+
+                self.topology_ready = False
+
+    # =========================================================
+    # TOPOLOGY EVENTS
+    # =========================================================
 
     @handler.set_ev_cls(event.EventSwitchEnter)
     def switch_enter(self, ev):
 
-        print("Switch detected")
+        self.logger.info(
+            "Switch entered topology"
+        )
 
-    # ============================================================
-    # LINK DISCOVERY
-    # ============================================================
+    # ---------------------------------------------------------
+    # LINK ADD
+    # ---------------------------------------------------------
 
     @handler.set_ev_cls(event.EventLinkAdd)
     def link_add(self, ev):
 
-        print("Link detected")
+        try:
 
-    # ============================================================
-    # PACKET-IN / HOST LEARNING
-    # ============================================================
+            link = ev.link
+
+            src = link.src
+            dst = link.dst
+
+            edge = tuple(
+                sorted(
+                    (
+                        src.dpid,
+                        dst.dpid
+                    )
+                )
+            )
+
+            self.logger.info(
+                "TOPOLOGY LINK ADD: s%d:%d -> s%d:%d",
+                src.dpid,
+                src.port_no,
+                dst.dpid,
+                dst.port_no
+            )
+
+            # -------------------------------------------------
+            # Add the new physical edge.
+            #
+            # A set prevents duplicate reverse-direction
+            # entries.
+            # -------------------------------------------------
+
+            self.edges.add(
+                edge
+            )
+
+            # -------------------------------------------------
+            # Update port mappings immediately.
+            # -------------------------------------------------
+
+            self.port_to_link[
+                (
+                    src.dpid,
+                    src.port_no
+                )
+            ] = edge
+
+            self.port_to_link[
+                (
+                    dst.dpid,
+                    dst.port_no
+                )
+            ] = edge
+
+            src_name = "s%d" % src.dpid
+            dst_name = "s%d" % dst.dpid
+
+            self.link_to_port[
+                (
+                    src_name,
+                    dst_name
+                )
+            ] = src.port_no
+
+            self.link_to_port[
+                (
+                    dst_name,
+                    src_name
+                )
+            ] = dst.port_no
+
+            # -------------------------------------------------
+            # Check whether the complete project topology
+            # is now available.
+            # -------------------------------------------------
+
+            if (
+                len(self.datapaths) >= self.EXPECTED_SWITCHES
+                and len(self.edges) >= self.EXPECTED_PHYSICAL_LINKS
+            ):
+
+                self.topology_ready = True
+
+                self.logger.info(
+                    "Topology is ready after link addition: "
+                    "%d switches, %d physical links",
+                    len(self.datapaths),
+                    len(self.edges)
+                )
+
+        except Exception as exc:
+
+            self.logger.exception(
+                "Failed to process topology link addition: %s",
+                exc
+            )
+
+    # ---------------------------------------------------------
+    # SWITCH LEAVE
+    # ---------------------------------------------------------
+
+    @handler.set_ev_cls(event.EventSwitchLeave)
+    def switch_leave(self, ev):
+
+        self.logger.warning(
+            "Switch left topology"
+        )
+
+        self.topology_ready = False
+
+    # ---------------------------------------------------------
+    # LINK DELETE
+    # ---------------------------------------------------------
+
+    @handler.set_ev_cls(event.EventLinkDelete)
+    def link_delete(self, ev):
+
+        """
+        Handle Ryu topology link-delete events directly.
+
+        EventLinkDelete is the primary topology failure path.
+
+        The failed physical edge is removed from:
+            - self.edges
+            - self.port_to_link
+            - self.link_to_port
+
+        Then active flows are rerouted.
+        """
+
+        try:
+
+            link = ev.link
+
+            src = link.src
+            dst = link.dst
+
+            failed_edge = tuple(
+                sorted(
+                    (
+                        src.dpid,
+                        dst.dpid
+                    )
+                )
+            )
+
+            self.logger.warning(
+                "TOPOLOGY LINK DELETE: s%d:%d -> s%d:%d",
+                src.dpid,
+                src.port_no,
+                dst.dpid,
+                dst.port_no
+            )
+
+            self.logger.warning(
+                "Mapped failed physical edge: %s",
+                failed_edge
+            )
+
+            self.handle_link_failure(
+                failed_edge
+            )
+
+        except Exception as exc:
+
+            self.logger.exception(
+                "Failed to process topology link deletion: %s",
+                exc
+            )
+
+    # =========================================================
+    # PACKET IN
+    # =========================================================
 
     @handler.set_ev_cls(
         ofp_event.EventOFPPacketIn,
@@ -138,25 +402,18 @@ class TopologyMonitor(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
 
-        switch_dpid = datapath.id
+        dpid = datapath.id
 
-        in_port = msg.match.get('in_port')
+        in_port = msg.match.get(
+            "in_port"
+        )
 
         if in_port is None:
             return
 
-        # --------------------------------------------------------
-        # Do not learn switch-to-switch traffic as a host.
-        # --------------------------------------------------------
-
-        if (switch_dpid, in_port) in self.port_to_link:
-            return
-
-        # --------------------------------------------------------
-        # Parse Ethernet frame.
-        # --------------------------------------------------------
-
-        pkt = packet.Packet(msg.data)
+        pkt = packet.Packet(
+            msg.data
+        )
 
         eth = pkt.get_protocol(
             ethernet.ethernet
@@ -165,494 +422,192 @@ class TopologyMonitor(app_manager.RyuApp):
         if eth is None:
             return
 
-        # --------------------------------------------------------
-        # Ignore LLDP.
-        # --------------------------------------------------------
+        src_mac = eth.src
+        dst_mac = eth.dst
+
+        # -----------------------------------------------------
+        # Ignore LLDP
+        # -----------------------------------------------------
 
         if eth.ethertype == 0x88cc:
             return
 
-        src_mac = eth.src
-        dst_mac = eth.dst
+        # -----------------------------------------------------
+        # Ignore broadcast / multicast source
+        # -----------------------------------------------------
 
-        # --------------------------------------------------------
-        # Ignore multicast/broadcast source MACs.
-        # --------------------------------------------------------
-
-        first_octet = int(
-            src_mac.split(':')[0],
-            16
-        )
-
-        if first_octet & 1:
+        if src_mac.startswith(
+            "01:00:00"
+        ):
             return
 
-        # --------------------------------------------------------
-        # Learn source host location.
-        # --------------------------------------------------------
+        if src_mac.lower() == (
+            "ff:ff:ff:ff:ff:ff"
+        ):
+            return
 
-        current_location = (
-            switch_dpid,
+        # -----------------------------------------------------
+        # Check whether packet arrived from switch link.
+        #
+        # If this is a known inter-switch port, do not learn
+        # the source as a host.
+        # -----------------------------------------------------
+
+        if (
+            dpid,
+            in_port
+        ) in self.port_to_link:
+
+            return
+
+        # -----------------------------------------------------
+        # Learn host MAC location
+        # -----------------------------------------------------
+
+        self.host_location[
+            src_mac
+        ] = (
+            dpid,
             in_port
         )
 
-        previous_location = self.host_location.get(
-            src_mac
+        # -----------------------------------------------------
+        # Learn IPv4 -> MAC
+        # -----------------------------------------------------
+
+        ip_pkt = pkt.get_protocol(
+            ipv4.ipv4
         )
 
-        if previous_location != current_location:
+        if ip_pkt is not None:
 
-            self.host_location[src_mac] = current_location
+            self.ip_to_mac[
+                ip_pkt.src
+            ] = src_mac
 
-            print(
-                "\n========== HOST LEARNING =========="
+        # -----------------------------------------------------
+        # Track known-unicast flows
+        # -----------------------------------------------------
+
+        if dst_mac in self.host_location:
+
+            self.active_flows.add(
+                (
+                    src_mac,
+                    dst_mac
+                )
             )
 
-            print(
-                "Host MAC:",
-                src_mac
-            )
-
-            print(
-                "Switch:",
-                "s" + str(switch_dpid)
-            )
-
-            print(
-                "Port:",
-                in_port
-            )
-
-            print(
-                "Location:",
-                "s" + str(switch_dpid),
-                "port",
-                in_port
-            )
-
-        # --------------------------------------------------------
-        # Only process known unicast destinations.
-        # --------------------------------------------------------
-
-        if dst_mac == "ff:ff:ff:ff:ff:ff":
-            return
-
-        dst_location = self.host_location.get(
-            dst_mac
-        )
-
-        if dst_location is None:
-            return
-
-        # --------------------------------------------------------
-        # Register active flow.
-        #
-        # IMPORTANT:
-        # Do NOT install dynamic OpenFlow rules here.
-        #
-        # Normal forwarding is handled by simple_switch_13.
-        # Custom priority-100 rules are installed ONLY after
-        # a real link failure.
-        # --------------------------------------------------------
-
-        flow = (
-            src_mac,
-            dst_mac
-        )
-
-        self.active_flows.add(flow)
-        
-        print(
-            "\n========== ACTIVE FLOW REGISTERED =========="
-        )
-        
-        print(
-            "Flow:",
-            src_mac,
-            "->",
-            dst_mac
-        )
-        
-        print(
-            "Total active flows:",
-            len(self.active_flows)
-        )
-
-    # ============================================================
-    # REAL LINK FAILURE DETECTION
-    # ============================================================
+    # =========================================================
+    # CUSTOM REROUTE EVENT
+    # =========================================================
 
     @handler.set_ev_cls(
-        ofp_event.EventOFPPortStatus,
-        MAIN_DISPATCHER
+        EventRerouteHost
     )
-    def port_status_change(self, ev):
+    def handle_reroute_request(self, ev):
+
+        self.logger.info(
+            "Reroute request received: host=%s request_id=%s",
+            ev.host_ip,
+            ev.request_id
+        )
+
+        result = self.reroute_host(
+            ev.host_ip
+        )
+
+        if result:
+
+            self.logger.info(
+                "Reroute completed for host=%s request_id=%s",
+                ev.host_ip,
+                ev.request_id
+            )
+
+        else:
+
+            self.logger.warning(
+                "Reroute could not be completed for host=%s "
+                "request_id=%s",
+                ev.host_ip,
+                ev.request_id
+            )
+
+    # =========================================================
+    # REROUTE HOST
+    # =========================================================
+
+    def reroute_host(self, host_ip):
 
         if not self.topology_ready:
-            return
 
-        msg = ev.msg
-
-        datapath = msg.datapath
-        ofproto = datapath.ofproto
-
-        port_no = msg.desc.port_no
-        state = msg.desc.state
-        reason = msg.reason
-
-        # --------------------------------------------------------
-        # We only care about LINK DOWN.
-        # --------------------------------------------------------
-
-        if not (state & ofproto.OFPPS_LINK_DOWN):
-            return
-
-        key = (
-            datapath.id,
-            port_no
-        )
-
-        # --------------------------------------------------------
-        # Check whether this is a known switch-to-switch port.
-        # --------------------------------------------------------
-
-        if key not in self.port_to_link:
-            return
-
-        # --------------------------------------------------------
-        # Get failed physical link.
-        # --------------------------------------------------------
-
-        src, dst = self.port_to_link[key]
-
-        failed_edge = tuple(
-            sorted((src, dst))
-        )
-
-        # --------------------------------------------------------
-        # Ignore duplicate event from the other side.
-        # --------------------------------------------------------
-
-        if failed_edge not in self.edges:
-            return
-
-        print(
-            "\n========== PORT STATUS =========="
-        )
-
-        print(
-            "Switch:",
-            "s" + str(datapath.id)
-        )
-
-        print(
-            "Port:",
-            port_no
-        )
-
-        print(
-            "Reason:",
-            reason
-        )
-
-        print(
-            "State:",
-            state
-        )
-
-        print(
-            "\n!!! REAL LINK DOWN DETECTED !!!"
-        )
-
-        print(
-            "Failed link:",
-            src,
-            "<->",
-            dst
-        )
-
-        self.handle_link_failure(
-            src,
-            dst
-        )
-
-    # ============================================================
-    # INITIAL TOPOLOGY DISCOVERY
-    # ============================================================
-
-    def initialize_topology(self):
-
-        print(
-            "\nWaiting for initial topology discovery..."
-        )
-
-        while True:
-
-            switches = get_switch(
-                self,
-                None
+            self.logger.warning(
+                "Cannot reroute %s: topology is not ready",
+                host_ip
             )
 
-            links = get_link(
-                self,
-                None
+            return False
+
+        # -----------------------------------------------------
+        # Resolve host IP -> MAC
+        # -----------------------------------------------------
+
+        host_mac = self.ip_to_mac.get(
+            host_ip
+        )
+
+        if host_mac is None:
+
+            self.logger.warning(
+                "Cannot reroute %s: MAC address unknown",
+                host_ip
             )
 
-            discovered_edges = set()
+            return False
 
-            # ----------------------------------------------------
-            # Ryu reports directional links.
-            # Convert them to unique physical edges.
-            # ----------------------------------------------------
+        # -----------------------------------------------------
+        # Find active flows involving host
+        # -----------------------------------------------------
 
-            for link in links:
+        related_flows = []
 
-                src = "s" + str(
-                    link.src.dpid
-                )
-
-                dst = "s" + str(
-                    link.dst.dpid
-                )
-
-                edge = tuple(
-                    sorted((src, dst))
-                )
-
-                discovered_edges.add(edge)
-
-            print(
-                "Discovered:",
-                len(switches),
-                "switches,",
-                len(links),
-                "Ryu links,",
-                len(discovered_edges),
-                "unique switch links"
-            )
-
-            # ----------------------------------------------------
-            # Expected topology:
-            # 5 switches
-            # 7 physical switch links
-            # ----------------------------------------------------
+        for src_mac, dst_mac in self.active_flows:
 
             if (
-                len(switches) >= 5
-                and
-                len(discovered_edges) >= 7
+                src_mac == host_mac
+                or dst_mac == host_mac
             ):
-                break
 
-            hub.sleep(2)
+                related_flows.append(
+                    (
+                        src_mac,
+                        dst_mac
+                    )
+                )
 
-        # ========================================================
-        # BUILD TOPOLOGY MAPS
-        # ========================================================
+        if not related_flows:
 
-        self.edges = set()
-        self.port_to_link = {}
-        self.link_to_port = {}
-
-        # --------------------------------------------------------
-        # Build mappings from directional Ryu links.
-        # --------------------------------------------------------
-
-        for link in links:
-
-            src_dpid = link.src.dpid
-            dst_dpid = link.dst.dpid
-
-            src = "s" + str(src_dpid)
-            dst = "s" + str(dst_dpid)
-
-            edge = tuple(
-                sorted((src, dst))
+            self.logger.warning(
+                "No active flows found for %s",
+                host_ip
             )
 
-            self.edges.add(edge)
+            return False
 
-            # ----------------------------------------------------
-            # Port -> physical link
-            # ----------------------------------------------------
-
-            self.port_to_link[
-                (src_dpid, link.src.port_no)
-            ] = edge
-
-            self.port_to_link[
-                (dst_dpid, link.dst.port_no)
-            ] = edge
-
-            # ----------------------------------------------------
-            # Directional switch -> switch output port
-            # ----------------------------------------------------
-
-            self.link_to_port[
-                (src, dst)
-            ] = link.src.port_no
-
-            self.link_to_port[
-                (dst, src)
-            ] = link.dst.port_no
-
-        self.topology_ready = True
-
-        # ========================================================
-        # INITIAL NETWORKX GRAPH
-        # ========================================================
-
-        print(
-            "\n========== INITIAL NETWORKX GRAPH =========="
+        self.logger.info(
+            "Found %d active flow(s) for %s",
+            len(related_flows),
+            host_ip
         )
 
-        self.calculate_path(
-            self.edges,
-            "s1",
-            "s5"
-        )
+        # -----------------------------------------------------
+        # Reroute every related flow
+        # -----------------------------------------------------
 
-        # ========================================================
-        # PRINT SWITCH LINK PORTS
-        # ========================================================
+        success = False
 
-        print(
-            "\n========== SWITCH LINK PORTS =========="
-        )
-
-        for (
-            src,
-            dst
-        ), port in sorted(
-            self.link_to_port.items()
-        ):
-
-            print(
-                src,
-                "->",
-                dst,
-                "via port",
-                port
-            )
-
-        print(
-            "\nTopology monitoring is now ACTIVE."
-        )
-
-        print(
-            "Waiting for real link failures..."
-        )
-
-    # ============================================================
-    # HANDLE LINK FAILURE (المعدل - منغير مسح port_to_link)
-    # ============================================================
-
-    def handle_link_failure(
-        self,
-        src,
-        dst
-    ):
-
-        failed_edge = tuple(
-            sorted((src, dst))
-        )
-
-        if failed_edge not in self.edges:
-
-            print(
-                "Link already removed:",
-                src,
-                "<->",
-                dst
-            )
-
-            return
-
-        print(
-            "\n========== LINK FAILURE =========="
-        )
-
-        print(
-            "Removing:",
-            src,
-            "<->",
-            dst
-        )
-
-        # --------------------------------------------------------
-        # Remove failed edge from active graph.
-        # --------------------------------------------------------
-
-        self.edges.remove(
-            failed_edge
-        )
-
-        # --------------------------------------------------------
-        # Remove directional switch-to-switch output mappings.
-        # --------------------------------------------------------
-
-        self.link_to_port.pop(
-            (src, dst),
-            None
-        )
-
-        self.link_to_port.pop(
-            (dst, src),
-            None
-        )
-
-        # --------------------------------------------------------
-        # IMPORTANT:
-        #
-        # We DO NOT remove port_to_link.
-        #
-        # This allows the opposite switch to report the same
-        # physical failure and be ignored cleanly as a duplicate.
-        # --------------------------------------------------------
-
-        # ========================================================
-        # CALCULATE NEW PATHS FOR ACTIVE FLOWS
-        # ========================================================
-
-        self.reroute_active_flows()
-
-    # ============================================================
-    # REROUTE ACTIVE FLOWS
-    # ============================================================
-
-    def reroute_active_flows(self):
-
-        if not self.active_flows:
-
-            print(
-                "\nNo active flows to reroute."
-            )
-
-            return
-
-        print(
-            "\n========== REROUTING ACTIVE FLOWS =========="
-        )
-
-        print(
-            "Active flows:",
-            len(self.active_flows)
-        )
-        
-        # Print active flows for debugging
-        print("\nActive flows list:")
-        for src_mac, dst_mac in self.active_flows:
-            print("  🔹 Flow:", src_mac, "->", dst_mac)
-
-        # --------------------------------------------------------
-        # Make a copy because the set may change later.
-        # --------------------------------------------------------
-
-        flows = list(
-            self.active_flows
-        )
-
-        for src_mac, dst_mac in flows:
+        for src_mac, dst_mac in related_flows:
 
             src_location = self.host_location.get(
                 src_mac
@@ -664,16 +619,14 @@ class TopologyMonitor(app_manager.RyuApp):
 
             if (
                 src_location is None
-                or
-                dst_location is None
+                or dst_location is None
             ):
 
-                print(
-                    "❌ Cannot reroute flow:",
+                self.logger.warning(
+                    "Cannot reroute flow %s -> %s: "
+                    "host location unknown",
                     src_mac,
-                    "->",
-                    dst_mac,
-                    "- host location unknown"
+                    dst_mac
                 )
 
                 continue
@@ -681,510 +634,829 @@ class TopologyMonitor(app_manager.RyuApp):
             src_dpid, src_port = src_location
             dst_dpid, dst_port = dst_location
 
-            print(
-                "\n🔄 Rerouting:",
+            self.logger.info(
+                "Rerouting flow %s -> %s",
                 src_mac,
-                "->",
-                dst_mac,
-                "from s" + str(src_dpid),
-                "to s" + str(dst_dpid)
+                dst_mac
             )
 
-            self.install_dynamic_path(
-                src_mac,
-                dst_mac,
+            result = self.install_dynamic_path(
                 src_dpid,
                 src_port,
                 dst_dpid,
-                dst_port
+                dst_port,
+                src_mac,
+                dst_mac
             )
 
-    # ============================================================
-    # BUILD NETWORKX GRAPH
-    # ============================================================
+            if result:
+                success = True
 
-    def build_graph(self, edges):
+        return success
 
-        switches = get_switch(
-            self,
-            None
+    # =========================================================
+    # INITIALIZE TOPOLOGY
+    # =========================================================
+
+    def initialize_topology(self):
+
+        while True:
+
+            try:
+
+                switches = get_switch(
+                    self,
+                    None
+                )
+
+                links = get_link(
+                    self,
+                    None
+                )
+
+                # -------------------------------------------------
+                # Convert Ryu directional link objects into
+                # unique physical switch-to-switch edges.
+                #
+                # Example:
+                #
+                #   s1 -> s2
+                #   s2 -> s1
+                #
+                # become one physical edge:
+                #
+                #   (1, 2)
+                # -------------------------------------------------
+
+                discovered_edges = self.get_unique_edges(
+                    links
+                )
+
+                # -------------------------------------------------
+                # Debug information
+                # -------------------------------------------------
+
+                self.logger.info(
+                    "Topology discovery: switches=%d "
+                    "link_objects=%d unique_physical_links=%d",
+                    len(switches),
+                    len(links),
+                    len(discovered_edges)
+                )
+
+                for link in links:
+
+                    self.logger.info(
+                        "DISCOVERED LINK: s%d:%d -> s%d:%d",
+                        link.src.dpid,
+                        link.src.port_no,
+                        link.dst.dpid,
+                        link.dst.port_no
+                    )
+
+                self.logger.info(
+                    "Unique physical edges: %s",
+                    sorted(discovered_edges)
+                )
+
+                # -------------------------------------------------
+                # Expected project topology:
+                #
+                #   5 switches
+                #   7 physical switch-to-switch links
+                # -------------------------------------------------
+
+                if (
+                    len(switches) >= self.EXPECTED_SWITCHES
+                    and len(discovered_edges)
+                    >= self.EXPECTED_PHYSICAL_LINKS
+                ):
+
+                    self.build_topology_maps(
+                        switches,
+                        links
+                    )
+
+                    self.topology_ready = True
+
+                    self.logger.info(
+                        "Topology ready: %d switches, "
+                        "%d physical links",
+                        len(switches),
+                        len(self.edges)
+                    )
+
+                    break
+
+                else:
+
+                    self.topology_ready = False
+
+                    self.logger.info(
+                        "Waiting for topology... "
+                        "switches=%d "
+                        "link_objects=%d "
+                        "unique_physical_links=%d "
+                        "expected=%d",
+                        len(switches),
+                        len(links),
+                        len(discovered_edges),
+                        self.EXPECTED_PHYSICAL_LINKS
+                    )
+
+            except Exception as exc:
+
+                self.logger.exception(
+                    "Topology initialization error: %s",
+                    exc
+                )
+
+            hub.sleep(2)
+
+    # =========================================================
+    # GET UNIQUE PHYSICAL EDGES
+    # =========================================================
+
+    def get_unique_edges(self, links):
+
+        edges = set()
+
+        for link in links:
+
+            src_dpid = link.src.dpid
+            dst_dpid = link.dst.dpid
+
+            # -------------------------------------------------
+            # Ignore invalid self-links.
+            # -------------------------------------------------
+
+            if src_dpid == dst_dpid:
+                continue
+
+            edge = tuple(
+                sorted(
+                    (
+                        src_dpid,
+                        dst_dpid
+                    )
+                )
+            )
+
+            edges.add(
+                edge
+            )
+
+        return edges
+
+    # =========================================================
+    # BUILD TOPOLOGY MAPS
+    # =========================================================
+
+    def build_topology_maps(
+        self,
+        switches,
+        links
+    ):
+
+        # -----------------------------------------------------
+        # Rebuild everything from the current Ryu topology.
+        #
+        # This prevents stale mappings after topology changes.
+        # -----------------------------------------------------
+
+        self.edges.clear()
+        self.port_to_link.clear()
+        self.link_to_port.clear()
+
+        # -----------------------------------------------------
+        # Build switch edges and port mappings.
+        #
+        # Ryu can provide both directions of a physical link.
+        # Both directions are useful here because each side
+        # has its own OpenFlow output port.
+        # -----------------------------------------------------
+
+        for link in links:
+
+            src = link.src
+            dst = link.dst
+
+            src_dpid = src.dpid
+            dst_dpid = dst.dpid
+
+            # -------------------------------------------------
+            # Ignore invalid self-links.
+            # -------------------------------------------------
+
+            if src_dpid == dst_dpid:
+                continue
+
+            # -------------------------------------------------
+            # Store one physical edge only.
+            # -------------------------------------------------
+
+            edge = tuple(
+                sorted(
+                    (
+                        src_dpid,
+                        dst_dpid
+                    )
+                )
+            )
+
+            self.edges.add(
+                edge
+            )
+
+            # -------------------------------------------------
+            # Port mapping.
+            #
+            # Each direction has a different physical port.
+            # -------------------------------------------------
+
+            self.port_to_link[
+                (
+                    src_dpid,
+                    src.port_no
+                )
+            ] = edge
+
+            self.port_to_link[
+                (
+                    dst_dpid,
+                    dst.port_no
+                )
+            ] = edge
+
+            # -------------------------------------------------
+            # Output port mapping.
+            # -------------------------------------------------
+
+            src_name = "s%d" % src_dpid
+            dst_name = "s%d" % dst_dpid
+
+            self.link_to_port[
+                (
+                    src_name,
+                    dst_name
+                )
+            ] = src.port_no
+
+            self.link_to_port[
+                (
+                    dst_name,
+                    src_name
+                )
+            ] = dst.port_no
+
+        self.logger.info(
+            "Topology maps rebuilt"
         )
 
-        G = nx.Graph()
+        self.logger.info(
+            "Physical edges: %s",
+            sorted(self.edges)
+        )
 
-        # --------------------------------------------------------
-        # Add all discovered switches.
-        # --------------------------------------------------------
+        self.logger.info(
+            "Port mappings: %d",
+            len(self.port_to_link)
+        )
 
-        for switch in switches:
+        self.logger.info(
+            "Link-to-port mappings: %d",
+            len(self.link_to_port)
+        )
 
-            switch_name = "s" + str(
-                switch.dp.id
+    # =========================================================
+    # PORT STATUS / LINK FAILURE
+    # =========================================================
+
+    @handler.set_ev_cls(
+        ofp_event.EventOFPPortStatus,
+        MAIN_DISPATCHER
+    )
+    def port_status_change(self, ev):
+
+        msg = ev.msg
+        datapath = msg.datapath
+
+        desc = msg.desc
+
+        ofp = datapath.ofproto
+
+        # -----------------------------------------------------
+        # Only process link-down events.
+        # -----------------------------------------------------
+
+        if not (
+            desc.state & ofp.OFPPS_LINK_DOWN
+        ):
+
+            return
+
+        failed_dpid = datapath.id
+        failed_port = desc.port_no
+
+        physical_link = self.port_to_link.get(
+            (
+                failed_dpid,
+                failed_port
+            )
+        )
+
+        # -----------------------------------------------------
+        # EventLinkDelete is normally the primary failure
+        # detection path.
+        #
+        # This handler remains a fallback.
+        # -----------------------------------------------------
+
+        if physical_link is None:
+
+            self.logger.warning(
+                "Link-down detected but physical link "
+                "could not be mapped by port status: "
+                "s%d port=%d",
+                failed_dpid,
+                failed_port
             )
 
-            G.add_node(
-                switch_name
+            return
+
+        self.logger.warning(
+            "LINK FAILURE detected by port status: %s",
+            physical_link
+        )
+
+        self.handle_link_failure(
+            physical_link
+        )
+
+    # =========================================================
+    # HANDLE LINK FAILURE
+    # =========================================================
+
+    def handle_link_failure(
+        self,
+        failed_edge
+    ):
+
+        # -----------------------------------------------------
+        # Prevent duplicate processing.
+        # -----------------------------------------------------
+
+        if failed_edge not in self.edges:
+
+            self.logger.info(
+                "Failed edge %s is already removed "
+                "or not present",
+                failed_edge
             )
 
-        # --------------------------------------------------------
-        # Add currently active links.
-        # --------------------------------------------------------
+            return False
 
-        for src, dst in edges:
+        # -----------------------------------------------------
+        # Remove failed edge from topology graph.
+        # -----------------------------------------------------
 
-            G.add_edge(
+        self.edges.remove(
+            failed_edge
+        )
+
+        self.logger.warning(
+            "Removed failed edge from topology graph: %s",
+            failed_edge
+        )
+
+        # -----------------------------------------------------
+        # Remove port mappings belonging to failed link.
+        # -----------------------------------------------------
+
+        ports_to_remove = []
+
+        for key, edge in list(
+            self.port_to_link.items()
+        ):
+
+            if edge == failed_edge:
+
+                ports_to_remove.append(
+                    key
+                )
+
+        for key in ports_to_remove:
+
+            del self.port_to_link[
+                key
+            ]
+
+        # -----------------------------------------------------
+        # Remove logical link mappings.
+        # -----------------------------------------------------
+
+        dpid_a, dpid_b = failed_edge
+
+        names = [
+            (
+                "s%d" % dpid_a,
+                "s%d" % dpid_b
+            ),
+            (
+                "s%d" % dpid_b,
+                "s%d" % dpid_a
+            )
+        ]
+
+        for key in names:
+
+            self.link_to_port.pop(
+                key,
+                None
+            )
+
+        # -----------------------------------------------------
+        # Update topology state.
+        # -----------------------------------------------------
+
+        self.topology_ready = (
+            len(self.datapaths)
+            >= self.EXPECTED_SWITCHES
+            and len(self.edges)
+            >= self.EXPECTED_PHYSICAL_LINKS
+        )
+
+        self.logger.info(
+            "Removed port and logical mappings "
+            "for failed edge %s",
+            failed_edge
+        )
+
+        self.logger.info(
+            "Remaining physical edges: %s",
+            sorted(self.edges)
+        )
+
+        # -----------------------------------------------------
+        # Reroute active flows.
+        # -----------------------------------------------------
+
+        self.reroute_active_flows()
+
+        return True
+
+    # =========================================================
+    # REROUTE ACTIVE FLOWS
+    # =========================================================
+
+    def reroute_active_flows(self):
+
+        self.logger.info(
+            "Rerouting active flows after topology change"
+        )
+
+        rerouted = 0
+
+        for src_mac, dst_mac in list(
+            self.active_flows
+        ):
+
+            src_location = self.host_location.get(
+                src_mac
+            )
+
+            dst_location = self.host_location.get(
+                dst_mac
+            )
+
+            if (
+                src_location is None
+                or dst_location is None
+            ):
+
+                self.logger.warning(
+                    "Skipping flow %s -> %s: "
+                    "host location unknown",
+                    src_mac,
+                    dst_mac
+                )
+
+                continue
+
+            src_dpid, src_port = src_location
+            dst_dpid, dst_port = dst_location
+
+            result = self.install_dynamic_path(
+                src_dpid,
+                src_port,
+                dst_dpid,
+                dst_port,
+                src_mac,
+                dst_mac
+            )
+
+            if result:
+
+                rerouted += 1
+
+        self.logger.info(
+            "Active flow rerouting completed: %d flow(s)",
+            rerouted
+        )
+
+    # =========================================================
+    # BUILD NETWORKX GRAPH
+    # =========================================================
+
+    def build_graph(self):
+
+        graph = nx.Graph()
+
+        # -----------------------------------------------------
+        # Add currently connected switches.
+        # -----------------------------------------------------
+
+        for dpid in self.datapaths:
+
+            graph.add_node(
+                dpid
+            )
+
+        # -----------------------------------------------------
+        # Add currently active physical links.
+        # -----------------------------------------------------
+
+        for src, dst in self.edges:
+
+            graph.add_edge(
                 src,
                 dst,
                 weight=1
             )
 
-        return G
+        return graph
 
-    # ============================================================
-    # NETWORKX / DIJKSTRA
-    # ============================================================
+    # =========================================================
+    # DIJKSTRA
+    # =========================================================
 
     def calculate_path(
         self,
-        edges,
-        source_switch,
-        destination_switch
+        src_dpid,
+        dst_dpid
     ):
 
-        G = self.build_graph(
-            edges
-        )
-
-        print(
-            "\n========== NETWORKX GRAPH =========="
-        )
-
-        print(
-            "Nodes:",
-            list(G.nodes())
-        )
-
-        print(
-            "Edges:",
-            list(G.edges())
-        )
-
-        # --------------------------------------------------------
-        # Check source and destination.
-        # --------------------------------------------------------
-
-        if (
-            source_switch not in G
-            or
-            destination_switch not in G
-        ):
-
-            print(
-                "❌ Source or destination switch not discovered."
-            )
-
-            return None
-
-        # --------------------------------------------------------
-        # Calculate shortest path.
-        # --------------------------------------------------------
+        graph = self.build_graph()
 
         try:
 
             path = nx.shortest_path(
-                G,
-                source=source_switch,
-                target=destination_switch,
+                graph,
+                source=src_dpid,
+                target=dst_dpid,
                 weight="weight"
             )
 
-            print(
-                "✅ Shortest path",
-                source_switch,
-                "->",
-                destination_switch,
-                ":",
-                " -> ".join(path)
+            self.logger.info(
+                "Calculated path: %s",
+                path
             )
 
             return path
 
         except nx.NetworkXNoPath:
 
-            print(
-                "❌ NO ALTERNATIVE PATH:",
-                source_switch,
-                "->",
-                destination_switch
+            self.logger.warning(
+                "No path available: s%d -> s%d",
+                src_dpid,
+                dst_dpid
             )
 
             return None
 
-    # ============================================================
+        except nx.NodeNotFound:
+
+            self.logger.warning(
+                "Unknown switch in path calculation"
+            )
+
+            return None
+
+    # =========================================================
     # INSTALL DYNAMIC PATH
-    # ============================================================
+    # =========================================================
 
     def install_dynamic_path(
         self,
-        src_mac,
-        dst_mac,
         src_dpid,
         src_port,
         dst_dpid,
-        dst_port
+        dst_port,
+        src_mac,
+        dst_mac
     ):
 
-        source_switch = "s" + str(
-            src_dpid
-        )
-
-        destination_switch = "s" + str(
+        path = self.calculate_path(
+            src_dpid,
             dst_dpid
         )
 
-        print(
-            "\n========== INSTALLING DYNAMIC PATH =========="
-        )
-        
-        print(
-            "Source switch:", source_switch
-        )
-        
-        print(
-            "Destination switch:", destination_switch
-        )
-        
-        print(
-            "Active edges:", self.edges
-        )
+        if not path:
 
-        # --------------------------------------------------------
-        # Calculate path dynamically.
-        # --------------------------------------------------------
-
-        path = self.calculate_path(
-            self.edges,
-            source_switch,
-            destination_switch
-        )
-
-        if path is None:
-
-            print(
-                "❌ No path available for:",
-                src_mac,
-                "->",
-                dst_mac
+            self.logger.warning(
+                "Cannot install dynamic path: "
+                "no path available"
             )
 
-            return
+            return False
 
-        print(
-            "✅ Path found:",
-            " -> ".join(path)
+        self.logger.info(
+            "Installing dynamic path %s -> %s: %s",
+            src_mac,
+            dst_mac,
+            path
         )
 
-        print(
-            "\n========== DYNAMIC PATH =========="
-        )
-
-        print(
-            "Source MAC:",
-            src_mac
-        )
-
-        print(
-            "Destination MAC:",
-            dst_mac
-        )
-
-        print(
-            "Path:",
-            " -> ".join(path)
-        )
-
-        # --------------------------------------------------------
-        # Remove old custom rules for this flow.
-        # --------------------------------------------------------
+        # -----------------------------------------------------
+        # Remove previous reroute rules.
+        # -----------------------------------------------------
 
         self.clear_path_flows(
             src_mac,
             dst_mac
         )
 
-        # --------------------------------------------------------
-        # Install forward direction.
-        # --------------------------------------------------------
+        # -----------------------------------------------------
+        # Forward direction.
+        # -----------------------------------------------------
 
-        self.install_one_direction(
-            src_mac,
-            dst_mac,
-            src_dpid,
+        forward_ok = self.install_one_direction(
+            path,
             src_port,
-            dst_dpid,
             dst_port,
-            path
-        )
-
-        # --------------------------------------------------------
-        # Install reverse direction.
-        # --------------------------------------------------------
-
-        reverse_path = list(
-            reversed(path)
-        )
-
-        self.install_one_direction(
-            dst_mac,
             src_mac,
-            dst_dpid,
-            dst_port,
-            src_dpid,
-            src_port,
-            reverse_path
+            dst_mac
         )
 
-    # ============================================================
-    # INSTALL ONE DIRECTION (المعدل - التصحيح النهائي)
-    # ============================================================
+        # -----------------------------------------------------
+        # Reverse direction.
+        # -----------------------------------------------------
+
+        reverse_ok = self.install_one_direction(
+            list(reversed(path)),
+            dst_port,
+            src_port,
+            dst_mac,
+            src_mac
+        )
+
+        return (
+            forward_ok
+            and reverse_ok
+        )
+
+    # =========================================================
+    # INSTALL ONE DIRECTION
+    # =========================================================
 
     def install_one_direction(
         self,
+        path,
+        host_src_port,
+        host_dst_port,
         src_mac,
-        dst_mac,
-        src_dpid,
-        src_host_port,
-        dst_dpid,
-        dst_host_port,
-        path
+        dst_mac
     ):
-
-        print(
-            "\n========== INSTALL ONE DIRECTION =========="
-        )
-        
-        print(
-            "Path:", " -> ".join(path)
-        )
-        
-        print(
-            "Source MAC:", src_mac
-        )
-        
-        print(
-            "Destination MAC:", dst_mac
-        )
-        
-        print(
-            "Source host port:", src_host_port
-        )
-        
-        print(
-            "Destination host port:", dst_host_port
-        )
-
-        # --------------------------------------------------------
-        # Same-switch communication.
-        # --------------------------------------------------------
 
         if len(path) == 1:
 
-            switch_name = path[0]
+            dpid = path[0]
 
-            dpid = int(
-                switch_name[1:]
-            )
-
-            self.install_flow(
+            return self.install_flow(
                 dpid,
-                src_host_port,
-                dst_host_port,
+                host_src_port,
+                host_dst_port,
                 src_mac,
                 dst_mac
             )
 
-            return
+        # -----------------------------------------------------
+        # First switch.
+        # -----------------------------------------------------
 
-        # ========================================================
-        # MULTI-SWITCH PATH
-        # ========================================================
+        first_dpid = path[0]
+        first_next = path[1]
 
-        for index, switch_name in enumerate(path):
+        first_out_port = self.link_to_port.get(
+            (
+                "s%d" % first_dpid,
+                "s%d" % first_next
+            )
+        )
 
-            dpid = int(
-                switch_name[1:]
+        if first_out_port is None:
+
+            self.logger.warning(
+                "No output port for s%d -> s%d",
+                first_dpid,
+                first_next
             )
 
-            print(
-                "\n--- Processing switch:", switch_name,
-                "(index:", index, "of", len(path) - 1, ")"
+            return False
+
+        if not self.install_flow(
+            first_dpid,
+            host_src_port,
+            first_out_port,
+            src_mac,
+            dst_mac
+        ):
+
+            return False
+
+        # -----------------------------------------------------
+        # Middle switches.
+        # -----------------------------------------------------
+
+        for index in range(
+            1,
+            len(path) - 1
+        ):
+
+            current_dpid = path[index]
+
+            previous_dpid = path[index - 1]
+            next_dpid = path[index + 1]
+
+            in_port = self.link_to_port.get(
+                (
+                    "s%d" % current_dpid,
+                    "s%d" % previous_dpid
+                )
             )
 
-            # ----------------------------------------------------
-            # FIRST SWITCH
-            # Host -> next switch
-            # ----------------------------------------------------
-
-            if index == 0:
-
-                next_switch = path[
-                    index + 1
-                ]
-
-                # in_port = port where host is connected
-                in_port = src_host_port
-                
-                # out_port = port to next switch
-                out_port = self.link_to_port.get(
-                    (
-                        switch_name,
-                        next_switch
-                    )
+            out_port = self.link_to_port.get(
+                (
+                    "s%d" % current_dpid,
+                    "s%d" % next_dpid
                 )
-
-                print(
-                    "  First switch:",
-                    "in_port = host port (",
-                    in_port,
-                    "), out_port ->",
-                    next_switch,
-                    "=",
-                    out_port
-                )
-
-            # ----------------------------------------------------
-            # LAST SWITCH
-            # Previous switch -> host
-            # ----------------------------------------------------
-
-            elif index == len(path) - 1:
-
-                previous_switch = path[
-                    index - 1
-                ]
-
-                # FIX: in_port = port from previous switch 
-                # (current switch -> previous switch)
-                in_port = self.link_to_port.get(
-                    (
-                        switch_name,      # current switch
-                        previous_switch   # previous switch
-                    )
-                )
-
-                # out_port = port where host is connected
-                out_port = dst_host_port
-
-                print(
-                    "  Last switch:",
-                    "in_port from",
-                    previous_switch,
-                    "=",
-                    in_port,
-                    ", out_port = host port (",
-                    out_port,
-                    ")"
-                )
-
-            # ----------------------------------------------------
-            # INTERMEDIATE SWITCH
-            # Previous switch -> next switch
-            # ----------------------------------------------------
-
-            else:
-
-                previous_switch = path[
-                    index - 1
-                ]
-
-                next_switch = path[
-                    index + 1
-                ]
-
-                # FIX: in_port = port from previous switch
-                # (current switch -> previous switch)
-                in_port = self.link_to_port.get(
-                    (
-                        switch_name,      # current switch
-                        previous_switch   # previous switch
-                    )
-                )
-
-                # out_port = port to next switch
-                out_port = self.link_to_port.get(
-                    (
-                        switch_name,
-                        next_switch
-                    )
-                )
-
-                print(
-                    "  Intermediate switch:",
-                    "in_port from",
-                    previous_switch,
-                    "=",
-                    in_port,
-                    ", out_port ->",
-                    next_switch,
-                    "=",
-                    out_port
-                )
-
-            # ----------------------------------------------------
-            # Verify port mapping.
-            # ----------------------------------------------------
+            )
 
             if (
                 in_port is None
-                or
-                out_port is None
+                or out_port is None
             ):
 
-                print(
-                    "\n❌ Port mapping missing!"
+                self.logger.warning(
+                    "Missing port mapping at s%d",
+                    current_dpid
                 )
 
-                print(
-                    "Switch:",
-                    switch_name
-                )
+                return False
 
-                print(
-                    "Input port:",
-                    in_port
-                )
-
-                print(
-                    "Output port:",
-                    out_port
-                )
-
-                print(
-                    "Path:", path
-                )
-                
-                print(
-                    "link_to_port mappings:",
-                    self.link_to_port
-                )
-
-                return
-
-            # ----------------------------------------------------
-            # Install OpenFlow rule.
-            # ----------------------------------------------------
-
-            self.install_flow(
-                dpid,
+            if not self.install_flow(
+                current_dpid,
                 in_port,
                 out_port,
                 src_mac,
                 dst_mac
+            ):
+
+                return False
+
+        # -----------------------------------------------------
+        # Last switch.
+        # -----------------------------------------------------
+
+        last_dpid = path[-1]
+        previous_dpid = path[-2]
+
+        last_in_port = self.link_to_port.get(
+            (
+                "s%d" % last_dpid,
+                "s%d" % previous_dpid
+            )
+        )
+
+        if last_in_port is None:
+
+            self.logger.warning(
+                "Missing destination input port"
             )
 
-    # ============================================================
-    # INSTALL OPENFLOW FLOW
-    # ============================================================
+            return False
+
+        return self.install_flow(
+            last_dpid,
+            last_in_port,
+            host_dst_port,
+            src_mac,
+            dst_mac
+        )
+
+    # =========================================================
+    # INSTALL FLOW
+    # =========================================================
 
     def install_flow(
         self,
@@ -1201,23 +1473,15 @@ class TopologyMonitor(app_manager.RyuApp):
 
         if datapath is None:
 
-            print(
-                "❌ Datapath not found:",
-                "s" + str(dpid)
+            self.logger.warning(
+                "Datapath s%d not available",
+                dpid
             )
 
-            return
+            return False
 
-        parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
-
-        # --------------------------------------------------------
-        # Match:
-        #
-        # Input port
-        # Source MAC
-        # Destination MAC
-        # --------------------------------------------------------
+        parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(
             in_port=in_port,
@@ -1238,14 +1502,7 @@ class TopologyMonitor(app_manager.RyuApp):
             )
         ]
 
-        # --------------------------------------------------------
-        # Priority 100:
-        #
-        # simple_switch_13 normally installs priority 1 rules.
-        # Therefore our dynamic path rules take precedence.
-        # --------------------------------------------------------
-
-        flow_mod = parser.OFPFlowMod(
+        mod = parser.OFPFlowMod(
             datapath=datapath,
             priority=100,
             match=match,
@@ -1253,25 +1510,24 @@ class TopologyMonitor(app_manager.RyuApp):
         )
 
         datapath.send_msg(
-            flow_mod
+            mod
         )
 
-        print(
-            "✅ Installed flow:",
-            "s" + str(dpid),
-            "| in:",
-            in_port,
-            "| out:",
-            out_port,
-            "|",
+        self.logger.info(
+            "Installed priority=100 flow on s%d: "
+            "%s -> %s | in=%s out=%s",
+            dpid,
             src_mac,
-            "->",
-            dst_mac
+            dst_mac,
+            in_port,
+            out_port
         )
 
-    # ============================================================
-    # CLEAR OLD CUSTOM FLOW RULES
-    # ============================================================
+        return True
+
+    # =========================================================
+    # CLEAR REROUTE FLOWS
+    # =========================================================
 
     def clear_path_flows(
         self,
@@ -1279,28 +1535,19 @@ class TopologyMonitor(app_manager.RyuApp):
         dst_mac
     ):
 
-        print(
-            "\n========== CLEARING OLD FLOWS =========="
-        )
-        
-        print(
-            "Clearing flows for:",
-            src_mac,
-            "->",
-            dst_mac
-        )
+        for dpid, datapath in list(
+            self.datapaths.items()
+        ):
 
-        for datapath in self.datapaths.values():
-
-            parser = datapath.ofproto_parser
             ofproto = datapath.ofproto
+            parser = datapath.ofproto_parser
 
             match = parser.OFPMatch(
                 eth_src=src_mac,
                 eth_dst=dst_mac
             )
 
-            flow_mod = parser.OFPFlowMod(
+            mod = parser.OFPFlowMod(
                 datapath=datapath,
                 command=ofproto.OFPFC_DELETE,
                 out_port=ofproto.OFPP_ANY,
@@ -1310,81 +1557,25 @@ class TopologyMonitor(app_manager.RyuApp):
             )
 
             datapath.send_msg(
-                flow_mod
+                mod
             )
-            
-        print(
-            "✅ Old flows cleared."
-        )
 
-    # ============================================================
-    # DELETE SPECIFIC FLOW RULE (اختياري)
-    # ============================================================
-    
-    def delete_flow(
-        self,
-        dpid,
-        in_port,
-        src_mac,
-        dst_mac
-    ):
-        """
-        حذف قاعدة محددة من سويتش معين
-        """
-        datapath = self.datapaths.get(dpid)
-        
-        if datapath is None:
-            print("❌ Datapath not found:", "s" + str(dpid))
-            return
-        
-        parser = datapath.ofproto_parser
-        ofproto = datapath.ofproto
-        
-        match = parser.OFPMatch(
-            in_port=in_port,
-            eth_src=src_mac,
-            eth_dst=dst_mac
-        )
-        
-        flow_mod = parser.OFPFlowMod(
-            datapath=datapath,
-            command=ofproto.OFPFC_DELETE,
-            out_port=ofproto.OFPP_ANY,
-            out_group=ofproto.OFPG_ANY,
-            priority=100,
-            match=match
-        )
-        
-        datapath.send_msg(flow_mod)
-        
-        print(
-            "✅ Deleted flow:",
-            "s" + str(dpid),
-            "|",
-            src_mac,
-            "->",
-            dst_mac
-        )
+    # =========================================================
+    # DELETE ALL REROUTE FLOWS
+    # =========================================================
 
-    # ============================================================
-    # CLEAR ALL CUSTOM FLOWS (اختياري)
-    # ============================================================
-    
     def clear_all_flows(self):
-        """
-        حذف كل القواعد المخصصة (priority 100) من كل السويتشات
-        """
-        print("\n========== CLEARING ALL FLOWS ==========")
-        
-        for datapath in self.datapaths.values():
-            
-            parser = datapath.ofproto_parser
+
+        for dpid, datapath in list(
+            self.datapaths.items()
+        ):
+
             ofproto = datapath.ofproto
-            
-            # حذف كل القواعد ذات Priority 100
+            parser = datapath.ofproto_parser
+
             match = parser.OFPMatch()
-            
-            flow_mod = parser.OFPFlowMod(
+
+            mod = parser.OFPFlowMod(
                 datapath=datapath,
                 command=ofproto.OFPFC_DELETE,
                 out_port=ofproto.OFPP_ANY,
@@ -1392,70 +1583,72 @@ class TopologyMonitor(app_manager.RyuApp):
                 priority=100,
                 match=match
             )
-            
-            datapath.send_msg(flow_mod)
-            
-            print(
-                "✅ Cleared flows on:",
-                "s" + str(datapath.id)
+
+            datapath.send_msg(
+                mod
             )
-        
-        # مسح التدفقات المسجلة
-        self.active_flows.clear()
-        print("✅ All active flows cleared.")
 
-    # ============================================================
-    # GET HOST LOCATION (اختياري)
-    # ============================================================
-    
-    def get_host_location(self, mac):
-        """
-        استرجاع موقع host معين
-        """
-        location = self.host_location.get(mac)
-        if location:
-            dpid, port = location
-            return {
-                'switch': 's' + str(dpid),
-                'port': port
-            }
-        return None
+    # =========================================================
+    # HOST LOCATION
+    # =========================================================
 
-    # ============================================================
-    # GET PATH BETWEEN HOSTS (اختياري)
-    # ============================================================
-    
-    def get_path_between_hosts(self, src_mac, dst_mac):
-        """
-        حساب المسار بين مضيفين باستخدام الطوبولوجيا الحالية
-        """
-        src_loc = self.host_location.get(src_mac)
-        dst_loc = self.host_location.get(dst_mac)
-        
-        if not src_loc or not dst_loc:
-            print("❌ Host location not found.")
-            return None
-        
-        src_dpid, _ = src_loc
-        dst_dpid, _ = dst_loc
-        
-        source_switch = "s" + str(src_dpid)
-        destination_switch = "s" + str(dst_dpid)
-        
-        return self.calculate_path(
-            self.edges,
-            source_switch,
-            destination_switch
+    def get_host_location(
+        self,
+        mac
+    ):
+
+        return self.host_location.get(
+            mac
         )
 
-    # ============================================================
-    # CLEANUP ON EXIT (اختياري)
-    # ============================================================
-    
+    # =========================================================
+    # GET PATH BETWEEN HOSTS
+    # =========================================================
+
+    def get_path_between_hosts(
+        self,
+        src_mac,
+        dst_mac
+    ):
+
+        src_location = self.host_location.get(
+            src_mac
+        )
+
+        dst_location = self.host_location.get(
+            dst_mac
+        )
+
+        if (
+            src_location is None
+            or dst_location is None
+        ):
+
+            return None
+
+        src_dpid = src_location[0]
+        dst_dpid = dst_location[0]
+
+        return self.calculate_path(
+            src_dpid,
+            dst_dpid
+        )
+
+    # =========================================================
+    # CLEANUP
+    # =========================================================
+
     def close(self):
-        """
-        تنظيف عند إغلاق التطبيق
-        """
-        print("\n========== CLEANING UP ==========")
-        self.clear_all_flows()
-        print("✅ Application closed.")
+
+        try:
+
+            self.clear_all_flows()
+
+        except Exception:
+
+            pass
+
+        super(
+            TopologyMonitor,
+            self
+        ).close()
