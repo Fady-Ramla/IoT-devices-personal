@@ -154,3 +154,6 @@ ryu_env/
 # Python cache
 *.pyo
 *.pyd
+packet_features.csv
+*.csv
+*.pcap

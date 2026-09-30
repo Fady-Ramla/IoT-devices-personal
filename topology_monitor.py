@@ -1,399 +1,276 @@
-# topology_monitor.py
-# =============================================================
-# Ryu Topology Monitor
+#!/usr/bin/env python3
+
+# ================================================================
+# TrustFlow - Topology Monitor
 #
 # Responsibilities:
-#   - Discover and maintain switch-to-switch topology
-#   - Learn host locations
-#   - Track active host-to-host flows
-#   - Detect physical link failures
-#   - Calculate shortest paths using NetworkX / Dijkstra
-#   - Install dynamic rerouting rules using OpenFlow 1.3
+#   - Discover OpenFlow switches
+#   - Discover physical inter-switch links using LLDP
+#   - Maintain NetworkX topology graph
+#   - Learn directly connected hosts
+#   - Handle ARP
+#   - Perform normal L2 forwarding
+#   - Perform shortest-path forwarding using NetworkX
+#   - Provide loop-free forwarding information
+#   - Support host rerouting events
+#   - Maintain CLFF broadcast tree
+#   - Perform CLFF forwarding for broadcast / unknown traffic
 #
-# Reroute integration:
-#   TrafficMonitorMerged
-#          |
-#          v
-#   EventRerouteHost
-#          |
-#          v
-#   TopologyMonitor
+# OpenFlow:
+#   OpenFlow 1.3
 #
-# TrafficMonitorMerged does NOT calculate topology or Dijkstra.
-# =============================================================
+# Architecture:
+#   TopologyMonitor OWNS ALL FORWARDING.
+#
+#   TopologyMonitor:
+#       - LLDP
+#       - topology discovery
+#       - host learning
+#       - ARP
+#       - known unicast
+#       - unknown unicast
+#       - broadcast / multicast
+#       - CLFF
+#       - Dijkstra
+#       - rerouting
+#
+#   TrafficMonitorMerged:
+#       - packet observation
+#       - CSV
+#       - FlowStats
+#       - trust / security telemetry
+#       - quarantine / restore
+#       - Security actions
+#
+# IMPORTANT:
+#   TrafficMonitorMerged MUST NOT send forwarding PacketOuts.
+#
+# CLFF:
+#   - No OFPP_FLOOD
+#   - No STP dependency
+#   - Physical topology remains unchanged
+#   - One BFS tree exists for every possible root
+#   - A broadcast packet keeps the SAME root while traversing
+#     the topology
+#   - Known unicast remains Dijkstra-based
+# ================================================================
 
-from ryu.base import app_manager
 
-from ryu.controller import event as controller_event
-from ryu.controller import handler
-from ryu.controller import ofp_event
-from ryu.controller.handler import (
-    MAIN_DISPATCHER,
-    DEAD_DISPATCHER
-)
-
-from ryu.topology import event
-from ryu.topology.api import get_switch, get_link
-
-from ryu.lib import hub
-from ryu.lib.packet import packet
-from ryu.lib.packet import ethernet
-from ryu.lib.packet import ipv4
-
-from ryu.ofproto import ofproto_v1_3
+import time
+import heapq
+from collections import defaultdict
 
 import networkx as nx
 
+from ryu.base import app_manager
+from ryu.controller import ofp_event
+from ryu.controller import event as controller_event
+from ryu.controller.handler import (
+    CONFIG_DISPATCHER,
+    MAIN_DISPATCHER,
+    set_ev_cls,
+)
+from ryu.ofproto import ofproto_v1_3
+from ryu.lib import hub
+from ryu.lib.packet import (
+    packet,
+    ethernet,
+    ether_types,
+    arp,
+    ipv4,
+)
 
-# =============================================================
-# CUSTOM REROUTE EVENT
-# =============================================================
+try:
+    from ryu.lib.packet import lldp
+except ImportError:
+    lldp = None
+
+try:
+    from clff_engine import CLFFEngine
+except ImportError:
+    CLFFEngine = None
+
+
+# ================================================================
+# Constants
+# ================================================================
+
+OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+
+LLDP_INTERVAL = 3
+LLDP_STALE_TIMEOUT = 30
+
+LLDP_MAC = "01:80:c2:00:00:0e"
+
+EXPECTED_SWITCHES = 5
+EXPECTED_PHYSICAL_LINKS = 7
+
+NORMAL_PRIORITY = 10
+REROUTE_PRIORITY = 100
+
+HOST_FLOW_IDLE_TIMEOUT = 30
+HOST_FLOW_HARD_TIMEOUT = 0
+
+ETH_TYPE_LLDP = 0x88CC
+ETH_TYPE_ARP = 0x0806
+
+SPECIAL_PORT_NAMES = {
+    "local",
+}
+
+
+# ================================================================
+# CLFF Packet State
+# ================================================================
+
+CLFF_PACKET_STATE_TIMEOUT = 5
+
+
+# ================================================================
+# Custom Ryu Event
+# ================================================================
 
 class EventRerouteHost(controller_event.EventBase):
     """
-    Custom event sent by TrafficMonitorMerged to request
-    rerouting of traffic associated with a specific host.
+    Event used by other Network components to request host rerouting.
     """
 
     def __init__(self, host_ip, request_id=None):
-
         super(EventRerouteHost, self).__init__()
 
         self.host_ip = host_ip
         self.request_id = request_id
 
 
-# =============================================================
-# TOPOLOGY MONITOR
-# =============================================================
+# ================================================================
+# Topology Monitor
+# ================================================================
 
 class TopologyMonitor(app_manager.RyuApp):
 
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
-    def __init__(self, *args, **kwargs):
+    _CONTEXTS = {}
 
+    def __init__(self, *args, **kwargs):
         super(TopologyMonitor, self).__init__(*args, **kwargs)
 
-        # -----------------------------------------------------
-        # Expected project topology
-        # -----------------------------------------------------
-
-        self.EXPECTED_SWITCHES = 5
-        self.EXPECTED_PHYSICAL_LINKS = 7
-
-        # -----------------------------------------------------
-        # Topology state
-        # -----------------------------------------------------
-
-        self.topology_ready = False
-
-        # -----------------------------------------------------
-        # Physical switch-to-switch links.
-        #
-        # Each physical link is stored only once:
-        #
-        #     (1, 2)
-        #     (1, 3)
-        #     (2, 3)
-        #
-        # The reverse direction is NOT stored separately.
-        # -----------------------------------------------------
-
+        self.datapaths = {}
+        self.graph = nx.Graph()
         self.edges = set()
 
-        # -----------------------------------------------------
-        # Port mapping:
-        #
-        #     (dpid, port_no) -> physical edge
-        #
-        # Example:
-        #
-        #     (1, 3) -> (1, 2)
-        # -----------------------------------------------------
-
         self.port_to_link = {}
-
-        # -----------------------------------------------------
-        # Output port mapping:
-        #
-        #     ("s1", "s2") -> 3
-        #
-        # Means:
-        #
-        #     To go from s1 to s2,
-        #     use port 3 on s1.
-        # -----------------------------------------------------
-
         self.link_to_port = {}
 
-        # -----------------------------------------------------
-        # Host state
-        # -----------------------------------------------------
+        self.lldp_links = {}
+        self.port_desc = {}
 
-        # MAC -> (switch_dpid, host_port)
         self.host_location = {}
-
-        # IP -> MAC
         self.ip_to_mac = {}
 
-        # -----------------------------------------------------
-        # Datapaths
-        # -----------------------------------------------------
-
-        # DPID -> datapath
-        self.datapaths = {}
-
-        # -----------------------------------------------------
-        # Active flows
-        # -----------------------------------------------------
-
-        # Set of:
-        #
-        #     (src_mac, dst_mac)
-        #
-        self.active_flows = set()
-
-        # -----------------------------------------------------
-        # Background topology initialization
-        # -----------------------------------------------------
-
-        self.topology_thread = hub.spawn(
-            self.initialize_topology
-        )
-
-        self.logger.info(
-            "TopologyMonitor initialized"
-        )
-
-    # =========================================================
-    # SWITCH STATE
-    # =========================================================
-
-    @handler.set_ev_cls(
-        ofp_event.EventOFPStateChange,
-        [MAIN_DISPATCHER, DEAD_DISPATCHER]
-    )
-    def state_change_handler(self, ev):
-
-        datapath = ev.datapath
-
-        if ev.state == MAIN_DISPATCHER:
-
-            if datapath.id not in self.datapaths:
-
-                self.datapaths[datapath.id] = datapath
-
-                self.logger.info(
-                    "Switch connected: s%d",
-                    datapath.id
-                )
-
-        elif ev.state == DEAD_DISPATCHER:
-
-            if datapath.id in self.datapaths:
-
-                del self.datapaths[datapath.id]
-
-                self.logger.info(
-                    "Switch disconnected: s%d",
-                    datapath.id
-                )
-
-                self.topology_ready = False
-
-    # =========================================================
-    # TOPOLOGY EVENTS
-    # =========================================================
-
-    @handler.set_ev_cls(event.EventSwitchEnter)
-    def switch_enter(self, ev):
-
-        self.logger.info(
-            "Switch entered topology"
-        )
-
-    # ---------------------------------------------------------
-    # LINK ADD
-    # ---------------------------------------------------------
-
-    @handler.set_ev_cls(event.EventLinkAdd)
-    def link_add(self, ev):
-
-        try:
-
-            link = ev.link
-
-            src = link.src
-            dst = link.dst
-
-            edge = tuple(
-                sorted(
-                    (
-                        src.dpid,
-                        dst.dpid
-                    )
-                )
-            )
-
-            self.logger.info(
-                "TOPOLOGY LINK ADD: s%d:%d -> s%d:%d",
-                src.dpid,
-                src.port_no,
-                dst.dpid,
-                dst.port_no
-            )
-
-            # -------------------------------------------------
-            # Add the new physical edge.
-            #
-            # A set prevents duplicate reverse-direction
-            # entries.
-            # -------------------------------------------------
-
-            self.edges.add(
-                edge
-            )
-
-            # -------------------------------------------------
-            # Update port mappings immediately.
-            # -------------------------------------------------
-
-            self.port_to_link[
-                (
-                    src.dpid,
-                    src.port_no
-                )
-            ] = edge
-
-            self.port_to_link[
-                (
-                    dst.dpid,
-                    dst.port_no
-                )
-            ] = edge
-
-            src_name = "s%d" % src.dpid
-            dst_name = "s%d" % dst.dpid
-
-            self.link_to_port[
-                (
-                    src_name,
-                    dst_name
-                )
-            ] = src.port_no
-
-            self.link_to_port[
-                (
-                    dst_name,
-                    src_name
-                )
-            ] = dst.port_no
-
-            # -------------------------------------------------
-            # Check whether the complete project topology
-            # is now available.
-            # -------------------------------------------------
-
-            if (
-                len(self.datapaths) >= self.EXPECTED_SWITCHES
-                and len(self.edges) >= self.EXPECTED_PHYSICAL_LINKS
-            ):
-
-                self.topology_ready = True
-
-                self.logger.info(
-                    "Topology is ready after link addition: "
-                    "%d switches, %d physical links",
-                    len(self.datapaths),
-                    len(self.edges)
-                )
-
-        except Exception as exc:
-
-            self.logger.exception(
-                "Failed to process topology link addition: %s",
-                exc
-            )
-
-    # ---------------------------------------------------------
-    # SWITCH LEAVE
-    # ---------------------------------------------------------
-
-    @handler.set_ev_cls(event.EventSwitchLeave)
-    def switch_leave(self, ev):
-
-        self.logger.warning(
-            "Switch left topology"
-        )
+        self.active_flows = {}
 
         self.topology_ready = False
+        self.full_topology_discovered = False
 
-    # ---------------------------------------------------------
-    # LINK DELETE
-    # ---------------------------------------------------------
+        if CLFFEngine is not None:
+            self.clff = CLFFEngine(logger=self.logger)
+        else:
+            self.clff = None
 
-    @handler.set_ev_cls(event.EventLinkDelete)
-    def link_delete(self, ev):
+        self.clff_packet_state = {}
 
-        """
-        Handle Ryu topology link-delete events directly.
+        self.lldp_thread = hub.spawn(self._lldp_loop)
 
-        EventLinkDelete is the primary topology failure path.
+        self.logger.info("TopologyMonitor initialized")
+        self.logger.info("Forwarding owner: TopologyMonitor")
+        self.logger.info("CLFF forwarding: ENABLED (when topology is ready)")
+        self.logger.info("TrafficMonitor forwarding: DELEGATED")
 
-        The failed physical edge is removed from:
-            - self.edges
-            - self.port_to_link
-            - self.link_to_port
+    # ============================================================
+    # Switch Features
+    # ============================================================
 
-        Then active flows are rerouted.
-        """
+    @set_ev_cls(
+        ofp_event.EventOFPSwitchFeatures,
+        CONFIG_DISPATCHER
+    )
+    def switch_features_handler(self, ev):
 
-        try:
+        datapath = ev.msg.datapath
+        dpid = datapath.id
 
-            link = ev.link
+        self.datapaths[dpid] = datapath
+        self.graph.add_node(dpid)
 
-            src = link.src
-            dst = link.dst
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
 
-            failed_edge = tuple(
-                sorted(
-                    (
-                        src.dpid,
-                        dst.dpid
-                    )
-                )
+        # Table miss
+        match = parser.OFPMatch()
+        actions = [
+            parser.OFPActionOutput(
+                ofproto.OFPP_CONTROLLER,
+                ofproto.OFPCML_NO_BUFFER
             )
+        ]
 
-            self.logger.warning(
-                "TOPOLOGY LINK DELETE: s%d:%d -> s%d:%d",
-                src.dpid,
-                src.port_no,
-                dst.dpid,
-                dst.port_no
+        self._add_flow(datapath, 0, match, actions)
+
+        # LLDP
+        lldp_match = parser.OFPMatch(eth_type=ETH_TYPE_LLDP)
+        lldp_actions = [
+            parser.OFPActionOutput(
+                ofproto.OFPP_CONTROLLER,
+                ofproto.OFPCML_NO_BUFFER
             )
+        ]
 
-            self.logger.warning(
-                "Mapped failed physical edge: %s",
-                failed_edge
-            )
+        self._add_flow(
+            datapath,
+            NORMAL_PRIORITY,
+            lldp_match,
+            lldp_actions
+        )
 
-            self.handle_link_failure(
-                failed_edge
-            )
+        req = parser.OFPPortDescStatsRequest(datapath, 0)
+        datapath.send_msg(req)
 
-        except Exception as exc:
+        self.logger.info("Switch connected: s%d", dpid)
 
-            self.logger.exception(
-                "Failed to process topology link deletion: %s",
-                exc
-            )
+    # ============================================================
+    # Port Description
+    # ============================================================
 
-    # =========================================================
-    # PACKET IN
-    # =========================================================
+    @set_ev_cls(
+        ofp_event.EventOFPPortDescStatsReply,
+        MAIN_DISPATCHER
+    )
+    def port_desc_reply_handler(self, ev):
 
-    @handler.set_ev_cls(
+        datapath = ev.msg.datapath
+        dpid = datapath.id
+
+        for port in ev.msg.body:
+
+            port_no = port.port_no
+            port_name = port.name
+
+            if isinstance(port_name, bytes):
+                try:
+                    port_name = port_name.decode("utf-8", errors="ignore")
+                except Exception:
+                    port_name = str(port_name)
+
+            self.port_desc[(dpid, port_no)] = str(port_name)
+
+        self.logger.debug("Port descriptions updated for s%d", dpid)
+
+    # ============================================================
+    # Packet-In
+    # ============================================================
+
+    @set_ev_cls(
         ofp_event.EventOFPPacketIn,
         MAIN_DISPATCHER
     )
@@ -401,1099 +278,1025 @@ class TopologyMonitor(app_manager.RyuApp):
 
         msg = ev.msg
         datapath = msg.datapath
+        dpid = datapath.id
+
+        if "in_port" not in msg.match:
+            return
+
+        in_port = msg.match["in_port"]
+
+        try:
+            in_port = int(in_port)
+        except (TypeError, ValueError):
+            pass
+
+        try:
+            pkt = packet.Packet(msg.data)
+        except Exception:
+            return
+
+        eth_pkt = pkt.get_protocol(ethernet.ethernet)
+
+        if eth_pkt is None:
+            return
+
+        src_mac = eth_pkt.src
+        dst_mac = eth_pkt.dst
+
+        # LLDP
+        if eth_pkt.ethertype == ETH_TYPE_LLDP:
+            self._handle_lldp(datapath, in_port, pkt)
+            return
+
+        # Ignore LLDP MAC
+        if str(dst_mac).lower() == LLDP_MAC:
+            return
+
+        # ARP
+        arp_pkt = pkt.get_protocol(arp.arp)
+
+        if arp_pkt is not None:
+            self._handle_arp(datapath, in_port, pkt, arp_pkt)
+            return
+
+        # Host learning
+        if not self.is_inter_switch_port(dpid, in_port):
+            self._learn_host(dpid, in_port, src_mac, pkt)
+
+        # Broadcast / multicast
+        if self._is_broadcast_or_multicast(dst_mac):
+            self._flood_ethernet(datapath, msg, in_port)
+            return
+
+        # Known destination
+        destination = self.host_location.get(dst_mac)
+
+        if destination is not None:
+
+            dst_dpid, dst_port = destination
+
+            if dst_dpid == dpid:
+
+                if dst_port == in_port:
+                    return
+
+                self._install_output_flow(
+                    datapath, in_port, dst_mac, dst_port
+                )
+                self._packet_out(datapath, msg, dst_port)
+                return
+
+            path = self._shortest_path(dpid, dst_dpid)
+
+            if not path:
+                self.logger.warning(
+                    "No path from s%d to s%d for %s",
+                    dpid, dst_dpid, dst_mac
+                )
+                self._flood_ethernet(datapath, msg, in_port)
+                return
+
+            out_port = self.get_forwarding_port(dpid, dst_dpid)
+
+            if out_port is None:
+                self.logger.warning(
+                    "No forwarding port from s%d to s%d",
+                    dpid, dst_dpid
+                )
+                return
+
+            self._install_path(path, src_mac, dst_mac)
+            self._packet_out(datapath, msg, out_port)
+            return
+
+        # Unknown destination
+        self._flood_ethernet(datapath, msg, in_port)
+
+    # ============================================================
+    # LLDP Handling
+    # ============================================================
+
+    def _handle_lldp(self, datapath, in_port, pkt):
+
+        if lldp is None:
+            return
 
         dpid = datapath.id
 
-        in_port = msg.match.get(
-            "in_port"
-        )
+        lldp_pkt = pkt.get_protocol(lldp.lldp)
 
-        if in_port is None:
+        if lldp_pkt is None:
             return
 
-        pkt = packet.Packet(
-            msg.data
-        )
+        remote_dpid = None
+        remote_port = None
 
-        eth = pkt.get_protocol(
-            ethernet.ethernet
-        )
+        for tlv in lldp_pkt.tlvs:
 
-        if eth is None:
+            if isinstance(tlv, lldp.ChassisID):
+                try:
+                    remote_dpid = int(tlv.chassis_id.decode())
+                except Exception:
+                    try:
+                        remote_dpid = int(tlv.chassis_id)
+                    except Exception:
+                        pass
+
+            elif isinstance(tlv, lldp.PortID):
+                try:
+                    remote_port = int(tlv.port_id.decode())
+                except Exception:
+                    try:
+                        remote_port = int(tlv.port_id)
+                    except Exception:
+                        pass
+
+        if remote_dpid is None:
             return
 
-        src_mac = eth.src
-        dst_mac = eth.dst
-
-        # -----------------------------------------------------
-        # Ignore LLDP
-        # -----------------------------------------------------
-
-        if eth.ethertype == 0x88cc:
+        if remote_port is None:
             return
-
-        # -----------------------------------------------------
-        # Ignore broadcast / multicast source
-        # -----------------------------------------------------
-
-        if src_mac.startswith(
-            "01:00:00"
-        ):
-            return
-
-        if src_mac.lower() == (
-            "ff:ff:ff:ff:ff:ff"
-        ):
-            return
-
-        # -----------------------------------------------------
-        # Check whether packet arrived from switch link.
-        #
-        # If this is a known inter-switch port, do not learn
-        # the source as a host.
-        # -----------------------------------------------------
-
-        if (
-            dpid,
-            in_port
-        ) in self.port_to_link:
-
-            return
-
-        # -----------------------------------------------------
-        # Learn host MAC location
-        # -----------------------------------------------------
-
-        self.host_location[
-            src_mac
-        ] = (
-            dpid,
-            in_port
-        )
-
-        # -----------------------------------------------------
-        # Learn IPv4 -> MAC
-        # -----------------------------------------------------
-
-        ip_pkt = pkt.get_protocol(
-            ipv4.ipv4
-        )
-
-        if ip_pkt is not None:
-
-            self.ip_to_mac[
-                ip_pkt.src
-            ] = src_mac
-
-        # -----------------------------------------------------
-        # Track known-unicast flows
-        # -----------------------------------------------------
-
-        if dst_mac in self.host_location:
-
-            self.active_flows.add(
-                (
-                    src_mac,
-                    dst_mac
-                )
-            )
-
-    # =========================================================
-    # CUSTOM REROUTE EVENT
-    # =========================================================
-
-    @handler.set_ev_cls(
-        EventRerouteHost
-    )
-    def handle_reroute_request(self, ev):
-
-        self.logger.info(
-            "Reroute request received: host=%s request_id=%s",
-            ev.host_ip,
-            ev.request_id
-        )
-
-        result = self.reroute_host(
-            ev.host_ip
-        )
-
-        if result:
-
-            self.logger.info(
-                "Reroute completed for host=%s request_id=%s",
-                ev.host_ip,
-                ev.request_id
-            )
-
-        else:
-
-            self.logger.warning(
-                "Reroute could not be completed for host=%s "
-                "request_id=%s",
-                ev.host_ip,
-                ev.request_id
-            )
-
-    # =========================================================
-    # REROUTE HOST
-    # =========================================================
-
-    def reroute_host(self, host_ip):
-
-        if not self.topology_ready:
-
-            self.logger.warning(
-                "Cannot reroute %s: topology is not ready",
-                host_ip
-            )
-
-            return False
-
-        # -----------------------------------------------------
-        # Resolve host IP -> MAC
-        # -----------------------------------------------------
-
-        host_mac = self.ip_to_mac.get(
-            host_ip
-        )
-
-        if host_mac is None:
-
-            self.logger.warning(
-                "Cannot reroute %s: MAC address unknown",
-                host_ip
-            )
-
-            return False
-
-        # -----------------------------------------------------
-        # Find active flows involving host
-        # -----------------------------------------------------
-
-        related_flows = []
-
-        for src_mac, dst_mac in self.active_flows:
-
-            if (
-                src_mac == host_mac
-                or dst_mac == host_mac
-            ):
-
-                related_flows.append(
-                    (
-                        src_mac,
-                        dst_mac
-                    )
-                )
-
-        if not related_flows:
-
-            self.logger.warning(
-                "No active flows found for %s",
-                host_ip
-            )
-
-            return False
-
-        self.logger.info(
-            "Found %d active flow(s) for %s",
-            len(related_flows),
-            host_ip
-        )
-
-        # -----------------------------------------------------
-        # Reroute every related flow
-        # -----------------------------------------------------
-
-        success = False
-
-        for src_mac, dst_mac in related_flows:
-
-            src_location = self.host_location.get(
-                src_mac
-            )
-
-            dst_location = self.host_location.get(
-                dst_mac
-            )
-
-            if (
-                src_location is None
-                or dst_location is None
-            ):
-
-                self.logger.warning(
-                    "Cannot reroute flow %s -> %s: "
-                    "host location unknown",
-                    src_mac,
-                    dst_mac
-                )
-
-                continue
-
-            src_dpid, src_port = src_location
-            dst_dpid, dst_port = dst_location
-
-            self.logger.info(
-                "Rerouting flow %s -> %s",
-                src_mac,
-                dst_mac
-            )
-
-            result = self.install_dynamic_path(
-                src_dpid,
-                src_port,
-                dst_dpid,
-                dst_port,
-                src_mac,
-                dst_mac
-            )
-
-            if result:
-                success = True
-
-        return success
-
-    # =========================================================
-    # INITIALIZE TOPOLOGY
-    # =========================================================
-
-    def initialize_topology(self):
-
-        while True:
-
-            try:
-
-                switches = get_switch(
-                    self,
-                    None
-                )
-
-                links = get_link(
-                    self,
-                    None
-                )
-
-                # -------------------------------------------------
-                # Convert Ryu directional link objects into
-                # unique physical switch-to-switch edges.
-                #
-                # Example:
-                #
-                #   s1 -> s2
-                #   s2 -> s1
-                #
-                # become one physical edge:
-                #
-                #   (1, 2)
-                # -------------------------------------------------
-
-                discovered_edges = self.get_unique_edges(
-                    links
-                )
-
-                # -------------------------------------------------
-                # Debug information
-                # -------------------------------------------------
-
-                self.logger.info(
-                    "Topology discovery: switches=%d "
-                    "link_objects=%d unique_physical_links=%d",
-                    len(switches),
-                    len(links),
-                    len(discovered_edges)
-                )
-
-                for link in links:
-
-                    self.logger.info(
-                        "DISCOVERED LINK: s%d:%d -> s%d:%d",
-                        link.src.dpid,
-                        link.src.port_no,
-                        link.dst.dpid,
-                        link.dst.port_no
-                    )
-
-                self.logger.info(
-                    "Unique physical edges: %s",
-                    sorted(discovered_edges)
-                )
-
-                # -------------------------------------------------
-                # Expected project topology:
-                #
-                #   5 switches
-                #   7 physical switch-to-switch links
-                # -------------------------------------------------
-
-                if (
-                    len(switches) >= self.EXPECTED_SWITCHES
-                    and len(discovered_edges)
-                    >= self.EXPECTED_PHYSICAL_LINKS
-                ):
-
-                    self.build_topology_maps(
-                        switches,
-                        links
-                    )
-
-                    self.topology_ready = True
-
-                    self.logger.info(
-                        "Topology ready: %d switches, "
-                        "%d physical links",
-                        len(switches),
-                        len(self.edges)
-                    )
-
-                    break
-
-                else:
-
-                    self.topology_ready = False
-
-                    self.logger.info(
-                        "Waiting for topology... "
-                        "switches=%d "
-                        "link_objects=%d "
-                        "unique_physical_links=%d "
-                        "expected=%d",
-                        len(switches),
-                        len(links),
-                        len(discovered_edges),
-                        self.EXPECTED_PHYSICAL_LINKS
-                    )
-
-            except Exception as exc:
-
-                self.logger.exception(
-                    "Topology initialization error: %s",
-                    exc
-                )
-
-            hub.sleep(2)
-
-    # =========================================================
-    # GET UNIQUE PHYSICAL EDGES
-    # =========================================================
-
-    def get_unique_edges(self, links):
-
-        edges = set()
-
-        for link in links:
-
-            src_dpid = link.src.dpid
-            dst_dpid = link.dst.dpid
-
-            # -------------------------------------------------
-            # Ignore invalid self-links.
-            # -------------------------------------------------
-
-            if src_dpid == dst_dpid:
-                continue
-
-            edge = tuple(
-                sorted(
-                    (
-                        src_dpid,
-                        dst_dpid
-                    )
-                )
-            )
-
-            edges.add(
-                edge
-            )
-
-        return edges
-
-    # =========================================================
-    # BUILD TOPOLOGY MAPS
-    # =========================================================
-
-    def build_topology_maps(
-        self,
-        switches,
-        links
-    ):
-
-        # -----------------------------------------------------
-        # Rebuild everything from the current Ryu topology.
-        #
-        # This prevents stale mappings after topology changes.
-        # -----------------------------------------------------
-
-        self.edges.clear()
-        self.port_to_link.clear()
-        self.link_to_port.clear()
-
-        # -----------------------------------------------------
-        # Build switch edges and port mappings.
-        #
-        # Ryu can provide both directions of a physical link.
-        # Both directions are useful here because each side
-        # has its own OpenFlow output port.
-        # -----------------------------------------------------
-
-        for link in links:
-
-            src = link.src
-            dst = link.dst
-
-            src_dpid = src.dpid
-            dst_dpid = dst.dpid
-
-            # -------------------------------------------------
-            # Ignore invalid self-links.
-            # -------------------------------------------------
-
-            if src_dpid == dst_dpid:
-                continue
-
-            # -------------------------------------------------
-            # Store one physical edge only.
-            # -------------------------------------------------
-
-            edge = tuple(
-                sorted(
-                    (
-                        src_dpid,
-                        dst_dpid
-                    )
-                )
-            )
-
-            self.edges.add(
-                edge
-            )
-
-            # -------------------------------------------------
-            # Port mapping.
-            #
-            # Each direction has a different physical port.
-            # -------------------------------------------------
-
-            self.port_to_link[
-                (
-                    src_dpid,
-                    src.port_no
-                )
-            ] = edge
-
-            self.port_to_link[
-                (
-                    dst_dpid,
-                    dst.port_no
-                )
-            ] = edge
-
-            # -------------------------------------------------
-            # Output port mapping.
-            # -------------------------------------------------
-
-            src_name = "s%d" % src_dpid
-            dst_name = "s%d" % dst_dpid
-
-            self.link_to_port[
-                (
-                    src_name,
-                    dst_name
-                )
-            ] = src.port_no
-
-            self.link_to_port[
-                (
-                    dst_name,
-                    src_name
-                )
-            ] = dst.port_no
-
-        self.logger.info(
-            "Topology maps rebuilt"
-        )
-
-        self.logger.info(
-            "Physical edges: %s",
-            sorted(self.edges)
-        )
-
-        self.logger.info(
-            "Port mappings: %d",
-            len(self.port_to_link)
-        )
-
-        self.logger.info(
-            "Link-to-port mappings: %d",
-            len(self.link_to_port)
-        )
-
-    # =========================================================
-    # PORT STATUS / LINK FAILURE
-    # =========================================================
-
-    @handler.set_ev_cls(
-        ofp_event.EventOFPPortStatus,
-        MAIN_DISPATCHER
-    )
-    def port_status_change(self, ev):
-
-        msg = ev.msg
-        datapath = msg.datapath
-
-        desc = msg.desc
-
-        ofp = datapath.ofproto
-
-        # -----------------------------------------------------
-        # Only process link-down events.
-        # -----------------------------------------------------
-
-        if not (
-            desc.state & ofp.OFPPS_LINK_DOWN
-        ):
-
-            return
-
-        failed_dpid = datapath.id
-        failed_port = desc.port_no
-
-        physical_link = self.port_to_link.get(
-            (
-                failed_dpid,
-                failed_port
-            )
-        )
-
-        # -----------------------------------------------------
-        # EventLinkDelete is normally the primary failure
-        # detection path.
-        #
-        # This handler remains a fallback.
-        # -----------------------------------------------------
-
-        if physical_link is None:
-
-            self.logger.warning(
-                "Link-down detected but physical link "
-                "could not be mapped by port status: "
-                "s%d port=%d",
-                failed_dpid,
-                failed_port
-            )
-
-            return
-
-        self.logger.warning(
-            "LINK FAILURE detected by port status: %s",
-            physical_link
-        )
-
-        self.handle_link_failure(
-            physical_link
-        )
-
-    # =========================================================
-    # HANDLE LINK FAILURE
-    # =========================================================
-
-    def handle_link_failure(
-        self,
-        failed_edge
-    ):
-
-        # -----------------------------------------------------
-        # Prevent duplicate processing.
-        # -----------------------------------------------------
-
-        if failed_edge not in self.edges:
-
-            self.logger.info(
-                "Failed edge %s is already removed "
-                "or not present",
-                failed_edge
-            )
-
-            return False
-
-        # -----------------------------------------------------
-        # Remove failed edge from topology graph.
-        # -----------------------------------------------------
-
-        self.edges.remove(
-            failed_edge
-        )
-
-        self.logger.warning(
-            "Removed failed edge from topology graph: %s",
-            failed_edge
-        )
-
-        # -----------------------------------------------------
-        # Remove port mappings belonging to failed link.
-        # -----------------------------------------------------
-
-        ports_to_remove = []
-
-        for key, edge in list(
-            self.port_to_link.items()
-        ):
-
-            if edge == failed_edge:
-
-                ports_to_remove.append(
-                    key
-                )
-
-        for key in ports_to_remove:
-
-            del self.port_to_link[
-                key
-            ]
-
-        # -----------------------------------------------------
-        # Remove logical link mappings.
-        # -----------------------------------------------------
-
-        dpid_a, dpid_b = failed_edge
-
-        names = [
-            (
-                "s%d" % dpid_a,
-                "s%d" % dpid_b
-            ),
-            (
-                "s%d" % dpid_b,
-                "s%d" % dpid_a
-            )
-        ]
-
-        for key in names:
-
-            self.link_to_port.pop(
-                key,
-                None
-            )
-
-        # -----------------------------------------------------
-        # Update topology state.
-        # -----------------------------------------------------
-
-        self.topology_ready = (
-            len(self.datapaths)
-            >= self.EXPECTED_SWITCHES
-            and len(self.edges)
-            >= self.EXPECTED_PHYSICAL_LINKS
-        )
-
-        self.logger.info(
-            "Removed port and logical mappings "
-            "for failed edge %s",
-            failed_edge
-        )
-
-        self.logger.info(
-            "Remaining physical edges: %s",
-            sorted(self.edges)
-        )
-
-        # -----------------------------------------------------
-        # Reroute active flows.
-        # -----------------------------------------------------
-
-        self.reroute_active_flows()
-
-        return True
-
-    # =========================================================
-    # REROUTE ACTIVE FLOWS
-    # =========================================================
-
-    def reroute_active_flows(self):
-
-        self.logger.info(
-            "Rerouting active flows after topology change"
-        )
-
-        rerouted = 0
-
-        for src_mac, dst_mac in list(
-            self.active_flows
-        ):
-
-            src_location = self.host_location.get(
-                src_mac
-            )
-
-            dst_location = self.host_location.get(
-                dst_mac
-            )
-
-            if (
-                src_location is None
-                or dst_location is None
-            ):
-
-                self.logger.warning(
-                    "Skipping flow %s -> %s: "
-                    "host location unknown",
-                    src_mac,
-                    dst_mac
-                )
-
-                continue
-
-            src_dpid, src_port = src_location
-            dst_dpid, dst_port = dst_location
-
-            result = self.install_dynamic_path(
-                src_dpid,
-                src_port,
-                dst_dpid,
-                dst_port,
-                src_mac,
-                dst_mac
-            )
-
-            if result:
-
-                rerouted += 1
-
-        self.logger.info(
-            "Active flow rerouting completed: %d flow(s)",
-            rerouted
-        )
-
-    # =========================================================
-    # BUILD NETWORKX GRAPH
-    # =========================================================
-
-    def build_graph(self):
-
-        graph = nx.Graph()
-
-        # -----------------------------------------------------
-        # Add currently connected switches.
-        # -----------------------------------------------------
-
-        for dpid in self.datapaths:
-
-            graph.add_node(
-                dpid
-            )
-
-        # -----------------------------------------------------
-        # Add currently active physical links.
-        # -----------------------------------------------------
-
-        for src, dst in self.edges:
-
-            graph.add_edge(
-                src,
-                dst,
-                weight=1
-            )
-
-        return graph
-
-    # =========================================================
-    # DIJKSTRA
-    # =========================================================
-
-    def calculate_path(
-        self,
-        src_dpid,
-        dst_dpid
-    ):
-
-        graph = self.build_graph()
 
         try:
+            local_port = int(in_port)
+        except (TypeError, ValueError):
+            local_port = in_port
 
-            path = nx.shortest_path(
-                graph,
-                source=src_dpid,
-                target=dst_dpid,
-                weight="weight"
+        try:
+            remote_dpid_int = int(remote_dpid)
+        except (TypeError, ValueError):
+            return
+
+        try:
+            remote_port_int = int(remote_port)
+        except (TypeError, ValueError):
+            return
+
+        now = time.time()
+
+        self.lldp_links[(dpid, local_port)] = {
+            "remote_dpid": remote_dpid_int,
+            "remote_port": remote_port_int,
+            "last_seen": now
+        }
+
+        self._update_topology_from_lldp()
+
+    # ============================================================
+    # Update Topology from LLDP
+    # ============================================================
+
+    def _update_topology_from_lldp(self):
+
+        now = time.time()
+
+        stale = []
+
+        for local_key, info in list(self.lldp_links.items()):
+
+            if (now - info["last_seen"]) > LLDP_STALE_TIMEOUT:
+                stale.append(local_key)
+
+        for key in stale:
+            del self.lldp_links[key]
+
+        new_port_to_link = {}
+        new_link_to_port = {}
+        new_edges = set()
+
+        for (local_dpid, local_port), info in list(self.lldp_links.items()):
+
+            remote_dpid = info["remote_dpid"]
+            remote_port = info["remote_port"]
+
+            if local_dpid == remote_dpid:
+                continue
+
+            try:
+                local_dpid = int(local_dpid)
+                local_port = int(local_port)
+                remote_dpid = int(remote_dpid)
+                remote_port = int(remote_port)
+            except (TypeError, ValueError):
+                continue
+
+            new_port_to_link[(local_dpid, local_port)] = (
+                remote_dpid, remote_port
+            )
+            new_port_to_link[(remote_dpid, remote_port)] = (
+                local_dpid, local_port
             )
 
+            link_key = tuple(sorted([local_dpid, remote_dpid]))
+            new_edges.add(link_key)
+
+            new_link_to_port[(local_dpid, remote_dpid)] = (
+                local_port, remote_port
+            )
+            new_link_to_port[(remote_dpid, local_dpid)] = (
+                remote_port, local_port
+            )
+
+        self.graph.clear()
+
+        for dpid in self.datapaths:
+            self.graph.add_node(dpid)
+
+        for dpid_a, dpid_b in new_edges:
+            self.graph.add_edge(dpid_a, dpid_b)
+
+        self.port_to_link = new_port_to_link
+        self.link_to_port = new_link_to_port
+        self.edges = new_edges
+
+        switch_count = len(self.graph.nodes())
+        link_count = len(self.graph.edges())
+
+        self.topology_ready = (switch_count > 0 and link_count > 0)
+
+        if (
+            switch_count >= EXPECTED_SWITCHES
+            and link_count >= EXPECTED_PHYSICAL_LINKS
+        ):
+
+            if not self.full_topology_discovered:
+                self.full_topology_discovered = True
+                self.logger.info("FULL EXPECTED TOPOLOGY DISCOVERED.")
+
+            self._rebuild_clff()
+
+        self.logger.debug(
+            "Topology update: switches=%d links=%d",
+            switch_count, link_count
+        )
+
+    # ============================================================
+    # Host Learning
+    # ============================================================
+
+    def _learn_host(self, dpid, in_port, src_mac, pkt=None):
+
+        if self.is_inter_switch_port(dpid, in_port):
+            return
+
+        if src_mac and src_mac.startswith("02:00:00:00:00:"):
+            return
+
+        if self._is_broadcast_or_multicast(src_mac):
+            return
+
+        new_location = (dpid, in_port)
+        old_location = self.host_location.get(src_mac)
+
+        if old_location is not None and old_location != new_location:
+
+            old_dpid, old_port = old_location
+
+            if old_dpid != dpid:
+                self.logger.debug(
+                    "Ignoring MAC flap: %s s%d:%d -> s%d:%d",
+                    src_mac, old_dpid, old_port, dpid, in_port
+                )
+                return
+
+            self.logger.warning(
+                "Host MAC moved: %s from s%d:%d to s%d:%d",
+                src_mac, old_dpid, old_port, dpid, in_port
+            )
+
+        if old_location != new_location:
+            self.host_location[src_mac] = new_location
             self.logger.info(
-                "Calculated path: %s",
-                path
+                "Host learned: %s -> s%d:%d",
+                src_mac, dpid, in_port
             )
 
-            return path
+        if pkt is not None:
+            ipv4_pkt = pkt.get_protocol(ipv4.ipv4)
+            if ipv4_pkt is not None:
+                self.ip_to_mac[ipv4_pkt.src] = src_mac
 
-        except nx.NetworkXNoPath:
+    # ============================================================
+    # ARP Handler
+    # ============================================================
+
+    def _handle_arp(self, datapath, in_port, pkt, arp_pkt):
+
+        dpid = datapath.id
+
+        if (
+            arp_pkt.src_ip
+            and arp_pkt.src_mac
+            and not self.is_inter_switch_port(dpid, in_port)
+        ):
+            self.ip_to_mac[arp_pkt.src_ip] = arp_pkt.src_mac
+            self.host_location[arp_pkt.src_mac] = (dpid, in_port)
+
+            self.logger.debug(
+                "ARP learned: %s -> %s -> s%d:%d",
+                arp_pkt.src_ip, arp_pkt.src_mac, dpid, in_port
+            )
+
+        if arp_pkt.opcode == arp.ARP_REQUEST:
+
+            target_ip = arp_pkt.dst_ip
+            target_mac = self.ip_to_mac.get(target_ip)
+
+            if target_mac is not None:
+
+                target_location = self.host_location.get(target_mac)
+
+                if target_location is not None:
+
+                    target_dpid, target_port = target_location
+
+                    self._send_arp_reply(
+                        datapath, in_port,
+                        arp_pkt.src_mac, arp_pkt.src_ip,
+                        target_mac, target_ip
+                    )
+
+                    self.logger.debug(
+                        "Proxy ARP: %s is at %s",
+                        target_ip, target_mac
+                    )
+
+                    return
+
+            self._flood_arp(datapath, in_port, pkt)
+            return
+
+        if arp_pkt.opcode == arp.ARP_REPLY:
+
+            destination_mac = self.ip_to_mac.get(arp_pkt.dst_ip)
+
+            if destination_mac is not None:
+
+                destination = self.host_location.get(destination_mac)
+
+                if destination is not None:
+
+                    dst_dpid, dst_port = destination
+
+                    if dst_dpid == dpid:
+
+                        if dst_port != in_port:
+                            self._packet_out_raw(
+                                datapath, pkt.data, dst_port, in_port
+                            )
+                        return
+
+                    path = self._shortest_path(dpid, dst_dpid)
+
+                    if path:
+
+                        out_port = self.get_forwarding_port(dpid, dst_dpid)
+
+                        if out_port is not None:
+                            self._packet_out_raw(
+                                datapath, pkt.data, out_port, in_port
+                            )
+                            return
+
+            self._flood_arp(datapath, in_port, pkt)
+
+    # ============================================================
+    # ARP Flooding
+    # ============================================================
+
+    def _flood_arp(self, datapath, in_port, pkt):
+
+        dpid = datapath.id
+        ports = set()
+
+        for host_mac, location in list(self.host_location.items()):
+
+            host_dpid, host_port = location
+
+            if host_dpid != dpid:
+                continue
+
+            if host_port == in_port:
+                continue
+
+            if self.is_inter_switch_port(dpid, host_port):
+                continue
+
+            if not self.is_host_port(dpid, host_port):
+                continue
+
+            ports.add(host_port)
+
+        ports.update(self._get_host_ports_from_desc(dpid))
+
+        final_ports = set()
+
+        for port_no in ports:
+
+            if port_no == in_port:
+                continue
+
+            if port_no <= 0:
+                continue
+
+            if self._is_special_port(port_no):
+                continue
+
+            if self.is_inter_switch_port(dpid, port_no):
+                continue
+
+            if not self.is_host_port(dpid, port_no):
+                continue
+
+            final_ports.add(port_no)
+
+        if not final_ports:
+            self.logger.warning(
+                "No host ports available for ARP flooding on s%d", dpid
+            )
+            return
+
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        actions = [
+            parser.OFPActionOutput(port_no)
+            for port_no in sorted(final_ports)
+        ]
+
+        out = parser.OFPPacketOut(
+            datapath=datapath,
+            buffer_id=ofproto.OFP_NO_BUFFER,
+            in_port=in_port,
+            actions=actions,
+            data=pkt.data
+        )
+
+        datapath.send_msg(out)
+
+        self.logger.debug(
+            "ARP flood on s%d: host-facing ports=%s",
+            dpid, sorted(final_ports)
+        )
+
+    # ============================================================
+    # Host Port Discovery
+    # ============================================================
+
+    def _get_host_ports_from_desc(self, dpid):
+
+        ports = set()
+
+        for (port_key, port_name) in list(self.port_desc.items()):
+
+            port_dpid, port_no = port_key
+
+            if port_dpid != dpid:
+                continue
+
+            if port_no <= 0:
+                continue
+
+            if self._is_special_port(port_no):
+                continue
+
+            if self.is_inter_switch_port(dpid, port_no):
+                continue
+
+            ports.add(port_no)
+
+        return ports
+
+    # ============================================================
+    # Ethernet Flooding / CLFF
+    # ============================================================
+
+    def _flood_ethernet(self, datapath, msg, in_port):
+
+        dpid = datapath.id
+
+        self._cleanup_clff_packet_state()
+
+        packet_key = self._get_clff_packet_key(msg)
+
+        state = self.clff_packet_state.get(packet_key)
+
+        if state is None:
+
+            root_dpid = self._get_clff_root(dpid, msg)
+
+            self.clff_packet_state[packet_key] = {
+                "root": root_dpid,
+                "created": time.time()
+            }
+
+        else:
+            root_dpid = state["root"]
+
+        processed_switches = state.get(
+            "processed_switches", set()
+        ) if state is not None else set()
+
+        if dpid in processed_switches:
+            self.logger.debug(
+                "CLFF duplicate suppressed: packet=%s switch=s%d",
+                packet_key, dpid
+            )
+            return
+
+        if state is None:
+            state = self.clff_packet_state[packet_key]
+
+        state.setdefault("processed_switches", set()).add(dpid)
+
+        if self.clff is None or not self.clff.is_ready():
 
             self.logger.warning(
-                "No path available: s%d -> s%d",
-                src_dpid,
-                dst_dpid
+                "CLFF unavailable on s%d (root=s%d). "
+                "No inter-switch flooding will be used.",
+                dpid, root_dpid
             )
 
-            return None
+            self._flood_ethernet_host_only(datapath, msg, in_port)
+            return
 
-        except nx.NodeNotFound:
+        tree = self.clff.get_tree(root_dpid)
+
+        if tree is None:
 
             self.logger.warning(
-                "Unknown switch in path calculation"
+                "CLFF root s%d has no tree. "
+                "Packet stays local on s%d.",
+                root_dpid, dpid
             )
 
-            return None
+            self._flood_ethernet_host_only(datapath, msg, in_port)
+            return
 
-    # =========================================================
-    # INSTALL DYNAMIC PATH
-    # =========================================================
+        child_ports = self.clff.get_forward_ports(root_dpid, dpid)
 
-    def install_dynamic_path(
-        self,
-        src_dpid,
-        src_port,
-        dst_dpid,
-        dst_port,
-        src_mac,
-        dst_mac
-    ):
+        host_ports = self._get_host_ports_from_desc(dpid)
 
-        path = self.calculate_path(
-            src_dpid,
-            dst_dpid
-        )
+        for host_mac, location in list(self.host_location.items()):
 
-        if not path:
+            host_dpid, host_port = location
 
-            self.logger.warning(
-                "Cannot install dynamic path: "
-                "no path available"
+            if host_dpid != dpid:
+                continue
+
+            if not self.is_host_port(dpid, host_port):
+                continue
+
+            host_ports.add(host_port)
+
+        final_ports = set()
+
+        for port_no in child_ports:
+
+            try:
+                port_no = int(port_no)
+            except (TypeError, ValueError):
+                continue
+
+            if port_no == in_port:
+                continue
+
+            if port_no <= 0:
+                continue
+
+            if self._is_special_port(port_no):
+                continue
+
+            if not self.is_inter_switch_port(dpid, port_no):
+                continue
+
+            final_ports.add(port_no)
+
+        for port_no in host_ports:
+
+            try:
+                port_no = int(port_no)
+            except (TypeError, ValueError):
+                continue
+
+            if port_no == in_port:
+                continue
+
+            if port_no <= 0:
+                continue
+
+            if self._is_special_port(port_no):
+                continue
+
+            if self.is_inter_switch_port(dpid, port_no):
+                continue
+
+            final_ports.add(port_no)
+
+        if not final_ports:
+            self.logger.debug(
+                "CLFF: no output ports on s%d (root=s%d, in_port=%s)",
+                dpid, root_dpid, in_port
             )
+            return
 
-            return False
+        self._packet_out(datapath, msg, sorted(final_ports))
 
-        self.logger.info(
-            "Installing dynamic path %s -> %s: %s",
-            src_mac,
-            dst_mac,
-            path
+        self.logger.debug(
+            "CLFF forward: packet=%s root=s%d current=s%d "
+            "in=%s outputs=%s",
+            packet_key, root_dpid, dpid, in_port, sorted(final_ports)
         )
 
-        # -----------------------------------------------------
-        # Remove previous reroute rules.
-        # -----------------------------------------------------
+    # ============================================================
+    # CLFF Packet Key
+    # ============================================================
 
-        self.clear_path_flows(
-            src_mac,
-            dst_mac
-        )
+    def _get_clff_packet_key(self, msg):
 
-        # -----------------------------------------------------
-        # Forward direction.
-        # -----------------------------------------------------
+        try:
+            data = bytes(msg.data)
+        except Exception:
+            data = str(msg.data).encode("utf-8", errors="ignore")
 
-        forward_ok = self.install_one_direction(
-            path,
-            src_port,
-            dst_port,
-            src_mac,
-            dst_mac
-        )
-
-        # -----------------------------------------------------
-        # Reverse direction.
-        # -----------------------------------------------------
-
-        reverse_ok = self.install_one_direction(
-            list(reversed(path)),
-            dst_port,
-            src_port,
-            dst_mac,
-            src_mac
-        )
+        try:
+            data_hash = hash(data)
+        except Exception:
+            data_hash = id(data)
 
         return (
-            forward_ok
-            and reverse_ok
+            msg.datapath.id,
+            msg.match.get("in_port"),
+            data_hash
         )
 
-    # =========================================================
-    # INSTALL ONE DIRECTION
-    # =========================================================
+    # ============================================================
+    # CLFF Root Selection
+    # ============================================================
 
-    def install_one_direction(
-        self,
-        path,
-        host_src_port,
-        host_dst_port,
-        src_mac,
-        dst_mac
+    def _get_clff_root(self, ingress_dpid, msg):
+
+        try:
+            pkt = packet.Packet(msg.data)
+        except Exception:
+            return ingress_dpid
+
+        eth_pkt = pkt.get_protocol(ethernet.ethernet)
+
+        if eth_pkt is not None:
+
+            src_mac = eth_pkt.src
+            source_location = self.host_location.get(src_mac)
+
+            if source_location is not None:
+
+                source_dpid, source_port = source_location
+
+                if source_dpid in self.graph:
+                    return source_dpid
+
+        return ingress_dpid
+
+    # ============================================================
+    # CLFF State Cleanup
+    # ============================================================
+
+    def _cleanup_clff_packet_state(self):
+
+        now = time.time()
+        stale_keys = []
+
+        for packet_key, state in list(self.clff_packet_state.items()):
+
+            created = state.get("created", now)
+
+            if (now - created) > CLFF_PACKET_STATE_TIMEOUT:
+                stale_keys.append(packet_key)
+
+        for packet_key in stale_keys:
+            self.clff_packet_state.pop(packet_key, None)
+
+    # ============================================================
+    # Host-Only Fallback
+    # ============================================================
+
+    def _flood_ethernet_host_only(self, datapath, msg, in_port):
+
+        dpid = datapath.id
+        ports = set()
+
+        ports.update(self._get_host_ports_from_desc(dpid))
+
+        for mac, location in list(self.host_location.items()):
+
+            host_dpid, host_port = location
+
+            if host_dpid != dpid:
+                continue
+
+            if host_port == in_port:
+                continue
+
+            if self.is_host_port(dpid, host_port):
+                ports.add(host_port)
+
+        ports.discard(in_port)
+
+        final_ports = []
+
+        for port_no in ports:
+
+            if port_no <= 0:
+                continue
+
+            if self._is_special_port(port_no):
+                continue
+
+            if self.is_inter_switch_port(dpid, port_no):
+                continue
+
+            final_ports.append(port_no)
+
+        if not final_ports:
+            return
+
+        self._packet_out(
+            datapath, msg, sorted(set(final_ports))
+        )
+
+        self.logger.debug(
+            "Host-only fallback on s%d: ports=%s",
+            dpid, sorted(set(final_ports))
+        )
+
+    # ============================================================
+    # ARP Reply
+    # ============================================================
+
+    def _send_arp_reply(
+        self, datapath, out_port,
+        requester_mac, requester_ip,
+        target_mac, target_ip
     ):
 
-        if len(path) == 1:
-
-            dpid = path[0]
-
-            return self.install_flow(
-                dpid,
-                host_src_port,
-                host_dst_port,
-                src_mac,
-                dst_mac
-            )
-
-        # -----------------------------------------------------
-        # First switch.
-        # -----------------------------------------------------
-
-        first_dpid = path[0]
-        first_next = path[1]
-
-        first_out_port = self.link_to_port.get(
-            (
-                "s%d" % first_dpid,
-                "s%d" % first_next
-            )
+        e = ethernet.ethernet(
+            dst=requester_mac,
+            src=target_mac,
+            ethertype=ETH_TYPE_ARP
         )
 
-        if first_out_port is None:
+        a = arp.arp(
+            hwtype=1, proto=0x0800, hlen=6, plen=4,
+            opcode=arp.ARP_REPLY,
+            src_mac=target_mac, src_ip=target_ip,
+            dst_mac=requester_mac, dst_ip=requester_ip
+        )
 
-            self.logger.warning(
-                "No output port for s%d -> s%d",
-                first_dpid,
-                first_next
-            )
+        pkt = packet.Packet()
+        pkt.add_protocol(e)
+        pkt.add_protocol(a)
+        pkt.serialize()
 
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        actions = [parser.OFPActionOutput(out_port)]
+
+        out = parser.OFPPacketOut(
+            datapath=datapath,
+            buffer_id=ofproto.OFP_NO_BUFFER,
+            in_port=ofproto.OFPP_CONTROLLER,
+            actions=actions,
+            data=pkt.data
+        )
+
+        datapath.send_msg(out)
+
+    # ============================================================
+    # Inter-Switch Port Check
+    # ============================================================
+
+    def is_inter_switch_port(self, dpid, port_no):
+
+        if (dpid, port_no) in self.port_to_link:
+            return True
+
+        try:
+            port_str = str(port_no)
+        except Exception:
+            port_str = None
+
+        if port_str is not None and (dpid, port_str) in self.port_to_link:
+            return True
+
+        if isinstance(port_no, str):
+            try:
+                port_int = int(port_no)
+                if (dpid, port_int) in self.port_to_link:
+                    return True
+            except (TypeError, ValueError):
+                pass
+
+        return False
+
+    # ============================================================
+    # Host Port Check
+    # ============================================================
+
+    def is_host_port(self, dpid, port_no):
+
+        try:
+            port_no = int(port_no)
+        except (TypeError, ValueError):
             return False
 
-        if not self.install_flow(
-            first_dpid,
-            host_src_port,
-            first_out_port,
-            src_mac,
-            dst_mac
-        ):
-
+        if port_no <= 0:
             return False
 
-        # -----------------------------------------------------
-        # Middle switches.
-        # -----------------------------------------------------
+        if self._is_special_port(port_no):
+            return False
 
-        for index in range(
-            1,
-            len(path) - 1
-        ):
+        return not self.is_inter_switch_port(dpid, port_no)
+
+    # ============================================================
+    # Special OpenFlow Port Check
+    # ============================================================
+
+    def _is_special_port(self, port_no):
+
+        try:
+            port_no = int(port_no)
+
+            if port_no >= ofproto_v1_3.OFPP_MAX:
+                return True
+
+            if port_no == ofproto_v1_3.OFPP_LOCAL:
+                return True
+
+        except Exception:
+            pass
+
+        return False
+
+    # ============================================================
+    # Shortest Path
+    # ============================================================
+
+    def _shortest_path(self, src_dpid, dst_dpid):
+
+        if src_dpid not in self.graph:
+            return None
+
+        if dst_dpid not in self.graph:
+            return None
+
+        try:
+            return nx.shortest_path(self.graph, src_dpid, dst_dpid)
+        except nx.NetworkXNoPath:
+            return None
+        except nx.NodeNotFound:
+            return None
+
+    # ============================================================
+    # Get Forwarding Port
+    # ============================================================
+
+    def get_forwarding_port(self, src_dpid, dst_dpid):
+
+        if src_dpid == dst_dpid:
+            return None
+
+        path = self._shortest_path(src_dpid, dst_dpid)
+
+        if not path or len(path) < 2:
+            return None
+
+        next_hop = path[1]
+
+        link = self.link_to_port.get((src_dpid, next_hop))
+
+        if link is None:
+            return None
+
+        src_port, _ = link
+        return src_port
+
+    # ============================================================
+    # Install Path
+    # ============================================================
+
+    def _install_path(self, path, src_mac, dst_mac):
+
+        if not path:
+            return
+
+        for index in range(len(path) - 1):
 
             current_dpid = path[index]
-
-            previous_dpid = path[index - 1]
             next_dpid = path[index + 1]
 
-            in_port = self.link_to_port.get(
-                (
-                    "s%d" % current_dpid,
-                    "s%d" % previous_dpid
-                )
+            datapath = self.datapaths.get(current_dpid)
+
+            if datapath is None:
+                continue
+
+            link = self.link_to_port.get((current_dpid, next_dpid))
+
+            if link is None:
+                continue
+
+            out_port, _ = link
+
+            parser = datapath.ofproto_parser
+
+            match = parser.OFPMatch(
+                eth_src=src_mac,
+                eth_dst=dst_mac
             )
 
-            out_port = self.link_to_port.get(
-                (
-                    "s%d" % current_dpid,
-                    "s%d" % next_dpid
-                )
+            actions = [parser.OFPActionOutput(out_port)]
+
+            self._add_flow(
+                datapath,
+                REROUTE_PRIORITY,
+                match,
+                actions,
+                idle_timeout=HOST_FLOW_IDLE_TIMEOUT,
+                hard_timeout=HOST_FLOW_HARD_TIMEOUT
             )
 
-            if (
-                in_port is None
-                or out_port is None
-            ):
+        reverse_path = list(reversed(path))
 
-                self.logger.warning(
-                    "Missing port mapping at s%d",
-                    current_dpid
-                )
+        for index in range(len(reverse_path) - 1):
 
-                return False
+            current_dpid = reverse_path[index]
+            next_dpid = reverse_path[index + 1]
 
-            if not self.install_flow(
-                current_dpid,
-                in_port,
-                out_port,
-                src_mac,
-                dst_mac
-            ):
+            datapath = self.datapaths.get(current_dpid)
 
-                return False
+            if datapath is None:
+                continue
 
-        # -----------------------------------------------------
-        # Last switch.
-        # -----------------------------------------------------
+            link = self.link_to_port.get((current_dpid, next_dpid))
 
-        last_dpid = path[-1]
-        previous_dpid = path[-2]
+            if link is None:
+                continue
 
-        last_in_port = self.link_to_port.get(
-            (
-                "s%d" % last_dpid,
-                "s%d" % previous_dpid
-            )
-        )
+            out_port, _ = link
 
-        if last_in_port is None:
+            parser = datapath.ofproto_parser
 
-            self.logger.warning(
-                "Missing destination input port"
+            match = parser.OFPMatch(
+                eth_src=dst_mac,
+                eth_dst=src_mac
             )
 
-            return False
+            actions = [parser.OFPActionOutput(out_port)]
 
-        return self.install_flow(
-            last_dpid,
-            last_in_port,
-            host_dst_port,
-            src_mac,
-            dst_mac
-        )
-
-    # =========================================================
-    # INSTALL FLOW
-    # =========================================================
-
-    def install_flow(
-        self,
-        dpid,
-        in_port,
-        out_port,
-        src_mac,
-        dst_mac
-    ):
-
-        datapath = self.datapaths.get(
-            dpid
-        )
-
-        if datapath is None:
-
-            self.logger.warning(
-                "Datapath s%d not available",
-                dpid
+            self._add_flow(
+                datapath,
+                REROUTE_PRIORITY,
+                match,
+                actions,
+                idle_timeout=HOST_FLOW_IDLE_TIMEOUT,
+                hard_timeout=HOST_FLOW_HARD_TIMEOUT
             )
 
-            return False
+    # ============================================================
+    # Install Direct Output Flow
+    # ============================================================
 
-        ofproto = datapath.ofproto
+    def _install_output_flow(self, datapath, in_port, dst_mac, out_port):
+
         parser = datapath.ofproto_parser
 
         match = parser.OFPMatch(
             in_port=in_port,
-            eth_src=src_mac,
             eth_dst=dst_mac
         )
 
-        actions = [
-            parser.OFPActionOutput(
-                out_port
-            )
-        ]
+        actions = [parser.OFPActionOutput(out_port)]
+
+        self._add_flow(
+            datapath,
+            NORMAL_PRIORITY,
+            match,
+            actions,
+            idle_timeout=HOST_FLOW_IDLE_TIMEOUT,
+            hard_timeout=HOST_FLOW_HARD_TIMEOUT
+        )
+
+    # ============================================================
+    # Generic Flow Installation
+    # ============================================================
+
+    def _add_flow(
+        self, datapath, priority, match, actions,
+        idle_timeout=0, hard_timeout=0
+    ):
+
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
 
         instructions = [
             parser.OFPInstructionActions(
@@ -1504,151 +1307,436 @@ class TopologyMonitor(app_manager.RyuApp):
 
         mod = parser.OFPFlowMod(
             datapath=datapath,
-            priority=100,
+            priority=priority,
             match=match,
-            instructions=instructions
+            instructions=instructions,
+            idle_timeout=idle_timeout,
+            hard_timeout=hard_timeout
         )
 
-        datapath.send_msg(
-            mod
+        datapath.send_msg(mod)
+
+    # ============================================================
+    # Packet-Out
+    # ============================================================
+
+    def _packet_out(self, datapath, msg, out_port):
+
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        if isinstance(out_port, (list, tuple, set)):
+            actions = [
+                parser.OFPActionOutput(port) for port in out_port
+            ]
+        else:
+            actions = [parser.OFPActionOutput(out_port)]
+
+        out = parser.OFPPacketOut(
+            datapath=datapath,
+            buffer_id=ofproto.OFP_NO_BUFFER,
+            in_port=msg.match["in_port"],
+            actions=actions,
+            data=msg.data
         )
 
-        self.logger.info(
-            "Installed priority=100 flow on s%d: "
-            "%s -> %s | in=%s out=%s",
-            dpid,
-            src_mac,
-            dst_mac,
-            in_port,
-            out_port
+        datapath.send_msg(out)
+
+    # ============================================================
+    # Raw Packet-Out
+    # ============================================================
+
+    def _packet_out_raw(self, datapath, data, out_port, in_port):
+
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        actions = [parser.OFPActionOutput(out_port)]
+
+        out = parser.OFPPacketOut(
+            datapath=datapath,
+            buffer_id=ofproto.OFP_NO_BUFFER,
+            in_port=in_port,
+            actions=actions,
+            data=data
         )
 
-        return True
+        datapath.send_msg(out)
 
-    # =========================================================
-    # CLEAR REROUTE FLOWS
-    # =========================================================
+    # ============================================================
+    # Broadcast / Multicast Check
+    # ============================================================
 
-    def clear_path_flows(
-        self,
-        src_mac,
-        dst_mac
-    ):
+    def _is_broadcast_or_multicast(self, mac):
 
-        for dpid, datapath in list(
-            self.datapaths.items()
-        ):
+        mac = str(mac).lower()
 
-            ofproto = datapath.ofproto
-            parser = datapath.ofproto_parser
+        if mac == "ff:ff:ff:ff:ff:ff":
+            return True
 
-            match = parser.OFPMatch(
-                eth_src=src_mac,
-                eth_dst=dst_mac
+        try:
+            first_octet = int(mac.split(":")[0], 16)
+            return bool(first_octet & 1)
+        except Exception:
+            return False
+
+    # ============================================================
+    # LLDP Sender Loop
+    # ============================================================
+
+    def _lldp_loop(self):
+
+        while True:
+
+            try:
+                self._send_lldp_once()
+            except Exception as exc:
+                self.logger.exception("LLDP loop error: %s", exc)
+
+            hub.sleep(LLDP_INTERVAL)
+
+    # ============================================================
+    # Send LLDP
+    # ============================================================
+
+    def _send_lldp_once(self):
+
+        if lldp is None:
+            return
+
+        for dpid, datapath in list(self.datapaths.items()):
+
+            ports = self._get_valid_physical_ports(dpid)
+
+            if not ports:
+                continue
+
+            for port_no in ports:
+
+                try:
+                    self._send_lldp(datapath, port_no)
+                except Exception as exc:
+                    self.logger.debug(
+                        "Could not send LLDP s%d:%d: %s",
+                        dpid, port_no, exc
+                    )
+
+    # ============================================================
+    # Valid Physical Ports
+    # ============================================================
+
+    def _get_valid_physical_ports(self, dpid):
+
+        ports = set()
+
+        for (port_dpid, port_no), port_name in list(self.port_desc.items()):
+
+            if port_dpid != dpid:
+                continue
+
+            if port_no <= 0:
+                continue
+
+            if self._is_special_port(port_no):
+                continue
+
+            ports.add(port_no)
+
+        return ports
+
+    # ============================================================
+    # Construct + Send LLDP
+    # ============================================================
+
+    def _send_lldp(self, datapath, port_no):
+
+        if lldp is None:
+            return
+
+        dpid = datapath.id
+
+        chassis_id = lldp.ChassisID(
+            subtype=lldp.ChassisID.SUB_LOCALLY_ASSIGNED,
+            chassis_id=str(dpid).encode()
+        )
+
+        port_id = lldp.PortID(
+            subtype=lldp.PortID.SUB_PORT_COMPONENT,
+            port_id=str(port_no).encode()
+        )
+
+        ttl = lldp.TTL(ttl=LLDP_INTERVAL * 2)
+        end = lldp.End()
+
+        lldp_pkt = lldp.lldp(
+            tlvs=[chassis_id, port_id, ttl, end]
+        )
+
+        eth = ethernet.ethernet(
+            dst=LLDP_MAC,
+            src=self._get_switch_mac(dpid),
+            ethertype=ETH_TYPE_LLDP
+        )
+
+        pkt = packet.Packet()
+        pkt.add_protocol(eth)
+        pkt.add_protocol(lldp_pkt)
+        pkt.serialize()
+
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        actions = [parser.OFPActionOutput(port_no)]
+
+        out = parser.OFPPacketOut(
+            datapath=datapath,
+            buffer_id=ofproto.OFP_NO_BUFFER,
+            in_port=ofproto.OFPP_CONTROLLER,
+            actions=actions,
+            data=pkt.data
+        )
+
+        datapath.send_msg(out)
+
+    # ============================================================
+    # Switch Source MAC
+    # ============================================================
+
+    def _get_switch_mac(self, dpid):
+
+        return (
+            "02:%02x:%02x:%02x:%02x:%02x"
+            % (
+                (dpid >> 32) & 0xff,
+                (dpid >> 24) & 0xff,
+                (dpid >> 16) & 0xff,
+                (dpid >> 8) & 0xff,
+                dpid & 0xff
             )
-
-            mod = parser.OFPFlowMod(
-                datapath=datapath,
-                command=ofproto.OFPFC_DELETE,
-                out_port=ofproto.OFPP_ANY,
-                out_group=ofproto.OFPG_ANY,
-                priority=100,
-                match=match
-            )
-
-            datapath.send_msg(
-                mod
-            )
-
-    # =========================================================
-    # DELETE ALL REROUTE FLOWS
-    # =========================================================
-
-    def clear_all_flows(self):
-
-        for dpid, datapath in list(
-            self.datapaths.items()
-        ):
-
-            ofproto = datapath.ofproto
-            parser = datapath.ofproto_parser
-
-            match = parser.OFPMatch()
-
-            mod = parser.OFPFlowMod(
-                datapath=datapath,
-                command=ofproto.OFPFC_DELETE,
-                out_port=ofproto.OFPP_ANY,
-                out_group=ofproto.OFPG_ANY,
-                priority=100,
-                match=match
-            )
-
-            datapath.send_msg(
-                mod
-            )
-
-    # =========================================================
-    # HOST LOCATION
-    # =========================================================
-
-    def get_host_location(
-        self,
-        mac
-    ):
-
-        return self.host_location.get(
-            mac
         )
 
-    # =========================================================
-    # GET PATH BETWEEN HOSTS
-    # =========================================================
+    # ============================================================
+    # CLFF Rebuild
+    # ============================================================
 
-    def get_path_between_hosts(
-        self,
-        src_mac,
-        dst_mac
-    ):
+    def _rebuild_clff(self):
 
-        src_location = self.host_location.get(
-            src_mac
-        )
+        if self.clff is None:
+            return False
 
-        dst_location = self.host_location.get(
-            dst_mac
-        )
-
-        if (
-            src_location is None
-            or dst_location is None
-        ):
-
-            return None
-
-        src_dpid = src_location[0]
-        dst_dpid = dst_location[0]
-
-        return self.calculate_path(
-            src_dpid,
-            dst_dpid
-        )
-
-    # =========================================================
-    # CLEANUP
-    # =========================================================
-
-    def close(self):
+        if not self.topology_ready:
+            return False
 
         try:
 
-            self.clear_all_flows()
+            success = self.clff.build_trees(
+                self.graph,
+                self.link_to_port
+            )
 
-        except Exception:
+            if success:
+                self.logger.info("CLFF trees rebuilt successfully.")
+                summary = self.clff.summary()
+                self.logger.info("CLFF summary: %s", summary)
+            else:
+                self.logger.warning("CLFF tree rebuild failed.")
 
-            pass
+            return success
 
-        super(
-            TopologyMonitor,
-            self
-        ).close()
+        except Exception as exc:
+            self.logger.exception("Failed to rebuild CLFF: %s", exc)
+            return False
+
+    # ============================================================
+    # Reroute Host Event
+    # ============================================================
+
+    @set_ev_cls(EventRerouteHost)
+    def handle_reroute_host(self, ev):
+
+        host_ip = ev.host_ip
+        request_id = ev.request_id
+
+        mac = self.ip_to_mac.get(host_ip)
+
+        if mac is None:
+            self.logger.warning(
+                "Reroute requested for unknown host %s (request_id=%s)",
+                host_ip, request_id
+            )
+            return
+
+        location = self.host_location.get(mac)
+
+        if location is None:
+            self.logger.warning(
+                "No location known for host %s (request_id=%s)",
+                host_ip, request_id
+            )
+            return
+
+        dst_dpid, dst_port = location
+
+        self.logger.info(
+            "Reroute requested for host %s at s%d:%d (request_id=%s)",
+            host_ip, dst_dpid, dst_port, request_id
+        )
+
+        for flow_id, flow in list(self.active_flows.items()):
+
+            if not isinstance(flow, dict):
+                continue
+
+            src_ip = flow.get("src_ip")
+            flow_dst_ip = flow.get("dst_ip")
+
+            if src_ip != host_ip and flow_dst_ip != host_ip:
+                continue
+
+            src_mac = flow.get("src_mac")
+            dst_mac = flow.get("dst_mac")
+
+            if not src_mac or not dst_mac:
+                continue
+
+            src_location = self.host_location.get(src_mac)
+            dst_location = self.host_location.get(dst_mac)
+
+            if src_location is None or dst_location is None:
+                continue
+
+            src_dpid = src_location[0]
+            dst_dpid = dst_location[0]
+
+            path = self._shortest_path(src_dpid, dst_dpid)
+
+            if path:
+                self._install_path(path, src_mac, dst_mac)
+
+        self.logger.info(
+            "Reroute processing completed for %s (request_id=%s)",
+            host_ip, request_id
+        )
+
+    # ============================================================
+    # Active Flow Registration
+    # ============================================================
+
+    def register_active_flow(self, flow_id, flow_data):
+        self.active_flows[flow_id] = flow_data
+
+    def remove_active_flow(self, flow_id):
+        self.active_flows.pop(flow_id, None)
+
+    # ============================================================
+    # Clear Reroute Flows
+    # ============================================================
+
+    def clear_all_flows(self):
+
+        for dpid, datapath in list(self.datapaths.items()):
+
+            ofproto = datapath.ofproto
+            parser = datapath.ofproto_parser
+
+            mod = parser.OFPFlowMod(
+                datapath=datapath,
+                command=ofproto.OFPFC_DELETE,
+                out_port=ofproto.OFPP_ANY,
+                out_group=ofproto.OFPG_ANY,
+                priority=REROUTE_PRIORITY,
+                match=parser.OFPMatch()
+            )
+
+            datapath.send_msg(mod)
+
+        self.logger.info("Reroute flows cleared.")
+
+    # ============================================================
+    # Topology Status
+    # ============================================================
+
+    def get_topology_status(self):
+
+        return {
+            "topology_ready": self.topology_ready,
+            "full_topology_discovered": self.full_topology_discovered,
+            "switch_count": len(self.graph.nodes()),
+            "link_count": len(self.graph.edges()),
+            "host_count": len(self.host_location),
+            "switches": sorted(self.graph.nodes()),
+            "links": [list(edge) for edge in self.graph.edges()],
+            "clff_ready": (
+                self.clff is not None and self.clff.is_ready()
+            ),
+            "clff_trees": (
+                len(self.clff.trees) if self.clff is not None else 0
+            ),
+        }
+
+    # ============================================================
+    # Host Status
+    # ============================================================
+
+    def get_host_status(self):
+
+        result = {}
+
+        for mac, location in list(self.host_location.items()):
+
+            dpid, port_no = location
+            ip = None
+
+            for host_ip, host_mac in list(self.ip_to_mac.items()):
+                if host_mac == mac:
+                    ip = host_ip
+                    break
+
+            result[mac] = {
+                "ip": ip, "dpid": dpid, "port": port_no
+            }
+
+        return result
+
+    # ============================================================
+    # Graph / Links
+    # ============================================================
+
+    def get_graph(self):
+        return self.graph.copy()
+
+    def get_links(self):
+
+        result = []
+
+        for src_dpid, dst_dpid in self.graph.edges():
+
+            ports = self.link_to_port.get((src_dpid, dst_dpid))
+
+            result.append({
+                "src_dpid": src_dpid,
+                "dst_dpid": dst_dpid,
+                "src_port": ports[0] if ports else None,
+                "dst_port": ports[1] if ports else None
+            })
+
+        return result
+
+    # ============================================================
+    # Topology Summary
+    # ============================================================
+
+    def print_topology_summary(self):
+
+        self.logger.info("========== TOPOLOGY SUMMARY ==========")
+        self.logger.info("Switches: %s", sorted(self.graph.nodes()))
+        self.logger.info("Links: %s", list(self.graph.edges()))
+        self.logger.info("Hosts: %s", self.host_location)
+        self.logger.info("IP -> MAC: %s", self.ip_to_mac)
+        self.logger.info("Port mappings: %s", self.port_to_link)
+
+        if self.clff is not None:
+            self.logger.info("CLFF ready: %s", self.clff.is_ready())
+            self.logger.info("CLFF summary: %s", self.clff.summary())
+
+        self.logger.info("=======================================")
