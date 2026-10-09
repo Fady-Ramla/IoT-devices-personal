@@ -27,7 +27,7 @@
 #       - unknown unicast forwarding
 #       - broadcast / multicast forwarding
 #       - CLFF
-#       - Dijkstra / path calculation
+#       - PathEngine integration (path decisions are owned by PathEngine)
 #       - rerouting
 #
 #   TrafficMonitorMerged OWNS:
@@ -250,12 +250,13 @@ class NetworkActionController(ControllerBase):
             return Response(
                 status=400,
                 content_type="application/json",
+                charset="utf-8",
                 body=json.dumps({
                     "success": False,
                     "status": "error",
                     "message": "Invalid JSON",
                     "error": str(e)
-                })
+                }).encode("utf-8")
             )
 
         host_ip = data.get(
@@ -287,11 +288,12 @@ class NetworkActionController(ControllerBase):
             return Response(
                 status=400,
                 content_type="application/json",
+                charset="utf-8",
                 body=json.dumps({
                     "success": False,
                     "status": "error",
                     "message": "host_ip is required"
-                })
+                }).encode("utf-8")
             )
 
         if not action:
@@ -299,11 +301,12 @@ class NetworkActionController(ControllerBase):
             return Response(
                 status=400,
                 content_type="application/json",
+                charset="utf-8",
                 body=json.dumps({
                     "success": False,
                     "status": "error",
                     "message": "action is required"
-                })
+                }).encode("utf-8")
             )
 
         try:
@@ -329,9 +332,10 @@ class NetworkActionController(ControllerBase):
             return Response(
                 status=status_code,
                 content_type="application/json",
+                charset="utf-8",
                 body=json.dumps(
                     result
-                )
+                ).encode("utf-8")
             )
 
         except Exception as e:
@@ -343,12 +347,140 @@ class NetworkActionController(ControllerBase):
             return Response(
                 status=500,
                 content_type="application/json",
+                charset="utf-8",
                 body=json.dumps({
                     "success": False,
                     "status": "error",
                     "message": str(e)
-                })
+                }).encode("utf-8")
             )
+
+    def _link_action(self, req, action):
+        try:
+            data = json.loads(req.body.decode("utf-8"))
+            src_dpid = int(data["src_dpid"])
+            dst_dpid = int(data["dst_dpid"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return Response(
+                status=400,
+                content_type="application/json",
+                charset="utf-8",
+                body=json.dumps({
+                    "success": False,
+                    "status": "error",
+                    "message": "src_dpid and dst_dpid are required",
+                    "details": str(exc)
+                }).encode("utf-8")
+            )
+
+        topology = self.monitor._get_topology_monitor()
+        if topology is None:
+            return Response(
+                status=503,
+                content_type="application/json",
+                charset="utf-8",
+                body=json.dumps({
+                    "success": False,
+                    "status": "unavailable",
+                    "message": "TopologyMonitor is not available"
+                }).encode("utf-8")
+            )
+
+        reason = data.get("reason", "REST link action")
+        if action == "isolate":
+            success = topology.isolate_link(src_dpid, dst_dpid)
+        else:
+            success = topology.restore_link(src_dpid, dst_dpid)
+
+        result = {
+            "success": bool(success),
+            "status": "executed" if success else "rejected",
+            "action": action.upper(),
+            "src_dpid": src_dpid,
+            "dst_dpid": dst_dpid,
+            "reason": reason,
+            "topology_status": topology.get_topology_status()
+        }
+        return Response(
+            status=200 if success else 400,
+            content_type="application/json",
+            charset="utf-8",
+            body=json.dumps(result).encode("utf-8")
+        )
+
+    @route(
+        "network_link_isolate",
+        "/network/link/isolate",
+        methods=["POST"]
+    )
+    def network_link_isolate(self, req, **kwargs):
+        return self._link_action(req, "isolate")
+
+    @route(
+        "network_link_restore",
+        "/network/link/restore",
+        methods=["POST"]
+    )
+    def network_link_restore(self, req, **kwargs):
+        return self._link_action(req, "restore")
+
+    @route(
+        "network_link_metric",
+        "/network/link/metric",
+        methods=["POST"]
+    )
+    def network_link_metric(self, req, **kwargs):
+        try:
+            data = json.loads(req.body.decode("utf-8"))
+            src_dpid = int(data["src_dpid"])
+            dst_dpid = int(data["dst_dpid"])
+            utilization = float(data["utilization"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            return Response(
+                status=400,
+                content_type="application/json",
+                charset="utf-8",
+                body=json.dumps({
+                    "success": False,
+                    "status": "error",
+                    "message": (
+                        "src_dpid, dst_dpid and utilization are required"
+                    ),
+                    "details": str(exc)
+                }).encode("utf-8")
+            )
+
+        topology = self.monitor._get_topology_monitor()
+        if topology is None:
+            return Response(
+                status=503,
+                content_type="application/json",
+                charset="utf-8",
+                body=json.dumps({
+                    "success": False,
+                    "status": "unavailable",
+                    "message": "TopologyMonitor is not available"
+                }).encode("utf-8")
+            )
+
+        topology.update_link_metric(
+            src_dpid,
+            dst_dpid,
+            utilization=utilization,
+            rate_bps=data.get("rate_bps"),
+            capacity_bps=data.get("capacity_bps")
+        )
+
+        return Response(
+            status=200,
+            content_type="application/json",
+            charset="utf-8",
+            body=json.dumps({
+                "success": True,
+                "status": "updated",
+                "path_engine": topology.get_path_engine_status()
+            }).encode("utf-8")
+        )
 
 
 # =============================================================
@@ -552,7 +684,7 @@ class TrafficMonitorMerged(
         )
 
         self.logger.info(
-            "Network execution owner: TrafficMonitorMerged"
+            "Security action execution owner: TrafficMonitorMerged"
         )
 
         # -----------------------------------------------------
@@ -564,7 +696,8 @@ class TrafficMonitorMerged(
         )
 
         self.logger.info(
-            "Topology/Dijkstra owner: TopologyMonitor"
+            "Topology/forwarding owner: TopologyMonitor; "
+            "path decisions: PathEngine"
         )
 
         self.logger.info(
@@ -1326,28 +1459,37 @@ class TrafficMonitorMerged(
 
         datapath = ev.datapath
 
+        dpid = getattr(datapath, "id", None)
+
+        if dpid is None:
+            self.logger.warning(
+                "Datapath state change without a valid DPID: state=%s",
+                ev.state
+            )
+            return
+
         if ev.state == MAIN_DISPATCHER:
 
             self.datapaths[
-                datapath.id
+                dpid
             ] = datapath
 
             self.logger.info(
                 "Datapath registered: s%d",
-                datapath.id
+                dpid
             )
 
         elif ev.state == DEAD_DISPATCHER:
 
-            if datapath.id in self.datapaths:
+            if dpid in self.datapaths:
 
                 del self.datapaths[
-                    datapath.id
+                    dpid
                 ]
 
             self.logger.info(
                 "Datapath removed: s%d",
-                datapath.id
+                dpid
             )
 
             for host_ip in list(
@@ -1361,7 +1503,7 @@ class TrafficMonitorMerged(
                 )
 
                 switches.discard(
-                    datapath.id
+                    dpid
                 )
 
     # =========================================================

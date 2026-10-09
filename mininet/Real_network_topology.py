@@ -61,6 +61,7 @@ class PartialMeshTopo(Topo):
 
         # ----------------------------------------------------
         # Host connections
+        # Keep existing host-link configuration unchanged.
         # ----------------------------------------------------
 
         self.addLink(h1, s1)
@@ -80,20 +81,22 @@ class PartialMeshTopo(Topo):
 
         # ----------------------------------------------------
         # Main switch chain
+        # Bandwidth: 10 Mbps per inter-switch link
         # ----------------------------------------------------
 
-        self.addLink(s1, s2)
-        self.addLink(s2, s3)
-        self.addLink(s3, s4)
-        self.addLink(s4, s5)
+        self.addLink(s1, s2, cls=TCLink, bw=10)
+        self.addLink(s2, s3, cls=TCLink, bw=10)
+        self.addLink(s3, s4, cls=TCLink, bw=10)
+        self.addLink(s4, s5, cls=TCLink, bw=10)
 
         # ----------------------------------------------------
         # Redundant links
+        # Bandwidth: 10 Mbps per inter-switch link
         # ----------------------------------------------------
 
-        self.addLink(s1, s3)
-        self.addLink(s2, s4)
-        self.addLink(s3, s5)
+        self.addLink(s1, s3, cls=TCLink, bw=10)
+        self.addLink(s2, s4, cls=TCLink, bw=10)
+        self.addLink(s3, s5, cls=TCLink, bw=10)
 
 
 # ============================================================
@@ -433,9 +436,7 @@ def run():
     # --------------------------------------------------------
     #
     # STP is intentionally DISABLED.
-    #
-    # All physical switch-to-switch links remain available.
-    # Loop prevention is handled by Ryu (CLFF).
+    # Loop prevention is handled by Ryu CLFF.
     # --------------------------------------------------------
 
     info('\n*** STP is DISABLED.\n')
@@ -448,6 +449,7 @@ def run():
     info('\n*** Waiting for Ryu topology discovery...\n')
 
     time.sleep(5)
+
     # --------------------------------------------------------
     # Enable LLDP rules on all switches
     # --------------------------------------------------------
@@ -463,6 +465,7 @@ def run():
         )
 
     info('*** LLDP rules installed.\n')
+
     # --------------------------------------------------------
     # Start Servers
     # --------------------------------------------------------

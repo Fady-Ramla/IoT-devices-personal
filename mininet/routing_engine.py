@@ -1,83 +1,86 @@
+#!/usr/bin/env python3
+"""CLI smoke test for the shared traffic-aware PathEngine."""
+
 import sys
+
 import networkx as nx
+
+from path_engine import PathEngine
+
+
+DEFAULT_LINKS = [
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (4, 5),
+    (1, 3),
+    (2, 4),
+    (3, 5),
+]
 
 
 def build_graph():
-    G = nx.Graph()
-
-    links = [
-        ("s1", "s2"),
-        ("s2", "s3"),
-        ("s3", "s4"),
-        ("s4", "s5"),
-        ("s1", "s3"),
-        ("s2", "s4"),
-        ("s3", "s5")
-    ]
-
-    for src, dst in links:
-        G.add_edge(src, dst, weight=1)
-
-    return G
+    graph = nx.Graph()
+    graph.add_edges_from(DEFAULT_LINKS)
+    return graph
 
 
-def find_path(G, src, dst):
-    return nx.shortest_path(
-        G,
-        source=src,
-        target=dst,
-        weight="weight"
+def find_path(graph, src, dst):
+    result = PathEngine().get_best_path(
+        src=int(src),
+        dst=int(dst),
+        graph=graph,
     )
+    return result.get("path") if result.get("success") else None
 
 
 def reroute(src, dst, failed_src, failed_dst):
+    graph = build_graph()
+    src, dst = int(src), int(dst)
+    failed = (int(failed_src), int(failed_dst))
 
-    G = build_graph()
-
-    normal_path = find_path(G, src, dst)
+    engine = PathEngine()
+    normal = engine.get_best_path(src=src, dst=dst, graph=graph)
 
     print("\nSource:", src)
     print("Destination:", dst)
-    print("Failed link:", failed_src, "<->", failed_dst)
-    print("Normal path:", " -> ".join(normal_path))
+    print("Failed link:", failed[0], "<->", failed[1])
+    print("Normal path:", " -> ".join(map(str, normal.get("path") or [])))
 
-    if not G.has_edge(failed_src, failed_dst):
+    if not graph.has_edge(*failed):
         print("ERROR: Link does not exist.")
         return
+    if not normal.get("success"):
+        print("Status: NO INITIAL PATH")
+        return
 
-    G.remove_edge(failed_src, failed_dst)
+    graph.remove_edge(*failed)
+    backup = engine.get_backup_path(
+        current_path=normal["path"],
+        src=src,
+        dst=dst,
+        graph=graph,
+        unavailable_links=[failed],
+    )
 
-    try:
-        new_path = find_path(G, src, dst)
-
-        print("Rerouted path:", " -> ".join(new_path))
+    if backup.get("success"):
+        print("Rerouted path:", " -> ".join(map(str, backup["path"])))
+        print("Reason:", backup.get("reason"))
         print("Status: SUCCESS")
-
-    except nx.NetworkXNoPath:
+    else:
         print("Status: NO ALTERNATIVE PATH")
 
 
 def main():
-
     if len(sys.argv) != 5:
         print(
-            "Usage: python3 mininet/routing_engine.py "
+            "Usage: python3 routing_engine_final.py "
             "<source> <destination> <failed_src> <failed_dst>"
         )
-        return
-
-    src = sys.argv[1]
-    dst = sys.argv[2]
-    failed_src = sys.argv[3]
-    failed_dst = sys.argv[4]
-
-    reroute(
-        src,
-        dst,
-        failed_src,
-        failed_dst
-    )
+        return 2
+    reroute(*sys.argv[1:])
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
