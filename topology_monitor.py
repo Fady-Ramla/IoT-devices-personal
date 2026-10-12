@@ -172,8 +172,14 @@ class TopologyMonitor(app_manager.RyuApp):
         # Raw LLDP observations.
         self.lldp_links = {}
 
-        # (dpid, port_no) -> name
+        # (dpid, port_no) -> name / hardware address from PortDesc.
         self.port_desc = {}
+        self.port_hw_addr = {}
+
+        # Keep the exact endpoints while a link is administratively isolated.
+        # LLDP mappings disappear after OFPPortMod disables the ports.
+        # edge -> ((dpid_a, port_a), (dpid_b, port_b))
+        self.isolated_link_ports = {}
 
         # PortStats samples used by traffic-aware path selection.
         self.port_stats_previous = {}
@@ -276,6 +282,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
         for key in [k for k in self.port_desc if k[0] == dpid]:
             del self.port_desc[key]
+            self.port_hw_addr.pop(key, None)
 
         for key in [k for k in self.installed_flows if k[0] == dpid]:
             del self.installed_flows[key]
@@ -301,8 +308,20 @@ class TopologyMonitor(app_manager.RyuApp):
         dpid = ev.msg.datapath.id
 
         for port in ev.msg.body:
-            self.port_desc[(dpid, port.port_no)] = \
-                self._decode_port_name(port.name)
+            port_no = int(port.port_no)
+            key = (dpid, port_no)
+            self.port_desc[key] = self._decode_port_name(port.name)
+            hw_addr = getattr(port, "hw_addr", None)
+            if hw_addr:
+                self.port_hw_addr[key] = hw_addr
+
+        # An isolated link must remain physically blocked if a switch
+        # reconnects and its port configuration was reset by the switch.
+        for endpoints in list(self.isolated_link_ports.values()):
+            for endpoint_dpid, endpoint_port in endpoints:
+                if endpoint_dpid == dpid:
+                    self._set_port_admin_down(
+                        endpoint_dpid, endpoint_port, down=True)
 
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
@@ -786,9 +805,46 @@ class TopologyMonitor(app_manager.RyuApp):
     def get_path_engine_status(self):
         return self.path_engine.status()
 
-    def isolate_link(self, dpid_a, dpid_b):
-        """Remove a link from routing/CLFF. Physical graph is untouched."""
+    def _set_port_admin_down(self, dpid, port_no, down):
+        """Set/clear OpenFlow's administrative PORT_DOWN bit."""
+        datapath = self.datapaths.get(int(dpid))
+        key = (int(dpid), int(port_no))
+        hw_addr = self.port_hw_addr.get(key)
 
+        if datapath is None:
+            self.logger.warning(
+                "Cannot change port state: switch s%d is disconnected", dpid)
+            return False
+
+        if not hw_addr:
+            self.logger.warning(
+                "Cannot change port state: missing hardware address for s%d:%d",
+                dpid, port_no)
+            return False
+
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        port_down = ofproto.OFPPC_PORT_DOWN
+        config = port_down if down else 0
+
+        try:
+            datapath.send_msg(parser.OFPPortMod(
+                datapath,
+                int(port_no),
+                hw_addr,
+                config,
+                port_down,
+                0
+            ))
+            return True
+        except Exception:
+            self.logger.exception(
+                "OFPPortMod failed for s%d:%d (down=%s)",
+                dpid, port_no, down)
+            return False
+
+    def isolate_link(self, dpid_a, dpid_b):
+        """Physically disable both switch ports of an inter-switch link."""
         edge = tuple(sorted((int(dpid_a), int(dpid_b))))
 
         if edge not in self.edges:
@@ -798,31 +854,89 @@ class TopologyMonitor(app_manager.RyuApp):
         if edge in self.isolated_links:
             return True
 
+        dpid_a, dpid_b = edge
+        ports = self.link_to_port.get((dpid_a, dpid_b))
+        if ports is None:
+            self.logger.warning(
+                "Cannot physically isolate %s: LLDP port mapping unavailable",
+                edge)
+            return False
+
+        endpoints = (
+            (dpid_a, int(ports[0])),
+            (dpid_b, int(ports[1])),
+        )
+        for dpid, port_no in endpoints:
+            if dpid not in self.datapaths or not self.port_hw_addr.get(
+                    (dpid, port_no)):
+                self.logger.warning(
+                    "Cannot physically isolate %s: missing switch/port data "
+                    "for s%d:%d", edge, dpid, port_no)
+                return False
+
+        self.isolated_link_ports[edge] = endpoints
+        changed = []
+        for dpid, port_no in endpoints:
+            if not self._set_port_admin_down(dpid, port_no, down=True):
+                for old_dpid, old_port in reversed(changed):
+                    self._set_port_admin_down(
+                        old_dpid, old_port, down=False)
+                self.isolated_link_ports.pop(edge, None)
+                return False
+            changed.append((dpid, port_no))
+
         self.isolated_links.add(edge)
         self._rebuild_operational_graph()
         self._flush_forwarding_flows()
         self._refresh_clff()
 
-        self.logger.warning("Link ISOLATED (operational only): %s", edge)
+        self.logger.warning(
+            "Link PHYSICALLY ISOLATED: %s ports=%s", edge, endpoints)
         return True
 
     def restore_link(self, dpid_a, dpid_b):
-        """
-        Make a link usable again.
-        Network resource only - never touches Zero-Trust state.
-        Existing flows are NOT moved back (avoids route flapping).
-        """
+        """Re-enable both link ports without changing Zero-Trust state.
 
+        Existing flows are not moved back automatically, avoiding route
+        flapping. LLDP will rediscover the physical link after ports return.
+        """
         edge = tuple(sorted((int(dpid_a), int(dpid_b))))
 
         if edge not in self.isolated_links:
             return False
 
+        endpoints = self.isolated_link_ports.get(edge)
+        if not endpoints:
+            self.logger.warning(
+                "Cannot restore %s: saved endpoint port mapping is missing",
+                edge)
+            return False
+
+        for dpid, port_no in endpoints:
+            if dpid not in self.datapaths or not self.port_hw_addr.get(
+                    (dpid, port_no)):
+                self.logger.warning(
+                    "Cannot restore %s: missing switch/port data for s%d:%d",
+                    edge, dpid, port_no)
+                return False
+
+        restored = []
+        for dpid, port_no in endpoints:
+            if not self._set_port_admin_down(dpid, port_no, down=False):
+                for old_dpid, old_port in reversed(restored):
+                    self._set_port_admin_down(
+                        old_dpid, old_port, down=True)
+                return False
+            restored.append((dpid, port_no))
+
         self.isolated_links.discard(edge)
+        self.isolated_link_ports.pop(edge, None)
         self._rebuild_operational_graph()
         self._refresh_clff()
 
-        self.logger.info("Link RESTORED (operational): %s", edge)
+        self.logger.info(
+            "Link physically restored: %s ports=%s; LLDP will rediscover it",
+            edge, endpoints)
         return True
 
     # ============================================================
