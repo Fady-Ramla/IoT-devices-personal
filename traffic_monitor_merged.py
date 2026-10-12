@@ -11,7 +11,7 @@
 #   4. Flow-level feature extraction
 #   5. CSV dataset collection
 #   6. Zero-Trust state enforcement
-#   7. Quarantine / Restore
+#   7. Explicit Security device block / unblock delegation
 #   8. Security -> Network action execution
 #   9. Reroute request delegation to TopologyMonitor
 #
@@ -36,7 +36,7 @@
 #       - flow statistics
 #       - CSV dataset collection
 #       - Zero-Trust state
-#       - quarantine / restore
+#       - Security device block / unblock requests (delegated)
 #       - Security -> Network actions
 #       - reroute delegation
 #
@@ -59,6 +59,7 @@
 
 import csv
 import json
+import ipaddress
 import os
 import threading
 import time
@@ -104,12 +105,11 @@ from webob import Response
 from zero_trust.zero_trust_policy import (
     TRUSTED,
     UNTRUSTED,
-    QUARANTINED,
 
     ACTION_ALLOW,
     ACTION_KEEP_UNTRUSTED,
-    ACTION_QUARANTINE,
-    ACTION_RESTORE,
+    ACTION_BLOCK_DEVICE,
+    ACTION_UNBLOCK_DEVICE,
     ACTION_REROUTE,
 
     MIN_SCORE,
@@ -157,7 +157,6 @@ CSV_FLUSH_EVERY = 50
 
 NORMAL_PRIORITY = 10
 CLFF_PRIORITY = 20
-QUARANTINE_PRIORITY = 200
 TABLE_MISS_PRIORITY = 0
 
 OPENFLOW_VERSION = "1.3"
@@ -259,9 +258,8 @@ class NetworkActionController(ControllerBase):
                 }).encode("utf-8")
             )
 
-        host_ip = data.get(
-            "host_ip"
-        )
+        host_ip = data.get("ip") or data.get("host_ip")
+        mac = data.get("mac")
 
         action = data.get(
             "action"
@@ -283,19 +281,6 @@ class NetworkActionController(ControllerBase):
             "reason"
         )
 
-        if not host_ip:
-
-            return Response(
-                status=400,
-                content_type="application/json",
-                charset="utf-8",
-                body=json.dumps({
-                    "success": False,
-                    "status": "error",
-                    "message": "host_ip is required"
-                }).encode("utf-8")
-            )
-
         if not action:
 
             return Response(
@@ -311,8 +296,28 @@ class NetworkActionController(ControllerBase):
 
         try:
 
+            action = str(action).strip().upper()
+            if action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+                if not mac:
+                    return Response(
+                        status=400, content_type="application/json",
+                        charset="utf-8",
+                        body=json.dumps({
+                            "success": False, "status": "error",
+                            "message": "mac is required for device block actions"
+                        }).encode("utf-8"))
+            elif not host_ip:
+                return Response(
+                    status=400, content_type="application/json",
+                    charset="utf-8",
+                    body=json.dumps({
+                        "success": False, "status": "error",
+                        "message": "ip (or host_ip) is required for this action"
+                    }).encode("utf-8"))
+
             result = self.monitor.execute_security_action(
                 host_ip=host_ip,
+                mac=mac,
                 action=action,
                 request_id=request_id,
                 trust_state=trust_state,
@@ -564,13 +569,6 @@ class TrafficMonitorMerged(
         self.decision_validator = (
             ZeroTrustDecision()
         )
-
-        # -----------------------------------------------------
-        # Quarantine
-        # -----------------------------------------------------
-
-        self.quarantined_hosts = set()
-        self.quarantine_rules_installed = {}
 
         # -----------------------------------------------------
         # Flow monitoring
@@ -1432,15 +1430,6 @@ class TrafficMonitorMerged(
             datapath
         )
 
-        for host_ip in list(
-            self.quarantined_hosts
-        ):
-
-            self._install_drop_rule(
-                datapath,
-                host_ip
-            )
-
     # =========================================================
     # DATAPATH STATE CHANGE
     # =========================================================
@@ -1492,19 +1481,6 @@ class TrafficMonitorMerged(
                 dpid
             )
 
-            for host_ip in list(
-                self.quarantine_rules_installed
-            ):
-
-                switches = (
-                    self.quarantine_rules_installed[
-                        host_ip
-                    ]
-                )
-
-                switches.discard(
-                    dpid
-                )
 
     # =========================================================
     # TABLE MISS
@@ -1553,7 +1529,6 @@ class TrafficMonitorMerged(
     # =========================================================
     # GENERIC FLOW ADD
     #
-    # Still used for Zero-Trust quarantine rules.
     #
     # It is NOT used for normal forwarding anymore.
     # =========================================================
@@ -1832,23 +1807,18 @@ class TrafficMonitorMerged(
                 ] = UNTRUSTED
 
         # =====================================================
-        # QUARANTINE CHECK
-        #
-        # This is enforcement, not forwarding.
+        # SECURITY BLOCK CHECK (observation-side fallback)
+        # TopologyMonitor owns the actual OpenFlow enforcement.
         # =====================================================
 
-        if (
-            src_ip
-            and src_ip in self.quarantined_hosts
-        ):
-
-            self.logger.warning(
-                "Packet observed from quarantined host %s; "
-                "drop rule is enforced in datapath",
-                src_ip
-            )
-
-            return
+        topology = self._get_topology_monitor()
+        if topology is not None:
+            blocked = getattr(topology, "blocked_devices", {})
+            if str(src_mac).lower() in blocked:
+                self.logger.warning(
+                    "Packet observed from blocked MAC %s (IP=%s); "
+                    "TopologyMonitor owns the drop rule", src_mac, src_ip)
+                return
 
         # =====================================================
         # ARP
@@ -2405,565 +2375,146 @@ class TrafficMonitorMerged(
     # =========================================================
 
     def _validate_network_decision(
-        self,
-        host_ip,
-        action,
-        trust_state=None,
-        trust_score=None,
-        reason=None
+        self, host_ip, action, trust_state=None, trust_score=None,
+        reason=None, mac=None
     ):
-
+        action = str(action).strip().upper()
         valid_actions = {
-            ACTION_ALLOW,
-            ACTION_KEEP_UNTRUSTED,
-            ACTION_QUARANTINE,
-            ACTION_RESTORE,
-            ACTION_REROUTE
+            ACTION_ALLOW, ACTION_KEEP_UNTRUSTED, ACTION_BLOCK_DEVICE,
+            ACTION_UNBLOCK_DEVICE, ACTION_REROUTE
         }
-
         if action not in valid_actions:
+            return {"valid": False, "message": "Invalid action: %s" % action}
 
-            return {
-                "valid": False,
-                "message": (
-                    "Invalid action: %s"
-                    % action
-                )
-            }
-
-        valid_states = {
-            TRUSTED,
-            UNTRUSTED,
-            QUARANTINED
-        }
-
-        if (
-            trust_state is not None
-            and trust_state not in valid_states
-        ):
-
-            return {
-                "valid": False,
-                "message": (
-                    "Invalid trust state: %s"
-                    % trust_state
-                )
-            }
+        if trust_state is not None and trust_state not in {TRUSTED, UNTRUSTED}:
+            return {"valid": False, "message": "Invalid trust state: %s" % trust_state}
 
         if trust_score is not None:
-
+            if isinstance(trust_score, bool):
+                return {"valid": False, "message": "Invalid trust score"}
             try:
+                trust_score = float(trust_score)
+            except (TypeError, ValueError):
+                return {"valid": False, "message": "Invalid trust score"}
+            if not MIN_SCORE <= trust_score <= MAX_SCORE:
+                return {"valid": False,
+                        "message": "Trust score must be between %s and %s"
+                                   % (MIN_SCORE, MAX_SCORE)}
 
-                trust_score = float(
-                    trust_score
-                )
+        if action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            try:
+                fields = self.decision_validator.validate_device_action(
+                    action, mac, host_ip)
+            except ValueError as exc:
+                return {"valid": False, "message": str(exc)}
+            return {"valid": True, "host_ip": fields["ip"],
+                    "mac": fields["mac"], "action": action,
+                    "trust_state": trust_state, "trust_score": trust_score,
+                    "reason": reason}
 
-            except (
-                TypeError,
-                ValueError
-            ):
-
-                return {
-                    "valid": False,
-                    "message": "Invalid trust score"
-                }
-
-            if not (
-                MIN_SCORE
-                <= trust_score
-                <= MAX_SCORE
-            ):
-
-                return {
-                    "valid": False,
-                    "message": (
-                        "Trust score must be between "
-                        "%s and %s"
-                        % (
-                            MIN_SCORE,
-                            MAX_SCORE
-                        )
-                    )
-                }
+        if not isinstance(host_ip, str) or not host_ip.strip():
+            return {"valid": False, "message": "ip (or host_ip) is required"}
+        try:
+            host_ip = str(ipaddress.ip_address(host_ip.strip()))
+        except ValueError:
+            return {"valid": False, "message": "ip must be a valid IPv4 or IPv6 address"}
 
         if trust_state is not None:
-
             try:
-
                 self.decision_validator.validate_decision(
-                    trust_score=(
-                        trust_score
-                        if trust_score is not None
-                        else 0
-                    ),
-                    trust_state=trust_state,
-                    action=action
-                )
+                    trust_score=trust_score if trust_score is not None else 0,
+                    trust_state=trust_state, action=action)
+            except ValueError as exc:
+                return {"valid": False, "message": str(exc)}
 
-            except ValueError as e:
-
-                return {
-                    "valid": False,
-                    "message": str(e)
-                }
-
-        return {
-            "valid": True,
-            "host_ip": host_ip,
-            "action": action,
-            "trust_state": trust_state,
-            "trust_score": trust_score,
-            "reason": reason
-        }
-
-    # =========================================================
-    # INSTALL DROP RULE
-    # =========================================================
-
-    def _install_drop_rule(
-        self,
-        datapath,
-        host_ip
-    ):
-
-        parser = (
-            datapath.ofproto_parser
-        )
-
-        match = parser.OFPMatch(
-            eth_type=0x0800,
-            ipv4_src=host_ip
-        )
-
-        actions = []
-
-        self._add_flow(
-            datapath,
-            QUARANTINE_PRIORITY,
-            match,
-            actions
-        )
-
-        if (
-            host_ip
-            not in self.quarantine_rules_installed
-        ):
-
-            self.quarantine_rules_installed[
-                host_ip
-            ] = set()
-
-        self.quarantine_rules_installed[
-            host_ip
-        ].add(
-            datapath.id
-        )
-
-        self.logger.warning(
-            "QUARANTINE rule installed on s%d for %s",
-            datapath.id,
-            host_ip
-        )
-
-    # =========================================================
-    # QUARANTINE HOST
-    # =========================================================
-
-    def quarantine_host(
-        self,
-        host_ip,
-        request_id=None,
-        reason=None
-    ):
-
-        self.quarantined_hosts.add(
-            host_ip
-        )
-
-        self.trust_state[
-            host_ip
-        ] = QUARANTINED
-
-        for datapath in list(
-            self.datapaths.values()
-        ):
-
-            self._install_drop_rule(
-                datapath,
-                host_ip
-            )
-
-        self._record_action(
-            request_id=request_id,
-            host_ip=host_ip,
-            action=ACTION_QUARANTINE,
-            status="executed",
-            reason=reason
-        )
-
-        self.logger.warning(
-            "Host quarantined: %s",
-            host_ip
-        )
-
-        return True
-
-    # =========================================================
-    # DELETE QUARANTINE RULES
-    # =========================================================
-
-    def _delete_quarantine_rules(
-        self,
-        datapath,
-        host_ip
-    ):
-
-        ofproto = datapath.ofproto
-        parser = (
-            datapath.ofproto_parser
-        )
-
-        match = parser.OFPMatch(
-            eth_type=0x0800,
-            ipv4_src=host_ip
-        )
-
-        mod = parser.OFPFlowMod(
-            datapath=datapath,
-            command=ofproto.OFPFC_DELETE,
-            out_port=ofproto.OFPP_ANY,
-            out_group=ofproto.OFPG_ANY,
-            priority=QUARANTINE_PRIORITY,
-            match=match
-        )
-
-        datapath.send_msg(
-            mod
-        )
-
-    # =========================================================
-    # RESTORE HOST
-    # =========================================================
-
-    def restore_host(
-        self,
-        host_ip,
-        request_id=None,
-        reason=None
-    ):
-
-        self.quarantined_hosts.discard(
-            host_ip
-        )
-
-        self.trust_state[
-            host_ip
-        ] = TRUSTED
-
-        for datapath in list(
-            self.datapaths.values()
-        ):
-
-            self._delete_quarantine_rules(
-                datapath,
-                host_ip
-            )
-
-        self.quarantine_rules_installed.pop(
-            host_ip,
-            None
-        )
-
-        self._record_action(
-            request_id=request_id,
-            host_ip=host_ip,
-            action=ACTION_RESTORE,
-            status="executed",
-            reason=reason
-        )
-
-        self.logger.info(
-            "Host restored: %s",
-            host_ip
-        )
-
-        return True
+        return {"valid": True, "host_ip": host_ip, "mac": None,
+                "action": action, "trust_state": trust_state,
+                "trust_score": trust_score, "reason": reason}
 
     # =========================================================
     # UPDATE TRUST STATE
     # =========================================================
 
-    def update_trust_state(
-        self,
-        host_ip,
-        state,
-        trust_score=None
-    ):
-
-        valid_states = {
-            TRUSTED,
-            UNTRUSTED,
-            QUARANTINED
-        }
-
-        if state not in valid_states:
-
-            return {
-                "success": False,
-                "message": (
-                    "Invalid trust state: %s"
-                    % state
-                )
-            }
-
-        self.trust_state[
-            host_ip
-        ] = state
-
+    def update_trust_state(self, host_ip, state, trust_score=None):
+        if state not in {TRUSTED, UNTRUSTED}:
+            return {"success": False, "message": "Invalid trust state: %s" % state}
+        self.trust_state[host_ip] = state
         if trust_score is not None:
-
-            self.trust_scores[
-                host_ip
-            ] = trust_score
-
-        if state == QUARANTINED:
-
-            self.quarantined_hosts.add(
-                host_ip
-            )
-
-        else:
-
-            self.quarantined_hosts.discard(
-                host_ip
-            )
-
-        return {
-            "success": True,
-            "host_ip": host_ip,
-            "trust_state": state,
-            "trust_score": trust_score
-        }
+            self.trust_scores[host_ip] = trust_score
+        return {"success": True, "host_ip": host_ip,
+                "trust_state": state, "trust_score": trust_score}
 
     # =========================================================
     # EXECUTE SECURITY ACTION
     # =========================================================
 
     def execute_security_action(
-        self,
-        host_ip,
-        action,
-        request_id=None,
-        trust_state=None,
-        trust_score=None,
-        reason=None
+        self, host_ip=None, action=None, request_id=None, trust_state=None,
+        trust_score=None, reason=None, mac=None
     ):
+        action = str(action or "").strip().upper()
+        validation = self._validate_network_decision(
+            host_ip=host_ip, mac=mac, action=action,
+            trust_state=trust_state, trust_score=trust_score, reason=reason)
+        if not validation["valid"]:
+            self.logger.warning("Security decision rejected: %s", validation["message"])
+            return {"success": False, "status": "rejected",
+                    "message": validation["message"], "host_ip": host_ip,
+                    "mac": mac, "action": action}
 
-        action = str(
-            action
-        ).upper()
+        host_ip = validation["host_ip"]
+        mac = validation["mac"]
 
-        validation = (
-            self._validate_network_decision(
-                host_ip=host_ip,
-                action=action,
-                trust_state=trust_state,
-                trust_score=trust_score,
-                reason=reason
-            )
-        )
-
-        if not validation[
-            "valid"
-        ]:
-
-            self.logger.warning(
-                "Security decision rejected: %s",
-                validation["message"]
-            )
-
-            return {
-                "success": False,
-                "status": "rejected",
-                "message": validation["message"],
-                "host_ip": host_ip,
-                "action": action
-            }
+        # Explicit enforcement actions do not alter Trust Score or state.
+        if action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            topology = self._get_topology_monitor()
+            if topology is None:
+                return {"success": False, "status": "unavailable",
+                        "message": "TopologyMonitor is not available",
+                        "action": action, "mac": mac, "ip": host_ip}
+            method = (topology.block_device if action == ACTION_BLOCK_DEVICE
+                      else topology.unblock_device)
+            result = method(mac=mac, ip=host_ip, request_id=request_id,
+                            reason=reason)
+            self._record_action(
+                request_id=request_id, host_ip=host_ip, mac=mac, action=action,
+                status=result.get("status", "failed"), reason=reason)
+            result.update({"action": action, "mac": mac, "ip": host_ip,
+                           "request_id": request_id,
+                           "trust_state_unchanged": True,
+                           "trust_score_unchanged": True})
+            return result
 
         if trust_score is not None:
-
-            self.trust_scores[
-                host_ip
-            ] = trust_score
-
+            self.trust_scores[host_ip] = trust_score
         if trust_state is not None:
-
-            state_result = (
-                self.update_trust_state(
-                    host_ip,
-                    trust_state,
-                    trust_score
-                )
-            )
-
-            if not state_result[
-                "success"
-            ]:
-
+            state_result = self.update_trust_state(host_ip, trust_state, trust_score)
+            if not state_result["success"]:
                 return state_result
 
-        # =====================================================
-        # KEEP UNTRUSTED
-        # =====================================================
-
         if action == ACTION_KEEP_UNTRUSTED:
-
             if host_ip not in self.trust_state:
-
-                self.trust_state[
-                    host_ip
-                ] = UNTRUSTED
-
-            self._record_action(
-                request_id=request_id,
-                host_ip=host_ip,
-                action=action,
-                status="executed",
-                reason=reason
-            )
-
-            return {
-                "success": True,
-                "status": "executed",
-                "action": action,
-                "host_ip": host_ip,
-                "request_id": request_id
-            }
-
-        # =====================================================
-        # ALLOW
-        # =====================================================
+                self.trust_state[host_ip] = UNTRUSTED
+            self._record_action(request_id, host_ip, action, "executed", reason)
+            return {"success": True, "status": "executed", "action": action,
+                    "host_ip": host_ip, "request_id": request_id}
 
         if action == ACTION_ALLOW:
-
-            if trust_state is not None:
-
-                self.trust_state[
-                    host_ip
-                ] = trust_state
-
-            else:
-
-                self.trust_state[
-                    host_ip
-                ] = TRUSTED
-
-            self._record_action(
-                request_id=request_id,
-                host_ip=host_ip,
-                action=action,
-                status="executed",
-                reason=reason
-            )
-
-            return {
-                "success": True,
-                "status": "executed",
-                "action": action,
-                "host_ip": host_ip,
-                "request_id": request_id
-            }
-
-        # =====================================================
-        # QUARANTINE
-        # =====================================================
-
-        if action == ACTION_QUARANTINE:
-
-            success = self.quarantine_host(
-                host_ip=host_ip,
-                request_id=request_id,
-                reason=reason
-            )
-
-            return {
-                "success": success,
-                "status": (
-                    "executed"
-                    if success
-                    else "failed"
-                ),
-                "action": action,
-                "host_ip": host_ip,
-                "request_id": request_id
-            }
-
-        # =====================================================
-        # RESTORE
-        # =====================================================
-
-        if action == ACTION_RESTORE:
-
-            success = self.restore_host(
-                host_ip=host_ip,
-                request_id=request_id,
-                reason=reason
-            )
-
-            return {
-                "success": success,
-                "status": (
-                    "executed"
-                    if success
-                    else "failed"
-                ),
-                "action": action,
-                "host_ip": host_ip,
-                "request_id": request_id
-            }
-
-        # =====================================================
-        # REROUTE
-        # =====================================================
+            self.trust_state[host_ip] = trust_state or TRUSTED
+            self._record_action(request_id, host_ip, action, "executed", reason)
+            return {"success": True, "status": "executed", "action": action,
+                    "host_ip": host_ip, "request_id": request_id}
 
         if action == ACTION_REROUTE:
+            success = self.reroute_host(host_ip, request_id, reason)
+            status = "requested" if success else "failed"
+            self._record_action(request_id, host_ip, action, status, reason)
+            return {"success": success, "status": status, "action": action,
+                    "host_ip": host_ip, "request_id": request_id}
 
-            success = self.reroute_host(
-                host_ip=host_ip,
-                request_id=request_id,
-                reason=reason
-            )
-
-            status = (
-                "requested"
-                if success
-                else "failed"
-            )
-
-            self._record_action(
-                request_id=request_id,
-                host_ip=host_ip,
-                action=action,
-                status=status,
-                reason=reason
-            )
-
-            return {
-                "success": success,
-                "status": status,
-                "action": action,
-                "host_ip": host_ip,
-                "request_id": request_id
-            }
-
-        return {
-            "success": False,
-            "status": "failed",
-            "message": "Unhandled action",
-            "host_ip": host_ip,
-            "action": action,
-            "request_id": request_id
-        }
+        return {"success": False, "status": "failed",
+                "message": "Unhandled action", "host_ip": host_ip,
+                "mac": mac, "action": action, "request_id": request_id}
 
     # =========================================================
     # REROUTE REQUEST
@@ -3025,7 +2576,8 @@ class TrafficMonitorMerged(
         host_ip,
         action,
         status,
-        reason=None
+        reason=None,
+        mac=None
     ):
 
         if request_id is None:
@@ -3042,6 +2594,7 @@ class TrafficMonitorMerged(
         ] = {
             "request_id": request_id,
             "host_ip": host_ip,
+            "mac": mac,
             "action": action,
             "status": status,
             "reason": reason,
@@ -3143,8 +2696,9 @@ class TrafficMonitorMerged(
         return {
             "switches": self.get_switches(),
             "hosts": self.get_hosts(),
-            "quarantined_hosts": list(
-                self.quarantined_hosts
+            "blocked_devices": (
+                dict(getattr(topology, "blocked_devices", {}))
+                if topology is not None else {}
             ),
             "trust_state": (
                 self.trust_state.copy()

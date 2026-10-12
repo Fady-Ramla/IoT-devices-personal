@@ -42,6 +42,7 @@ import urllib.error
 
 from zero_trust.zero_trust_engine import ZeroTrustEngine
 from zero_trust.zero_trust_decision import ZeroTrustDecision
+from zero_trust.zero_trust_policy import ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE
 
 
 class ZeroTrustNetworkBridge:
@@ -62,91 +63,70 @@ class ZeroTrustNetworkBridge:
         self.decision_validator = ZeroTrustDecision()
 
     # ========================================================
-    # SEND DECISION TO NETWORK API
+    # SEND PAYLOAD TO NETWORK API
     # ========================================================
 
-    def send_to_network(
-        self,
-        decision,
-        request_id
-    ):
-        """
-        Send a validated Zero Trust decision
-        to the Network Action API.
-        """
-
-        payload = {
-            "request_id": request_id,
-
-            "src_ip": decision["device"],
-
-            "action": decision["action"],
-
-            "trust_score": decision["trust_score"],
-
-            "trust_state": decision["trust_state"],
-
-            "severity": decision["severity"],
-
-            "reason": decision["reason"]
-        }
-
-        body = json.dumps(
-            payload
-        ).encode("utf-8")
-
+    def _post_payload(self, payload):
+        body = json.dumps(payload).encode("utf-8")
         request = urllib.request.Request(
             self.api_url,
             data=body,
-            headers={
-                "Content-Type": "application/json"
-            },
+            headers={"Content-Type": "application/json"},
             method="POST"
         )
-
         try:
-
-            with urllib.request.urlopen(
-                request,
-                timeout=5
-            ) as response:
-
+            with urllib.request.urlopen(request, timeout=5) as response:
                 response_body = response.read()
-
-                return {
-                    "success": True,
-
-                    "status_code": response.status,
-
-                    "response": json.loads(
-                        response_body.decode("utf-8")
-                    )
-                }
-
+                try:
+                    parsed = json.loads(response_body.decode("utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    parsed = response_body.decode("utf-8", errors="replace")
+                return {"success": True, "status_code": response.status,
+                        "response": parsed}
         except urllib.error.HTTPError as exc:
-
-            error_body = exc.read().decode(
-                "utf-8",
-                errors="replace"
-            )
-
-            return {
-                "success": False,
-
-                "status_code": exc.code,
-
-                "response": error_body
-            }
-
+            error_body = exc.read().decode("utf-8", errors="replace")
+            return {"success": False, "status_code": exc.code,
+                    "response": error_body}
         except urllib.error.URLError as exc:
+            return {"success": False, "status_code": None,
+                    "response": str(exc)}
 
-            return {
-                "success": False,
+    def send_to_network(self, decision, request_id):
+        """Send a normal score-derived ALLOW/KEEP_UNTRUSTED decision."""
+        payload = {
+            "request_id": request_id,
+            "host_ip": decision["device"],
+            "action": decision["action"],
+            "trust_score": decision["trust_score"],
+            "trust_state": decision["trust_state"],
+            "severity": decision["severity"],
+            "reason": decision["reason"],
+        }
+        return self._post_payload(payload)
 
-                "status_code": None,
+    def send_device_action(self, action, mac, ip=None, request_id=None, reason=None):
+        """Forward an explicit Security block/unblock command.
 
-                "response": str(exc)
-            }
+        This API does not accept or derive an enforcement action from
+        Trust Score. MAC is the stable OpenFlow match; IP is metadata.
+        """
+        fields = self.decision_validator.validate_device_action(action, mac, ip)
+        payload = {
+            "request_id": request_id,
+            "action": fields["action"],
+            "mac": fields["mac"],
+            "ip": fields["ip"],
+            "reason": reason,
+        }
+        return self._post_payload(payload)
+
+    def block_device(self, mac, ip=None, request_id=None, reason=None):
+        return self.send_device_action(
+            ACTION_BLOCK_DEVICE, mac, ip, request_id, reason)
+
+    def unblock_device(self, mac, ip=None, request_id=None, reason=None):
+        return self.send_device_action(
+            ACTION_UNBLOCK_DEVICE, mac, ip, request_id, reason)
 
     # ========================================================
     # PROCESS SECURITY RESULT
@@ -160,13 +140,9 @@ class ZeroTrustNetworkBridge:
         request_id
     ):
         """
-        Process a Security / AI result.
-
-        Steps:
-
-            1. ZeroTrustEngine evaluates the result.
-            2. ZeroTrustDecision validates it.
-            3. Decision is sent to Network API.
+        Process an AI score result only. This method never blocks
+        a device. The Security component must call block_device()
+        separately when it issues an explicit enforcement decision.
         """
 
         # ----------------------------------------------------

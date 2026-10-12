@@ -60,14 +60,11 @@ from zero_trust.zero_trust_policy import (
 
     TRUSTED,
     UNTRUSTED,
-    QUARANTINED,
 
     TRUSTED_THRESHOLD,
-    UNTRUSTED_THRESHOLD,
 
     ACTION_ALLOW,
     ACTION_KEEP_UNTRUSTED,
-    ACTION_QUARANTINE,
 
     PREDICTION_BENIGN,
     PREDICTION_MALICIOUS,
@@ -111,9 +108,9 @@ class ZeroTrustEngine:
         # {
         #     "10.0.0.5": {
         #         "trust_score": 35,
-        #         "trust_state": "QUARANTINED",
+        #         "trust_state": "UNTRUSTED",
         #         "prediction": "malicious",
-        #         "action": "QUARANTINE",
+        #         "action": "KEEP_UNTRUSTED",
         #         "severity": "HIGH",
         #         "events": []
         #     }
@@ -279,8 +276,10 @@ class ZeroTrustEngine:
         Policy:
 
             80 - 100 -> TRUSTED
-            50 - 79  -> UNTRUSTED
-            0  - 49  -> QUARANTINED
+            0  - 79  -> UNTRUSTED
+
+            Security must send BLOCK_DEVICE explicitly; the score
+            does not initiate network blocking.
 
         IMPORTANT:
             The score itself is NOT calculated here.
@@ -316,11 +315,9 @@ class ZeroTrustEngine:
             UNTRUSTED
                 -> KEEP_UNTRUSTED
 
-            QUARANTINED
-                -> QUARANTINE
-
-        Special actions such as RESTORE and REROUTE are
-        intentionally NOT generated here.
+        BLOCK_DEVICE and UNBLOCK_DEVICE are explicit Security
+        commands and are never generated from a Trust Score.
+        REROUTE is also not generated here.
         """
 
         if trust_state == TRUSTED:
@@ -330,10 +327,6 @@ class ZeroTrustEngine:
         if trust_state == UNTRUSTED:
 
             return ACTION_KEEP_UNTRUSTED
-
-        if trust_state == QUARANTINED:
-
-            return ACTION_QUARANTINE
 
         raise ValueError(
             "Unknown trust state: {}".format(
@@ -921,8 +914,8 @@ if __name__ == "__main__":
     # Expected:
     #
     # Trust Score = 35
-    # Trust State = QUARANTINED
-    # Action      = QUARANTINE
+    # Trust State = UNTRUSTED
+    # Action      = KEEP_UNTRUSTED (no automatic network block)
     # Severity    = HIGH
 
     # ========================================================
@@ -985,3 +978,4 @@ if __name__ == "__main__":
     print(
         engine.get_all_devices()
     )
+# ============================================================

@@ -1,115 +1,87 @@
-# IoT-devices
-# AI-Driven SDN Self-Healing Network for IoT
+# Person 3 — Explicit MAC Device Blocking
 
-## Overview
+هذه الحزمة تعدّل الملفات المرسلة فقط، وتفصل **تقييم الثقة** عن **تنفيذ الحظر**.
 
-This project implements an AI-powered Self-Healing Software Defined Network (SDN) for IoT environments.
+## السلوك بعد التعديل
 
-The system combines:
+- `80–100` ينتج `TRUSTED` و`ALLOW`.
+- `0–79` ينتج `UNTRUSTED` و`KEEP_UNTRUSTED`.
+- **لا يُصدر Trust Score أو تنبؤ AI أمر حظر تلقائيًا.**
+- الحظر أو فكّه يحصل فقط عندما يرسل Security فعلًا صريحًا: `BLOCK_DEVICE` أو `UNBLOCK_DEVICE`.
+- MAC هو هوية المطابقة في قاعدة OpenFlow. عنوان IP اختياري للتسجيل فقط؛ تغييره لا يلغي الحظر.
+- تُثبّت قاعدة إسقاط لحزم المصدر MAC على كل السويتشات المتصلة، وتُعاد إضافتها عند اتصال سويتش جديد أثناء تشغيل Ryu.
+- فك الحظر يحذف قاعدة MAC فقط، ولا يغيّر Trust Score أو Trust State المخزّنين.
 
-- SDN (Ryu Controller + Open vSwitch)
-- Artificial Intelligence for attack detection
-- Web Dashboard for real-time visualization
-- Backend APIs for communication
-- Automated network recovery (Self-Healing)
+## الملفات
 
-The project is divided into multiple tracks:
+انسخ الملفات مع الحفاظ على المسارات داخل مجلد المشروع:
 
-- Network Track
-- AI Track
-- Backend Track
-- Web Dashboard
-
----
-
-# Network Architecture
-
-The network is implemented using:
-
-- 5 Open vSwitch (OVS) switches
-- 10 Hosts
-- 1 Ryu SDN Controller
-- Partial Mesh Topology
-- OpenFlow 1.3
-
-The topology is available here:
-
-```
-topology/
-├── network_topology.drawio
-└── network_topology.png
+```text
+traffic_monitor_merged.py
+topology_monitor.py
+zero_trust/
+  zero_trust_policy.py
+  zero_trust_decision.py
+  zero_trust_engine.py
+  zero_trust_network_bridge.py
+tests/
+  test_explicit_device_block.py
 ```
 
----
+احتفظ بنسخة احتياطية من الملفات الحالية قبل الاستبدال. يعتمد `topology_monitor.py` على `path_engine.py` الموجود أصلًا في المشروع، ولم يتغير ذلك الملف.
 
-# Project Documentation
+## عقد أمر Security
 
-The complete Network Track documentation is available in:
+استخدم `ZeroTrustNetworkBridge.block_device(...)` و`unblock_device(...)` من مكوّن Security. شكل الطلب الذي يرسله الجسر إلى `POST /network/action`:
 
-```
-docs/
-├── 01-Learning-Switch.md
-├── 02-Traffic-Monitor.md
-├── 03-Packet-Parsing.md
-├── 04-Feature-Extraction.md
-├── 05-Topology.md
-├── 06-APIs.md
-├── 07-Self-Healing.md
-└── 08-Resources.md
+```json
+{
+  "action": "BLOCK_DEVICE",
+  "mac": "02:00:00:00:00:05",
+  "ip": "10.0.0.5",
+  "request_id": "SEC-001",
+  "reason": "malicious traffic detected"
+}
 ```
 
-Each document explains one stage of the project implementation.
+ولفك الحظر، أرسل `"action": "UNBLOCK_DEVICE"` مع **نفس MAC**. يمكن حذف `ip` عند عدم توفره. لا ترسل `trust_score` أو `trust_state` لهذا الأمر؛ الحظر لا يحدّثهما.
 
----
+مثال الاستدعاء من Security:
 
-# Current Progress
+```python
+bridge.block_device(
+    mac="02:00:00:00:00:05",
+    ip="10.0.0.5",
+    request_id="SEC-001",
+    reason="malicious traffic detected",
+)
 
-- ✅ Ryu Environment Setup
-- ✅ Learning Switch
-- ✅ Traffic Monitoring
-- ✅ Network Topology Design
-- ✅ Project Documentation
-- ⏳ Packet Parsing
-- ⏳ Feature Extraction
-- ⏳ REST APIs
-- ⏳ Self-Healing
-- ⏳ AI Integration
-- ⏳ Dashboard Integration
-
----
-
-# Repository Structure
-
-```
-IoT-devices/
-│
-├── docs/
-├── topology/
-├── ryu_apps/
-├── mininet/
-├── README.md
-└── LICENSE
+# بعد قرار أمني صريح بالسماح مجددًا:
+bridge.unblock_device(
+    mac="02:00:00:00:00:05",
+    ip="10.0.0.5",
+    request_id="SEC-002",
+    reason="explicit recovery approval",
+)
 ```
 
----
+## التحقق
 
-# Technologies
+من جذر المشروع:
 
-- Python
-- Ryu SDN Framework
-- OpenFlow 1.3
-- Open vSwitch (OVS)
-- Mininet
-- Draw.io
-- Git & GitHub
+```bash
+python3 -m py_compile traffic_monitor_merged.py topology_monitor.py zero_trust/*.py
+python3 -m unittest -v tests/test_explicit_device_block.py
+```
 
----
+تحقق من قاعدة الـdrop على السويتشات:
 
-# Contributors
+```text
+mininet> sh ovs-ofctl -O OpenFlow13 dump-flows s1 | grep priority=50000
+```
 
-Graduation Project Team
+كرر الفحص على بقية السويتشات. بعد أمر فك الحظر، يجب أن تختفي قاعدة MAC ذات الأولوية `50000`. اختبر كذلك أن تغيير IP للجهاز لا يعيد اتصاله، وأن جهازًا آخر يظل قادرًا على الاتصال.
 
-Network Track
-AI Track
-Backend Track
-Web Dashboard Track
+## حدود يجب معرفتها
+
+سجل الأجهزة المحظورة محفوظ في ذاكرة Ryu؛ يستمر عند تنقّل الجهاز بين السويتشات وعند اتصال سويتش جديد **ما دام Ryu يعمل**، لكنه لا يبقى بعد إعادة تشغيل عملية Ryu. كما أن MAC قابل للانتحال؛ إذا كان مطلوبًا منع مهاجم يغيّر MAC أيضًا، فستحتاجون لاحقًا إلى ربط الهوية بطريقة أقوى مثل NAC/802.1X أو سجل أجهزة موثوق.

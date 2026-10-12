@@ -1,4 +1,3 @@
-# zero_trust_decision.py
 # ============================================================
 # TrustFlow - Zero Trust Decision
 #
@@ -6,7 +5,7 @@
 # - Validate Trust Score
 # - Validate Trust State / Action combinations
 # - Validate final Security Decision
-# - Generate special RESTORE / REROUTE decisions
+# - Validate explicit device block/unblock and reroute decisions
 #
 # This module does NOT:
 # - Calculate Trust Score
@@ -24,12 +23,10 @@ from zero_trust.zero_trust_policy import (
 
     TRUSTED,
     UNTRUSTED,
-    QUARANTINED,
-
     ACTION_ALLOW,
     ACTION_KEEP_UNTRUSTED,
-    ACTION_QUARANTINE,
-    ACTION_RESTORE,
+    ACTION_BLOCK_DEVICE,
+    ACTION_UNBLOCK_DEVICE,
     ACTION_REROUTE,
 
     SEVERITY_LOW,
@@ -53,7 +50,8 @@ class ZeroTrustDecision:
     ZeroTrustEngine.
 
     This class validates that decision and provides
-    explicit special decisions such as RESTORE and REROUTE.
+    explicit device enforcement actions are validated independently
+    from Trust Score evaluation.
     """
 
     # ========================================================
@@ -109,7 +107,6 @@ class ZeroTrustDecision:
         if trust_state not in (
             TRUSTED,
             UNTRUSTED,
-            QUARANTINED,
         ):
             raise ValueError(
                 "Unknown Trust State: {}".format(
@@ -145,91 +142,68 @@ class ZeroTrustDecision:
         trust_state,
         action,
     ):
+        """Validate a normal action against trust state.
+
+        BLOCK_DEVICE and UNBLOCK_DEVICE are explicit Security
+        commands; they are not inferred from score or trust state.
+        REROUTE is also an explicit network action.
         """
-        Validate that the selected Security Action is
-        compatible with the Trust State.
+        ZeroTrustDecision.validate_score(trust_score)
+        ZeroTrustDecision.validate_trust_state(trust_state)
+        ZeroTrustDecision.validate_action(action)
 
-        Normal actions:
+        if action == ACTION_REROUTE:
+            return True
 
-        TRUSTED
-            -> ALLOW
-
-        UNTRUSTED
-            -> KEEP_UNTRUSTED
-
-        QUARANTINED
-            -> QUARANTINE
-
-        Special actions:
-
-            RESTORE
-            REROUTE
-
-        are also explicitly supported.
-        """
-
-        ZeroTrustDecision.validate_score(
-            trust_score
+        expected = (
+            ACTION_ALLOW
+            if trust_state == TRUSTED
+            else ACTION_KEEP_UNTRUSTED
         )
-
-        ZeroTrustDecision.validate_trust_state(
-            trust_state
-        )
-
-        ZeroTrustDecision.validate_action(
-            action
-        )
-
-        # ----------------------------------------------------
-        # TRUSTED
-        # ----------------------------------------------------
-
-        if trust_state == TRUSTED:
-
-            if action not in (
-                ACTION_ALLOW,
-                ACTION_RESTORE,
-                ACTION_REROUTE,
-            ):
-                raise ValueError(
-                    "Invalid action for TRUSTED state: {}".format(
-                        action
-                    )
+        if action != expected:
+            raise ValueError(
+                "Invalid action for {} state: {}".format(
+                    trust_state, action
                 )
-
-        # ----------------------------------------------------
-        # UNTRUSTED
-        # ----------------------------------------------------
-
-        elif trust_state == UNTRUSTED:
-
-            if action not in (
-                ACTION_KEEP_UNTRUSTED,
-                ACTION_REROUTE,
-            ):
-                raise ValueError(
-                    "Invalid action for UNTRUSTED state: {}".format(
-                        action
-                    )
-                )
-
-        # ----------------------------------------------------
-        # QUARANTINED
-        # ----------------------------------------------------
-
-        elif trust_state == QUARANTINED:
-
-            if action not in (
-                ACTION_QUARANTINE,
-                ACTION_REROUTE,
-            ):
-                raise ValueError(
-                    "Invalid action for QUARANTINED state: {}".format(
-                        action
-                    )
-                )
+            )
 
         return True
+
+    # ========================================================
+    # Validate explicit device enforcement action
+    # ========================================================
+
+    @staticmethod
+    def validate_device_action(action, mac, ip=None):
+        """Validate a Security-issued block/unblock command.
+
+        MAC is the enforcement identity. IP is optional metadata and
+        is deliberately not used to match the OpenFlow drop rule.
+        """
+        import ipaddress
+        import re
+
+        if not isinstance(action, str):
+            raise ValueError("action must be a string")
+        action = action.strip().upper()
+        if action not in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            raise ValueError("action must be BLOCK_DEVICE or UNBLOCK_DEVICE")
+
+        if not isinstance(mac, str):
+            raise ValueError("mac is required and must be a string")
+        mac = mac.strip().lower()
+        if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
+            raise ValueError("mac must be a colon-separated 6-byte address")
+
+        if ip is not None:
+            if not isinstance(ip, str) or not ip.strip():
+                raise ValueError("ip must be a non-empty IP address when provided")
+            try:
+                ip = str(ipaddress.ip_address(ip.strip()))
+            except ValueError:
+                raise ValueError("ip must be a valid IPv4 or IPv6 address")
+
+        return {"action": action, "mac": mac, "ip": ip}
 
     # ========================================================
     # Validate Final Decision Object
@@ -297,45 +271,6 @@ class ZeroTrustDecision:
         return True
 
     # ========================================================
-    # RESTORE Decision
-    # ========================================================
-
-    def restore(
-        self,
-        device,
-        trust_score=80,
-        reason="Authorized device restoration.",
-    ):
-        """
-        Generate an explicit RESTORE decision.
-
-        RESTORE is a special action and is not generated
-        by the normal Trust State -> Action mapping.
-        """
-
-        trust_score = self.validate_score(
-            trust_score
-        )
-
-        decision = {
-            "device": device,
-            "trust_score": trust_score,
-            "trust_state": TRUSTED,
-            "action": ACTION_RESTORE,
-            "severity": SEVERITY_LOW,
-            "event": "RECOVERY",
-            "attack_type": None,
-            "prediction": None,
-            "reason": reason,
-        }
-
-        self.validate_final_decision(
-            decision
-        )
-
-        return decision
-
-    # ========================================================
     # REROUTE Decision
     # ========================================================
 
@@ -385,104 +320,14 @@ class ZeroTrustDecision:
 # ============================================================
 
 def main():
-
-    print("=" * 70)
-    print("TRUSTFLOW ZERO TRUST DECISION")
-    print("=" * 70)
-
-    decision_validator = ZeroTrustDecision()
-
-    device = "10.0.0.5"
-
-    # --------------------------------------------------------
-    # Validate normal decision
-    # --------------------------------------------------------
-
-    print("\n[1] VALIDATE TRUSTED DECISION")
-
-    trusted_decision = {
-        "device": device,
-        "trust_score": 100,
-        "trust_state": TRUSTED,
-        "action": ACTION_ALLOW,
-        "severity": SEVERITY_LOW,
-    }
-
-    print(
-        decision_validator.validate_final_decision(
-            trusted_decision
-        )
-    )
-
-    # --------------------------------------------------------
-    # Validate untrusted decision
-    # --------------------------------------------------------
-
-    print("\n[2] VALIDATE UNTRUSTED DECISION")
-
-    untrusted_decision = {
-        "device": device,
-        "trust_score": 50,
-        "trust_state": UNTRUSTED,
-        "action": ACTION_KEEP_UNTRUSTED,
-        "severity": SEVERITY_HIGH,
-    }
-
-    print(
-        decision_validator.validate_final_decision(
-            untrusted_decision
-        )
-    )
-
-    # --------------------------------------------------------
-    # Validate quarantined decision
-    # --------------------------------------------------------
-
-    print("\n[3] VALIDATE QUARANTINED DECISION")
-
-    quarantine_decision = {
-        "device": device,
-        "trust_score": 20,
-        "trust_state": QUARANTINED,
-        "action": ACTION_QUARANTINE,
-        "severity": SEVERITY_CRITICAL,
-    }
-
-    print(
-        decision_validator.validate_final_decision(
-            quarantine_decision
-        )
-    )
-
-    # --------------------------------------------------------
-    # RESTORE
-    # --------------------------------------------------------
-
-    print("\n[4] RESTORE")
-
-    restore_decision = decision_validator.restore(
-        device=device,
-        trust_score=80,
-    )
-
-    print(restore_decision)
-
-    # --------------------------------------------------------
-    # REROUTE
-    # --------------------------------------------------------
-
-    print("\n[5] REROUTE")
-
-    reroute_decision = decision_validator.reroute(
-        device=device,
-        trust_score=65,
-        trust_state=UNTRUSTED,
-        reason="Network path recovery requested.",
-    )
-
-    print(reroute_decision)
-
-    print("\n" + "=" * 70)
+    validator = ZeroTrustDecision()
+    print("TRUSTED/ALLOW:", validator.validate_decision(90, TRUSTED, ACTION_ALLOW))
+    print("UNTRUSTED/KEEP_UNTRUSTED:",
+          validator.validate_decision(20, UNTRUSTED, ACTION_KEEP_UNTRUSTED))
+    print("Explicit block:", validator.validate_device_action(
+        ACTION_BLOCK_DEVICE, "02:00:00:00:00:01", "10.0.0.1"))
+    print("Explicit unblock:", validator.validate_device_action(
+        ACTION_UNBLOCK_DEVICE, "02:00:00:00:00:01", "10.0.0.1"))
 
 
 if __name__ == "__main__":
