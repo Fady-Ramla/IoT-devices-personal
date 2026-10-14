@@ -52,7 +52,7 @@ TRUNK_PORTS = {
     "s3": ("s3-eth3", "s3-eth4", "s3-eth5", "s3-eth6"),
     "s4": ("s4-eth3", "s4-eth4", "s4-eth5", "s4-eth6"),
     "s5": ("s5-eth2", "s5-eth3", "s5-eth4", "s5-eth5", "s5-eth6"),
-    "s6": ("s6-eth2", "s6-eth3"),
+    "s6": ("s6-eth3", "s6-eth4"),
 }
 
 ACCESS_PORTS = {
@@ -61,7 +61,7 @@ ACCESS_PORTS = {
     "s3": {"s3-eth1": VLAN_CLIENTS, "s3-eth2": VLAN_CLIENTS},
     "s4": {"s4-eth1": VLAN_CLIENTS, "s4-eth2": VLAN_SERVICES},
     "s5": {"s5-eth1": VLAN_MANAGEMENT},
-    "s6": {"s6-eth1": VLAN_DNS, "s6-eth4": VLAN_SERVICES},
+    "s6": {"s6-eth1": VLAN_DNS, "s6-eth2": VLAN_SERVICES},
 }
 
 
@@ -78,5 +78,4 @@ def configure_ovs_vlans(net):
         for port, vlan in ports.items():
             switch.cmd("ovs-vsctl set Port %s tag=%d" % (port, vlan))
             switch.cmd("ovs-vsctl clear Port %s trunks" % port)
-
 

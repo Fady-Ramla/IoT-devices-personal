@@ -96,6 +96,8 @@ def proxy(client, backend, port):
 
 def main():
     pools = {port: Pool(backends) for port, backends in LISTEN.items()}
+    for pool in pools.values():
+        pool.check()
     def health_loop():
         while True:
             for pool in pools.values(): pool.check()
@@ -107,3 +109,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

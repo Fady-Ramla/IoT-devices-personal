@@ -394,7 +394,66 @@ class NetworkActionController(ControllerBase):
                 }).encode("utf-8")
             )
 
+    @route(
+        "security_decision",
+        "/security/decision",
+        methods=["POST"]
+    )
+    def security_decision(self, req, **kwargs):
+        """Accept Security telemetry and execute only its BLOCK decision."""
+        expected_token = self.monitor.control_token
+        supplied_token = req.headers.get("X-SecureIoT-Token", "")
+        if not expected_token:
+            return Response(status=503, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "unavailable",
+                                "message": "Zero Trust control token is not configured"
+                            }).encode("utf-8"))
+        if not supplied_token or not hmac.compare_digest(
+                supplied_token, expected_token):
+            return Response(status=401, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "unauthorized",
+                                "message": "Valid Zero Trust control token required"
+                            }).encode("utf-8"))
+        try:
+            payload = json.loads(req.body.decode("utf-8"))
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            return Response(status=400, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "error",
+                                "message": "Invalid JSON", "error": str(exc)
+                            }).encode("utf-8"))
+        try:
+            result = self.monitor.handle_security_decision(payload)
+            status_code = 200 if result.get("success") else 400
+            return Response(status=status_code, content_type="application/json",
+                            charset="utf-8", body=json.dumps(result).encode("utf-8"))
+        except Exception as exc:
+            self.monitor.logger.exception("Security decision failed")
+            return Response(status=500, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "error",
+                                "message": str(exc)
+                            }).encode("utf-8"))
+
     def _link_action(self, req, action):
+        expected_token = self.monitor.control_token
+        supplied_token = req.headers.get("X-SecureIoT-Token", "")
+        if not expected_token:
+            return Response(
+                status=503, content_type="application/json", charset="utf-8",
+                body=json.dumps({
+                    "success": False, "status": "unavailable",
+                    "message": "Zero Trust control token is not configured"
+                }).encode("utf-8"))
+        if not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
+            return Response(
+                status=401, content_type="application/json", charset="utf-8",
+                body=json.dumps({
+                    "success": False, "status": "unauthorized",
+                    "message": "Valid Zero Trust control token required"
+                }).encode("utf-8"))
         try:
             data = json.loads(req.body.decode("utf-8"))
             src_dpid = int(data["src_dpid"])
@@ -618,6 +677,7 @@ class TrafficMonitorMerged(
         # -----------------------------------------------------
 
         self.action_history = {}
+        self.security_decisions = {}
 
         # -----------------------------------------------------
         # Legacy CLFF state
@@ -2483,6 +2543,51 @@ class TrafficMonitorMerged(
     # =========================================================
     # EXECUTE SECURITY ACTION
     # =========================================================
+
+    def handle_security_decision(self, payload):
+        """Map Security's BLOCK/NOT_BLOCK decision to network behavior."""
+        if not isinstance(payload, dict):
+            return {"success": False, "status": "rejected",
+                    "message": "Security payload must be a JSON object"}
+        decision = str(payload.get("decision", "")).strip().upper()
+        if decision not in {"BLOCK", "NOT_BLOCK"}:
+            return {"success": False, "status": "rejected",
+                    "message": "decision must be BLOCK or NOT_BLOCK"}
+        request_id = payload.get("request_id") or (
+            "SECURITY-%d" % int(time.time() * 1000)
+        )
+        src = payload.get("src") or payload.get("source_ip")
+        dst = payload.get("dst") or payload.get("destination_ip")
+        mac = payload.get("mac")
+        telemetry = {
+            "src": src, "dst": dst,
+            "src_port": payload.get("src_port"),
+            "dst_port": payload.get("dst_port"),
+            "packets": payload.get("packets"),
+            "rate": payload.get("rate"),
+            "mac": mac, "decision": decision,
+            "reason": payload.get("reason"),
+            "request_id": request_id, "timestamp": time.time()
+        }
+        if decision == "NOT_BLOCK":
+            self.security_decisions[request_id] = telemetry
+            self._record_action(request_id, src, "NOT_BLOCK", "recorded",
+                                payload.get("reason"), mac)
+            return {"success": True, "status": "recorded",
+                    "decision": decision, "action": "NONE",
+                    "request_id": request_id, "telemetry": telemetry}
+        if not mac or not src:
+            return {"success": False, "status": "rejected",
+                    "message": "src and mac are required for BLOCK"}
+        result = self.execute_security_action(
+            host_ip=src, mac=mac, action=ACTION_BLOCK_DEVICE,
+            request_id=request_id, reason=payload.get("reason"))
+        execution_result = dict(result)
+        telemetry["action"] = "BLOCK_DEVICE"
+        telemetry["execution"] = execution_result
+        self.security_decisions[request_id] = telemetry
+        result.update({"decision": decision, "telemetry": telemetry})
+        return result
 
     def execute_security_action(
         self, host_ip=None, action=None, request_id=None, trust_state=None,

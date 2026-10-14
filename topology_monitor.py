@@ -218,6 +218,10 @@ class TopologyMonitor(app_manager.RyuApp):
 
         self.lldp_thread = hub.spawn(self._lldp_loop)
         self.port_stats_thread = hub.spawn(self._port_stats_loop)
+        # Gateway internal OVS ports are created by Mininet after the
+        # switches connect. Re-request PortDesc so they become known host
+        # ports instead of remaining invisible to reactive forwarding.
+        self.port_desc_thread = hub.spawn(self._port_desc_loop)
         self.congestion_thread = hub.spawn(
             self._congestion_reoptimization_loop
         )
@@ -269,6 +273,24 @@ class TopologyMonitor(app_manager.RyuApp):
         datapath.send_msg(parser.OFPPortDescStatsRequest(datapath, 0))
 
         self.logger.info("Switch connected: s%d", dpid)
+
+    def _port_desc_loop(self):
+        """Refresh port descriptions for late-created internal OVS ports."""
+        while True:
+            for datapath in list(self.datapaths.values()):
+                try:
+                    datapath.send_msg(
+                        datapath.ofproto_parser.OFPPortDescStatsRequest(
+                            datapath, 0
+                        )
+                    )
+                except Exception:
+                    self.logger.debug(
+                        "PortDesc refresh failed for s%d",
+                        datapath.id,
+                        exc_info=True,
+                    )
+            hub.sleep(2)
 
     @set_ev_cls(ofp_event.EventOFPStateChange, DEAD_DISPATCHER)
     def state_change_handler(self, ev):
@@ -1027,6 +1049,8 @@ class TopologyMonitor(app_manager.RyuApp):
         self._rebuild_operational_graph()
         self._flush_forwarding_flows()
         self._refresh_clff()
+        # Reinstall only affected normal flows on the operational backup path.
+        self.reroute_active_flows(failed_links={edge})
 
         self.logger.warning(
             "Link PHYSICALLY ISOLATED: %s ports=%s", edge, endpoints)
@@ -1912,7 +1936,22 @@ class TopologyMonitor(app_manager.RyuApp):
             if src_loc is None or dst_loc is None:
                 continue
 
-            path = self._shortest_path(src_loc[0], dst_loc[0])
+            current_path = None
+            for flow in self.active_flows.values():
+                if isinstance(flow, dict) and flow.get("src_mac") == src_mac and flow.get("dst_mac") == dst_mac:
+                    current_path = flow.get("path") or []
+                    break
+            if not current_path:
+                current_path = [src_loc[0], dst_loc[0]]
+
+            decision = self.path_engine.get_backup_path(
+                current_path=current_path,
+                src=src_loc[0],
+                dst=dst_loc[0],
+                graph=self.operational_graph,
+                network_state=self.path_engine.network_state,
+            )
+            path = decision.get("path") if decision.get("success") else None
 
             if path and self._install_path(path, src_mac, dst_mac):
                 rerouted += 1
