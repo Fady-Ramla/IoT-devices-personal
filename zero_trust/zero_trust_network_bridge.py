@@ -69,15 +69,17 @@ class ZeroTrustNetworkBridge:
 
     def _post_payload(self, payload):
         body = json.dumps(payload).encode("utf-8")
+        
         request = urllib.request.Request(
             self.api_url,
             data=body,
             headers={
                 "Content-Type": "application/json",
                 "X-SecureIoT-Token": os.environ.get(
-                    "SECUREIOT_CONTROL_TOKEN", "")
+                    "SECUREIOT_CONTROL_TOKEN", ""
+                ),
             },
-            method="POST"
+            method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=5) as response:

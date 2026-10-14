@@ -103,9 +103,6 @@ from webob import Response
 # ZERO-TRUST POLICY
 # =============================================================
 
-# Support both policy revisions used by the project:
-# newer policy files expose ACTION_BLOCK_DEVICE/ACTION_UNBLOCK_DEVICE,
-# while the Phase 1 policy exposes ACTION_QUARANTINE/ACTION_RESTORE.
 try:
     from zero_trust.zero_trust_policy import (
         TRUSTED,
@@ -116,9 +113,9 @@ try:
         ACTION_UNBLOCK_DEVICE,
         ACTION_REROUTE,
         MIN_SCORE,
-        MAX_SCORE
+        MAX_SCORE,
     )
-except ImportError as policy_import_error:
+except ImportError:
     from zero_trust.zero_trust_policy import (
         TRUSTED,
         UNTRUSTED,
@@ -128,12 +125,11 @@ except ImportError as policy_import_error:
         ACTION_RESTORE,
         ACTION_REROUTE,
         MIN_SCORE,
-        MAX_SCORE
+        MAX_SCORE,
     )
 
     ACTION_BLOCK_DEVICE = ACTION_QUARANTINE
     ACTION_UNBLOCK_DEVICE = ACTION_RESTORE
-
 
 # =============================================================
 # ZERO-TRUST DECISION VALIDATOR

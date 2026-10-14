@@ -1,4 +1,3 @@
-# zero_trust_policy.py
 # ============================================================
 # TrustFlow - Zero Trust Policy
 #
@@ -27,12 +26,10 @@ INITIAL_SCORE = 100
 # ============================================================
 
 TRUSTED_THRESHOLD = 80
-UNTRUSTED_THRESHOLD = 50
 
 
 TRUSTED = "TRUSTED"
 UNTRUSTED = "UNTRUSTED"
-QUARANTINED = "QUARANTINED"
 
 
 # ============================================================
@@ -41,18 +38,19 @@ QUARANTINED = "QUARANTINED"
 
 ACTION_ALLOW = "ALLOW"
 ACTION_KEEP_UNTRUSTED = "KEEP_UNTRUSTED"
-ACTION_QUARANTINE = "QUARANTINE"
 
-# Special actions
-ACTION_RESTORE = "RESTORE"
+# Explicit Security-to-Network enforcement actions.
+# These are never inferred from a Trust Score.
+ACTION_BLOCK_DEVICE = "BLOCK_DEVICE"
+ACTION_UNBLOCK_DEVICE = "UNBLOCK_DEVICE"
 ACTION_REROUTE = "REROUTE"
 
 
 VALID_ACTIONS = {
     ACTION_ALLOW,
     ACTION_KEEP_UNTRUSTED,
-    ACTION_QUARANTINE,
-    ACTION_RESTORE,
+    ACTION_BLOCK_DEVICE,
+    ACTION_UNBLOCK_DEVICE,
     ACTION_REROUTE,
 }
 
@@ -151,14 +149,13 @@ def calculate_trust_state(score):
     Convert Trust Score into Trust State.
 
     80 - 100 -> TRUSTED
-    50 - 79  -> UNTRUSTED
-    0  - 49  -> QUARANTINED
+    0  - 79  -> UNTRUSTED
+
+    A Trust Score never triggers BLOCK_DEVICE. That action must
+    arrive explicitly from the Security component.
     """
 
     if score >= TRUSTED_THRESHOLD:
         return TRUSTED
 
-    if score >= UNTRUSTED_THRESHOLD:
-        return UNTRUSTED
-
-    return QUARANTINED
+    return UNTRUSTED
