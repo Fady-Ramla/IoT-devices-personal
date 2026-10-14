@@ -2,12 +2,13 @@
 
 import http.server
 import ssl
+import os
 
-SERVER_IP = "10.0.0.3"
+SERVER_IP = os.getenv("HTTPS_SERVER_IP", "10.10.20.3")
 PORT = 443
 
-CERT_FILE = "/tmp/https_server/cert.pem"
-KEY_FILE = "/tmp/https_server/key.pem"
+CERT_FILE = os.getenv("HTTPS_CERT_FILE", "/tmp/https_server/cert.pem")
+KEY_FILE = os.getenv("HTTPS_KEY_FILE", "/tmp/https_server/key.pem")
 
 
 class HTTPSHandler(http.server.SimpleHTTPRequestHandler):

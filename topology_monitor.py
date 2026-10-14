@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # ================================================================
 # TrustFlow - Topology Monitor  
 #
@@ -24,6 +22,7 @@
 # ================================================================
 
 import time
+import re
 
 import networkx as nx
 
@@ -67,11 +66,12 @@ LLDP_STALE_TIMEOUT = 9          # 3 x interval (PortStatus is the fast path)
 
 LLDP_MAC = "01:80:c2:00:00:0e"
 
-EXPECTED_SWITCHES = 5
-EXPECTED_PHYSICAL_LINKS = 7
+EXPECTED_SWITCHES = 6
+EXPECTED_PHYSICAL_LINKS = 11
 
 NORMAL_PRIORITY = 10
 REROUTE_PRIORITY = 100
+DEVICE_BLOCK_PRIORITY = 50000
 
 HOST_FLOW_IDLE_TIMEOUT = 30
 HOST_FLOW_HARD_TIMEOUT = 0
@@ -172,8 +172,14 @@ class TopologyMonitor(app_manager.RyuApp):
         # Raw LLDP observations.
         self.lldp_links = {}
 
-        # (dpid, port_no) -> name
+        # (dpid, port_no) -> name / hardware address from PortDesc.
         self.port_desc = {}
+        self.port_hw_addr = {}
+
+        # Keep the exact endpoints while a link is administratively isolated.
+        # LLDP mappings disappear after OFPPortMod disables the ports.
+        # edge -> ((dpid_a, port_a), (dpid_b, port_b))
+        self.isolated_link_ports = {}
 
         # PortStats samples used by traffic-aware path selection.
         self.port_stats_previous = {}
@@ -188,6 +194,10 @@ class TopologyMonitor(app_manager.RyuApp):
         self.host_location = {}
         self.ip_to_mac = {}
         self.mac_to_ip = {}
+
+        # Explicit Security blocks keyed by normalized source MAC.
+        # IP is retained only for audit; enforcement matches eth_src.
+        self.blocked_devices = {}
 
         # Active host-to-host flows (for rerouting).
         self.active_flows = {}
@@ -248,6 +258,14 @@ class TopologyMonitor(app_manager.RyuApp):
                 ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
         )
 
+        # Reinstall Security blocks before the switch handles traffic.
+        for mac in list(self.blocked_devices):
+            try:
+                self._install_device_block_rule(datapath, mac)
+            except Exception:
+                self.logger.exception(
+                    "Failed to restore device block on s%d for %s", dpid, mac)
+
         datapath.send_msg(parser.OFPPortDescStatsRequest(datapath, 0))
 
         self.logger.info("Switch connected: s%d", dpid)
@@ -276,6 +294,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
         for key in [k for k in self.port_desc if k[0] == dpid]:
             del self.port_desc[key]
+            self.port_hw_addr.pop(key, None)
 
         for key in [k for k in self.installed_flows if k[0] == dpid]:
             del self.installed_flows[key]
@@ -301,8 +320,20 @@ class TopologyMonitor(app_manager.RyuApp):
         dpid = ev.msg.datapath.id
 
         for port in ev.msg.body:
-            self.port_desc[(dpid, port.port_no)] = \
-                self._decode_port_name(port.name)
+            port_no = int(port.port_no)
+            key = (dpid, port_no)
+            self.port_desc[key] = self._decode_port_name(port.name)
+            hw_addr = getattr(port, "hw_addr", None)
+            if hw_addr:
+                self.port_hw_addr[key] = hw_addr
+
+        # An isolated link must remain physically blocked if a switch
+        # reconnects and its port configuration was reset by the switch.
+        for endpoints in list(self.isolated_link_ports.values()):
+            for endpoint_dpid, endpoint_port in endpoints:
+                if endpoint_dpid == dpid:
+                    self._set_port_admin_down(
+                        endpoint_dpid, endpoint_port, down=True)
 
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
@@ -436,6 +467,14 @@ class TopologyMonitor(app_manager.RyuApp):
             return
 
         if str(dst_mac).lower() == LLDP_MAC:
+            return
+
+        # Defense-in-depth if a packet reaches the controller before a
+        # datapath drop rule has taken effect.
+        if self.is_device_blocked(src_mac):
+            self.logger.warning(
+                "Packet dropped from explicitly blocked MAC %s on s%d",
+                src_mac, dpid)
             return
 
         # Do not learn / forward before the baseline topology exists.
@@ -602,7 +641,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _check_topology_readiness(self):
         """
-        Baseline (first time): 5 switches + 7 links + connected.
+        Baseline (first time): 6 switches + 11 links + connected.
         After baseline: only "connected" matters, so the network stays
         operational (and CLFF keeps being rebuilt) while degraded.
         """
@@ -752,6 +791,124 @@ class TopologyMonitor(app_manager.RyuApp):
                 self.graph.number_of_edges())
 
     # ============================================================
+    # Explicit Security device enforcement (MAC identity)
+    # ============================================================
+
+    @staticmethod
+    def normalize_device_mac(mac):
+        if not isinstance(mac, str):
+            raise ValueError("mac is required and must be a string")
+        mac = mac.strip().lower()
+        if not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", mac):
+            raise ValueError("mac must be a colon-separated 6-byte address")
+        return mac
+
+    def is_device_blocked(self, mac):
+        try:
+            return self.normalize_device_mac(mac) in self.blocked_devices
+        except ValueError:
+            return False
+
+    def _install_device_block_rule(self, datapath, mac):
+        mac = self.normalize_device_mac(mac)
+        parser = datapath.ofproto_parser
+        match = parser.OFPMatch(eth_src=mac)
+        # Empty actions are an OpenFlow drop. Priority overrides every
+        # normal/reroute flow, and the source-MAC match is IP-independent.
+        self._add_flow(
+            datapath, DEVICE_BLOCK_PRIORITY, match, [],
+            track_key=None)
+
+    def _delete_device_block_rule(self, datapath, mac):
+        mac = self.normalize_device_mac(mac)
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        datapath.send_msg(parser.OFPFlowMod(
+            datapath=datapath,
+            command=ofproto.OFPFC_DELETE_STRICT,
+            table_id=0,
+            priority=DEVICE_BLOCK_PRIORITY,
+            out_port=ofproto.OFPP_ANY,
+            out_group=ofproto.OFPG_ANY,
+            match=parser.OFPMatch(eth_src=mac)))
+
+    def block_device(self, mac, ip=None, request_id=None, reason=None):
+        """Block all traffic sourced by a MAC on all connected switches.
+
+        IP is stored for audit only. The block survives IP changes, host
+        movement between connected switches, and switch reconnections while
+        this controller process remains running.
+        """
+        mac = self.normalize_device_mac(mac)
+        self.blocked_devices[mac] = {
+            "mac": mac, "ip": ip, "request_id": request_id,
+            "reason": reason, "blocked_at": time.time(),
+        }
+
+        datapaths = list(self.datapaths.values())
+        if not datapaths:
+            return {"success": False, "status": "no_switches",
+                    "mac": mac, "ip": ip,
+                    "message": "Block is recorded; no switch is connected"}
+
+        failed = []
+        for datapath in datapaths:
+            try:
+                self._install_device_block_rule(datapath, mac)
+            except Exception:
+                failed.append(datapath.id)
+                self.logger.exception(
+                    "Failed to install device block on s%d for %s",
+                    datapath.id, mac)
+
+        success = not failed
+        self.logger.warning(
+            "BLOCK_DEVICE %s ip=%s switches=%s failed=%s request_id=%s reason=%s",
+            mac, ip, [dp.id for dp in datapaths], failed, request_id, reason)
+        return {"success": success,
+                "status": "executed" if success else "partial_failure",
+                "action": "BLOCK_DEVICE", "mac": mac, "ip": ip,
+                "switches": [dp.id for dp in datapaths],
+                "failed_switches": failed, "request_id": request_id}
+
+    def unblock_device(self, mac, ip=None, request_id=None, reason=None):
+        """Remove a Security block without changing Trust Score/state."""
+        mac = self.normalize_device_mac(mac)
+        if mac not in self.blocked_devices:
+            return {"success": False, "status": "not_blocked",
+                    "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
+                    "request_id": request_id}
+
+        datapaths = list(self.datapaths.values())
+        removed = []
+        try:
+            for datapath in datapaths:
+                self._delete_device_block_rule(datapath, mac)
+                removed.append(datapath)
+        except Exception:
+            self.logger.exception(
+                "Failed to remove device block for %s; restoring block rules", mac)
+            for datapath in datapaths:
+                try:
+                    self._install_device_block_rule(datapath, mac)
+                except Exception:
+                    self.logger.exception(
+                        "Failed to restore device block on s%d for %s",
+                        datapath.id, mac)
+            return {"success": False, "status": "partial_failure",
+                    "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
+                    "request_id": request_id}
+
+        self.blocked_devices.pop(mac, None)
+        self.logger.info(
+            "UNBLOCK_DEVICE %s ip=%s request_id=%s reason=%s",
+            mac, ip, request_id, reason)
+        return {"success": True, "status": "executed",
+                "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
+                "switches": [dp.id for dp in datapaths],
+                "request_id": request_id}
+
+    # ============================================================
     # Operational graph / link isolation (called by Person 3)
     # ============================================================
 
@@ -786,9 +943,46 @@ class TopologyMonitor(app_manager.RyuApp):
     def get_path_engine_status(self):
         return self.path_engine.status()
 
-    def isolate_link(self, dpid_a, dpid_b):
-        """Remove a link from routing/CLFF. Physical graph is untouched."""
+    def _set_port_admin_down(self, dpid, port_no, down):
+        """Set/clear OpenFlow's administrative PORT_DOWN bit."""
+        datapath = self.datapaths.get(int(dpid))
+        key = (int(dpid), int(port_no))
+        hw_addr = self.port_hw_addr.get(key)
 
+        if datapath is None:
+            self.logger.warning(
+                "Cannot change port state: switch s%d is disconnected", dpid)
+            return False
+
+        if not hw_addr:
+            self.logger.warning(
+                "Cannot change port state: missing hardware address for s%d:%d",
+                dpid, port_no)
+            return False
+
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        port_down = ofproto.OFPPC_PORT_DOWN
+        config = port_down if down else 0
+
+        try:
+            datapath.send_msg(parser.OFPPortMod(
+                datapath,
+                int(port_no),
+                hw_addr,
+                config,
+                port_down,
+                0
+            ))
+            return True
+        except Exception:
+            self.logger.exception(
+                "OFPPortMod failed for s%d:%d (down=%s)",
+                dpid, port_no, down)
+            return False
+
+    def isolate_link(self, dpid_a, dpid_b):
+        """Physically disable both switch ports of an inter-switch link."""
         edge = tuple(sorted((int(dpid_a), int(dpid_b))))
 
         if edge not in self.edges:
@@ -798,31 +992,89 @@ class TopologyMonitor(app_manager.RyuApp):
         if edge in self.isolated_links:
             return True
 
+        dpid_a, dpid_b = edge
+        ports = self.link_to_port.get((dpid_a, dpid_b))
+        if ports is None:
+            self.logger.warning(
+                "Cannot physically isolate %s: LLDP port mapping unavailable",
+                edge)
+            return False
+
+        endpoints = (
+            (dpid_a, int(ports[0])),
+            (dpid_b, int(ports[1])),
+        )
+        for dpid, port_no in endpoints:
+            if dpid not in self.datapaths or not self.port_hw_addr.get(
+                    (dpid, port_no)):
+                self.logger.warning(
+                    "Cannot physically isolate %s: missing switch/port data "
+                    "for s%d:%d", edge, dpid, port_no)
+                return False
+
+        self.isolated_link_ports[edge] = endpoints
+        changed = []
+        for dpid, port_no in endpoints:
+            if not self._set_port_admin_down(dpid, port_no, down=True):
+                for old_dpid, old_port in reversed(changed):
+                    self._set_port_admin_down(
+                        old_dpid, old_port, down=False)
+                self.isolated_link_ports.pop(edge, None)
+                return False
+            changed.append((dpid, port_no))
+
         self.isolated_links.add(edge)
         self._rebuild_operational_graph()
         self._flush_forwarding_flows()
         self._refresh_clff()
 
-        self.logger.warning("Link ISOLATED (operational only): %s", edge)
+        self.logger.warning(
+            "Link PHYSICALLY ISOLATED: %s ports=%s", edge, endpoints)
         return True
 
     def restore_link(self, dpid_a, dpid_b):
-        """
-        Make a link usable again.
-        Network resource only - never touches Zero-Trust state.
-        Existing flows are NOT moved back (avoids route flapping).
-        """
+        """Re-enable both link ports without changing Zero-Trust state.
 
+        Existing flows are not moved back automatically, avoiding route
+        flapping. LLDP will rediscover the physical link after ports return.
+        """
         edge = tuple(sorted((int(dpid_a), int(dpid_b))))
 
         if edge not in self.isolated_links:
             return False
 
+        endpoints = self.isolated_link_ports.get(edge)
+        if not endpoints:
+            self.logger.warning(
+                "Cannot restore %s: saved endpoint port mapping is missing",
+                edge)
+            return False
+
+        for dpid, port_no in endpoints:
+            if dpid not in self.datapaths or not self.port_hw_addr.get(
+                    (dpid, port_no)):
+                self.logger.warning(
+                    "Cannot restore %s: missing switch/port data for s%d:%d",
+                    edge, dpid, port_no)
+                return False
+
+        restored = []
+        for dpid, port_no in endpoints:
+            if not self._set_port_admin_down(dpid, port_no, down=False):
+                for old_dpid, old_port in reversed(restored):
+                    self._set_port_admin_down(
+                        old_dpid, old_port, down=True)
+                return False
+            restored.append((dpid, port_no))
+
         self.isolated_links.discard(edge)
+        self.isolated_link_ports.pop(edge, None)
         self._rebuild_operational_graph()
         self._refresh_clff()
 
-        self.logger.info("Link RESTORED (operational): %s", edge)
+        self.logger.info(
+            "Link physically restored: %s ports=%s; LLDP will rediscover it",
+            edge, endpoints)
         return True
 
     # ============================================================
@@ -1844,6 +2096,8 @@ class TopologyMonitor(app_manager.RyuApp):
             "switch_count": self.graph.number_of_nodes(),
             "link_count": self.graph.number_of_edges(),
             "host_count": len(self.host_location),
+            "blocked_device_count": len(self.blocked_devices),
+            "blocked_macs": sorted(self.blocked_devices),
             "switches": sorted(self.graph.nodes()),
             "links": [list(e) for e in sorted(self.edges)],
             "isolated_links": [list(e) for e in sorted(self.isolated_links)],

@@ -8,9 +8,13 @@ from mininet.topo import Topo
 from mininet.link import TCLink
 
 import os
+import secrets
+import shlex
 import time
 
 from attack_manager import run_attack
+from vlan_config import HOSTS, configure_ovs_vlans
+from configure_gateway import configure_gateway
 
 
 # ============================================================
@@ -38,30 +42,33 @@ class PartialMeshTopo(Topo):
         s3 = self.addSwitch('s3', cls=OVSSwitch)
         s4 = self.addSwitch('s4', cls=OVSSwitch)
         s5 = self.addSwitch('s5', cls=OVSSwitch)
+        s6 = self.addSwitch('s6', cls=OVSSwitch)
 
         # ----------------------------------------------------
         # Servers
         # ----------------------------------------------------
 
-        h1 = self.addHost('h1', ip='10.0.0.1/24')
-        h2 = self.addHost('h2', ip='10.0.0.2/24')
-        h3 = self.addHost('h3', ip='10.0.0.3/24')
-        h4 = self.addHost('h4', ip='10.0.0.4/24')
+        h1 = self.addHost('h1', ip=HOSTS['h1'][1], defaultRoute='via ' + HOSTS['h1'][2])
+        h2 = self.addHost('h2', ip=HOSTS['h2'][1], defaultRoute='via ' + HOSTS['h2'][2])
+        h3 = self.addHost('h3', ip=HOSTS['h3'][1], defaultRoute='via ' + HOSTS['h3'][2])
+        h4 = self.addHost('h4', ip=HOSTS['h4'][1], defaultRoute='via ' + HOSTS['h4'][2])
 
         # ----------------------------------------------------
         # Clients
         # ----------------------------------------------------
 
-        h5 = self.addHost('h5', ip='10.0.0.5/24')
-        h6 = self.addHost('h6', ip='10.0.0.6/24')
-        h7 = self.addHost('h7', ip='10.0.0.7/24')
-        h8 = self.addHost('h8', ip='10.0.0.8/24')
-        h9 = self.addHost('h9', ip='10.0.0.9/24')
-        h10 = self.addHost('h10', ip='10.0.0.10/24')
+        h5 = self.addHost('h5', ip=HOSTS['h5'][1], defaultRoute='via ' + HOSTS['h5'][2])
+        h6 = self.addHost('h6', ip=HOSTS['h6'][1], defaultRoute='via ' + HOSTS['h6'][2])
+        h7 = self.addHost('h7', ip=HOSTS['h7'][1], defaultRoute='via ' + HOSTS['h7'][2])
+        h8 = self.addHost('h8', ip=HOSTS['h8'][1], defaultRoute='via ' + HOSTS['h8'][2])
+        h9 = self.addHost('h9', ip=HOSTS['h9'][1], defaultRoute='via ' + HOSTS['h9'][2])
+        h10 = self.addHost('h10', ip=HOSTS['h10'][1], defaultRoute='via ' + HOSTS['h10'][2])
+        h11 = self.addHost('h11', ip=HOSTS['h11'][1], defaultRoute='via ' + HOSTS['h11'][2])
 
         # ----------------------------------------------------
         # Host connections
-        # Keep existing host-link configuration unchanged.
+        # Preserve existing host IPs during Phase 1. h10 moves to s6;
+        # VLAN/subnet changes are intentionally deferred to later phases.
         # ----------------------------------------------------
 
         self.addLink(h1, s1)
@@ -77,7 +84,8 @@ class PartialMeshTopo(Topo):
         self.addLink(h8, s4)
 
         self.addLink(h9, s5)
-        self.addLink(h10, s5)
+        self.addLink(h10, s6)
+        self.addLink(h11, s6)
 
         # ----------------------------------------------------
         # Main switch chain
@@ -98,6 +106,16 @@ class PartialMeshTopo(Topo):
         self.addLink(s2, s4, cls=TCLink, bw=10)
         self.addLink(s3, s5, cls=TCLink, bw=10)
 
+        # ----------------------------------------------------
+        # Enterprise topology expansion (Phase 1)
+        # Four additional redundant links; keep 10 Mbps per link.
+        # ----------------------------------------------------
+
+        self.addLink(s4, s6, cls=TCLink, bw=10)
+        self.addLink(s5, s6, cls=TCLink, bw=10)
+        self.addLink(s1, s5, cls=TCLink, bw=10)
+        self.addLink(s2, s5, cls=TCLink, bw=10)
+
 
 # ============================================================
 # SERVER SETUP
@@ -115,6 +133,20 @@ def setup_servers(net):
     h3 = net.get('h3')
     h4 = net.get('h4')
 
+    # Authentication secrets are supplied by the operator, never embedded in
+    # the application source. Health checks remain available when secrets are
+    # omitted, while login/admin routes stay disabled until configured.
+    api_env = ['WEB_API_SERVER_IP=10.10.20.2']
+    backup_api_env = ['WEB_API_SERVER_IP=10.10.20.8']
+    for key in ('ADMIN_USERNAME', 'ADMIN_PASSWORD_HASH', 'JWT_SECRET',
+                'JWT_TTL_SECONDS'):
+        value = os.environ.get('SECUREIOT_' + key) or os.environ.get(key)
+        if value:
+            api_env.append(key + '=' + shlex.quote(value))
+            backup_api_env.append(key + '=' + shlex.quote(value))
+    api_env_prefix = ' '.join(api_env)
+    backup_api_env_prefix = ' '.join(backup_api_env)
+
     # --------------------------------------------------------
     # DNS Server
     # --------------------------------------------------------
@@ -127,7 +159,7 @@ def setup_servers(net):
     )
 
     h1.cmd(
-        'python3 '
+        'DNS_SERVER_IP=10.10.30.2 DNS_ANSWER_IP=10.10.20.2 python3 '
         + dns_server
         + ' > /tmp/dns.log 2>&1 &'
     )
@@ -144,7 +176,7 @@ def setup_servers(net):
     )
 
     h2.cmd(
-        'python3 '
+        api_env_prefix + ' python3 '
         + web_api_server
         + ' > /tmp/web_api.log 2>&1 &'
     )
@@ -176,7 +208,7 @@ def setup_servers(net):
         '-out /tmp/https_server/cert.pem '
         '-days 365 '
         '-nodes '
-        '-subj "/CN=10.0.0.3" '
+        '-subj "/CN=10.10.20.3" '
         '> /dev/null 2>&1'
     )
 
@@ -202,27 +234,47 @@ def setup_servers(net):
         '> /dev/null 2>&1'
     )
 
-    h4.cmd(
-        'echo "PermitRootLogin yes" '
-        '>> /etc/ssh/sshd_config'
-    )
-
-    h4.cmd(
-        'echo "PasswordAuthentication yes" '
-        '>> /etc/ssh/sshd_config'
-    )
-
-    h4.cmd(
-        'echo "root:root" | chpasswd'
-    )
+    # Lab SSH service: retain TCP/22 for the VLAN policy demonstration, but
+    # remove the insecure root/root account. A password can be supplied as
+    # SECUREIOT_SSH_PASSWORD; otherwise an unpredictable temporary password is
+    # generated inside the ephemeral Mininet namespace.
+    ssh_password = (os.environ.get('SECUREIOT_SSH_PASSWORD') or
+                    secrets.token_urlsafe(18))
+    h4.cmd('id -u secureiot-admin >/dev/null 2>&1 || '
+           'useradd -m -s /bin/bash secureiot-admin')
+    h4.cmd('printf %s secureiot-admin:' + shlex.quote(ssh_password) +
+           ' | chpasswd')
 
     h4.cmd(
         '/usr/sbin/sshd '
-        '-o ListenAddress=10.0.0.4 '
+        '-o PermitRootLogin=no '
+        '-o PasswordAuthentication=yes '
+        '-o AllowUsers=secureiot-admin '
+        '-o ListenAddress=10.10.20.4 '
         '> /tmp/ssh.log 2>&1 &'
     )
 
-    info('\nAll server services started.\n')
+    h8 = net.get('h8')
+    h10 = net.get('h10')
+    h10.cmd('DNS_SERVER_IP=10.10.30.10 DNS_ANSWER_IP=10.10.20.100 python3 ' + dns_server + ' > /tmp/dns_backup.log 2>&1 &')
+    h8.cmd(backup_api_env_prefix + ' python3 ' + web_api_server + ' > /tmp/web_api_backup.log 2>&1 &')
+    h8.cmd('mkdir -p /tmp/https_server_backup')
+    h8.cmd('echo "HTTPS Backup - IoT SDN Graduation Project" > /tmp/https_server_backup/index.html')
+    h8.cmd('openssl req -x509 -newkey rsa:2048 -keyout /tmp/https_server_backup/key.pem -out /tmp/https_server_backup/cert.pem -days 365 -nodes -subj "/CN=10.10.20.8" > /dev/null 2>&1')
+    h8.cmd('cd /tmp/https_server_backup && env HTTPS_SERVER_IP=10.10.20.8 HTTPS_CERT_FILE=/tmp/https_server_backup/cert.pem HTTPS_KEY_FILE=/tmp/https_server_backup/key.pem python3 ' + https_server + ' > /tmp/https_backup.log 2>&1 &')
+
+    info('\nAll server services started, including h8 backups.\n')
+
+
+# ============================================================
+# LOAD BALANCER SETUP
+# ============================================================
+
+def setup_load_balancer(net):
+    h11 = net.get('h11')
+    lb = os.path.join(SERVER_DIR, '..', 'load_balancer.py')
+    h11.cmd('python3 ' + lb + ' > /tmp/load_balancer.log 2>&1 &')
+    info('Load Balancer h11: VIP 10.10.20.100 ports 5000 and 443\n')
 
 
 # ============================================================
@@ -368,10 +420,10 @@ def show_info(net):
     info('============================================\n')
 
     info('Servers:\n')
-    info('  h1  DNS       -> 10.0.0.1:53\n')
-    info('  h2  Web/API   -> 10.0.0.2:5000 (Flask)\n')
-    info('  h3  HTTPS     -> 10.0.0.3:443\n')
-    info('  h4  SSH       -> 10.0.0.4:22\n')
+    info('  h1  DNS       -> 10.10.30.2:53\n')
+    info('  h2  Web/API   -> 10.10.20.2:5000 (Flask)\n')
+    info('  h3  HTTPS     -> 10.10.20.3:443\n')
+    info('  h4  SSH       -> 10.10.20.4:22\n')
 
     info('\nClients:\n')
     info('  h5\n')
@@ -379,7 +431,8 @@ def show_info(net):
     info('  h7\n')
     info('  h8\n')
     info('  h9\n')
-    info('  h10\n')
+    info('  h10 DNS Backup -> 10.10.30.10\n')
+    info('  h11 Load Balancer VIP -> 10.10.20.100:5000,443\n')
 
     info('\nTraffic is MANUAL.\n')
     info('No application traffic will start automatically.\n')
@@ -431,6 +484,14 @@ def run():
 
     net.start()
 
+    info('\n*** Applying VLAN access/trunk configuration...\n')
+    configure_ovs_vlans(net)
+    info('*** VLAN 10/20/30/40 L2 segmentation configured.\n')
+    info('*** Configuring s1 VLAN gateways and Zero Trust routing policy...\n')
+    configure_gateway(net.get('s1'))
+    info('*** Inter-VLAN routing and initial policy are enabled.\n')
+
+
     # --------------------------------------------------------
     # No STP
     # --------------------------------------------------------
@@ -471,6 +532,7 @@ def run():
     # --------------------------------------------------------
 
     setup_servers(net)
+    setup_load_balancer(net)
 
     # --------------------------------------------------------
     # Network Information

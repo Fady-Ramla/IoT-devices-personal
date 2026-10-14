@@ -169,6 +169,7 @@ class CLFFEngine:
             s3 -> Tree rooted at s3
             s4 -> Tree rooted at s4
             s5 -> Tree rooted at s5
+            s6 -> Tree rooted at s6
 
         Each tree is loop-free because it is a tree.
         """
@@ -653,3 +654,4 @@ class CLFFEngine:
         else:
 
             print(message)
+	

@@ -2,8 +2,9 @@
 
 import socket
 import struct
+import os
 
-SERVER_IP = "10.0.0.1"
+SERVER_IP = os.getenv("DNS_SERVER_IP", "10.10.30.2")
 DNS_PORT = 53
 
 
@@ -55,7 +56,7 @@ def build_dns_response(data):
     data_length = b"\x00\x04"
 
     # Returned IP
-    ip_address = socket.inet_aton("10.0.0.2")
+    ip_address = socket.inet_aton(os.getenv("DNS_ANSWER_IP", "10.10.20.2"))
 
     answer = (
         name +
