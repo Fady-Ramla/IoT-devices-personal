@@ -8,11 +8,14 @@ from mininet.topo import Topo
 from mininet.link import TCLink
 
 import os
+import re
 import secrets
 import shlex
 import time
+import csv
+from types import SimpleNamespace
 
-from attack_manager import run_attack
+from attack_manager import run_attack, get_run_id, get_timestamp, save_metadata
 from vlan_config import HOSTS, configure_ovs_vlans
 from configure_gateway import configure_gateway
 
@@ -288,10 +291,10 @@ class AttackCLI(CLI):
         args = line.split()
 
         if len(args) < 3:
-            print(
-                "Usage: attack <attacker> "
-                "<attack_type> <target> [endpoint]"
-            )
+            print("Usage: attack <attacker> <attack_type> <target> [parameters]")
+            print("  syn_flood [dst_port] [rate_pps] [duration_sec]")
+            print("  port_scan [port_range] [delay_ms]")
+            print("  malicious_post [endpoint] [count] [delay_ms] [workers]")
             return
 
         attacker_name = args[0]
@@ -318,11 +321,19 @@ class AttackCLI(CLI):
 
         if attack_type == "syn_flood":
 
+            dst_port = args[3] if len(args) >= 4 else "5000"
+            rate_pps = int(args[4]) if len(args) >= 5 else 1000
+            duration_sec = int(args[5]) if len(args) >= 6 else 10
+            if not (1 <= rate_pps <= 1000000 and 1 <= duration_sec <= 300):
+                print("Invalid SYN parameters: rate 1..1000000 pps; duration 1..300 sec")
+                return
+            interval_us = max(1, int(1000000 / rate_pps))
+
             command = (
-                "timeout 10 "
+                "timeout " + str(duration_sec) + " "
                 "hping3 -S "
-                "-p 5000 "
-                "-i u1000 "
+                "-p " + str(int(dst_port)) + " "
+                "-i u" + str(interval_us) + " "
                 "--flood "
                 + dst_ip
             )
@@ -333,7 +344,7 @@ class AttackCLI(CLI):
                 dst_ip=dst_ip,
                 command=command,
                 src_port="*",
-                dst_port="5000",
+                dst_port=str(dst_port),
                 protocol="TCP"
             )
 
@@ -343,8 +354,15 @@ class AttackCLI(CLI):
 
         elif attack_type == "port_scan":
 
+            port_range = args[3] if len(args) >= 4 else "1-1000"
+            delay_ms = int(args[4]) if len(args) >= 5 else 100
+            if not re.fullmatch(r"\d{1,5}-\d{1,5}", port_range) or not (0 <= delay_ms <= 5000):
+                print("Invalid scan parameters: range N-M and delay 0..5000 ms")
+                return
+
             command = (
-                "nmap -sS -p 1-1000 --scan-delay 100ms "
+                "nmap -Pn -sS -p " + port_range
+                + " --scan-delay " + str(delay_ms) + "ms "
                 + dst_ip
             )
 
@@ -373,16 +391,33 @@ class AttackCLI(CLI):
                 return
 
             endpoint = args[3]
+            count = int(args[4]) if len(args) >= 5 else 100
+            delay_ms = int(args[5]) if len(args) >= 6 else 0
+            workers = int(args[6]) if len(args) >= 7 else 1
+            if (not endpoint.startswith("/") or not (1 <= count <= 100000)
+                    or not (0 <= delay_ms <= 60000) or not (1 <= workers <= 50)):
+                print("Invalid POST parameters: endpoint /path; count 1..100000; delay 0..60000 ms; workers 1..50")
+                return
+            sleep_part = (" sleep " + str(delay_ms / 1000.0) + ";") if delay_ms else ""
+            background_part = " &" if workers > 1 else ""
+            command_separator = " " if workers > 1 else "; "
 
             command = (
-                "for i in $(seq 1 100); do "
-                "curl -s -o /dev/null -X POST "
+                "for i in $(seq 1 " + str(count) + "); do "
+                "curl -s -o /dev/null --http1.1 -X POST "
+                "-H 'Content-Type: application/json' "
+                "-d '{\"username\":\"attack_probe\",\"password\":\"invalid\"}' "
                 "\"http://"
                 + dst_ip
                 + ":5000"
                 + endpoint
-                + "\"; "
-                "done"
+                + "\""
+                + background_part
+                + command_separator
+                + sleep_part
+                + (" if [ $((i % " + str(workers) + ")) -eq 0 ]; then wait; fi; " if workers > 1 else "")
+                + "done"
+                + ("; wait" if workers > 1 else "")
             )
 
             run_attack(
@@ -447,6 +482,61 @@ def show_info(net):
     info('\n============================================\n')
     info('          NETWORK READY\n')
     info('============================================\n\n')
+
+
+def run_batch_plan(net, plan_path):
+    """Run one command per CSV row through the existing AttackCLI logic."""
+    if not os.path.exists(plan_path):
+        raise RuntimeError('batch plan not found: ' + plan_path)
+    with open(plan_path, newline='', encoding='utf-8') as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        raise RuntimeError('batch plan is empty: ' + plan_path)
+    runner = SimpleNamespace(mn=net)
+    info('\n*** Starting automated collection batch: %s\n' % plan_path)
+    for index, row in enumerate(rows, 1):
+        command = (row.get('command') or '').strip()
+        if not (command.startswith('attack ') or command.startswith('normal ')):
+            raise RuntimeError('plan row %d must start with attack or normal: %s' % (index, command))
+        info('*** Batch run %d/%d: %s\n' % (index, len(rows), command))
+        if command.startswith('attack '):
+            AttackCLI.do_attack(runner, command[len('attack '):])
+        else:
+            run_normal_plan(net, command[len('normal '):])
+        pause = float(row.get('pause_after_sec') or 5)
+        time.sleep(max(0.0, pause))
+    info('*** Automated collection batch completed.\n')
+
+
+def run_normal_plan(net, specification):
+    """Generate one bounded, labeled normal-traffic experiment."""
+    args = specification.split()
+    if len(args) != 4:
+        raise RuntimeError('normal syntax: normal <client> <service> <target> <duration_sec>')
+    client_name, service, target_name, duration_text = args
+    client = net.get(client_name)
+    target = net.get(target_name)
+    duration = int(duration_text)
+    if not (1 <= duration <= 300):
+        raise RuntimeError('normal duration must be 1..300 seconds')
+    target_ip = target.IP()
+    if service == 'http_api':
+        port, command = 5000, 'for i in $(seq 1 %d); do curl -4 -sS --connect-timeout 2 -o /dev/null http://%s:5000/health; sleep 1; done' % (duration, target_ip)
+    elif service == 'https':
+        port, command = 443, 'for i in $(seq 1 %d); do curl -4 -ksS --connect-timeout 2 -o /dev/null https://%s/; sleep 1; done' % (duration, target_ip)
+    elif service == 'load_balancer':
+        port, command = 5000, 'for i in $(seq 1 %d); do curl -4 -sS --connect-timeout 2 -o /dev/null http://%s:5000/health; sleep 1; done' % (duration, target_ip)
+    else:
+        raise RuntimeError('unsupported normal service: ' + service)
+    run_id = get_run_id()
+    start = get_timestamp()
+    # The loop is shell syntax; run it through sh -c so timeout does not
+    # interpret the `for` keyword as an executable name.
+    result = client.cmd('timeout %d sh -c %s' % (duration + 2, shlex.quote(command)))
+    if result.strip():
+        info('*** Normal traffic output for %s: %s\n' % (run_id, result.strip()[-300:]))
+    end = get_timestamp()
+    save_metadata(run_id, 'normal', start, end, client.IP(), target_ip, '*', str(port), 'TCP')
 
 
 # ============================================================
@@ -524,8 +614,14 @@ def run():
             'priority=100,dl_type=0x88cc,actions=CONTROLLER:65535'
             % switch.name
         )
+        switch.cmd(
+            'ovs-ofctl add-flow %s '
+            'priority=0,actions=CONTROLLER:65535'
+            % switch.name
+        )
 
     info('*** LLDP rules installed.\n')
+    info('*** OpenFlow table-miss rules installed.\n')
 
     # --------------------------------------------------------
     # Start Servers
@@ -541,10 +637,14 @@ def run():
     show_info(net)
 
     # --------------------------------------------------------
-    # Start CLI
+    # Start CLI or automated batch
     # --------------------------------------------------------
 
-    AttackCLI(net)
+    batch_plan = os.environ.get('SECUREIOT_BATCH_PLAN', '').strip()
+    if batch_plan:
+        run_batch_plan(net, batch_plan)
+    else:
+        AttackCLI(net)
 
     # --------------------------------------------------------
     # Stop Network

@@ -157,3 +157,14 @@ ryu_env/
 packet_features.csv
 *.csv
 *.pcap
+
+# Local Python environments
+dataset_env/
+ryu_env/
+
+# Raw/generated data and legacy backups — keep local for audit
+packet_features.csv
+traffic_features.csv
+New_Datasets/raw/
+New_Datasets/processed/*.csv
+old_dataset_backup_before_new_pipeline/

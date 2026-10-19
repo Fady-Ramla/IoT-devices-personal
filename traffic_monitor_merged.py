@@ -154,6 +154,11 @@ FLOW_CSV = "traffic_features.csv"
 
 FLOW_POLL_INTERVAL = 2.0
 
+# PacketIn fallback window.  The topology app may install MAC-only rules,
+# which do not expose IPv4 fields through FlowStats.  In that case we build
+# model-safe flow windows from observed packets without touching forwarding.
+PACKET_FLOW_WINDOW = 5.0
+
 FLOW_IDLE_TIMEOUT = 15
 STALE_FLOW_MAX_AGE = 60
 
@@ -671,6 +676,10 @@ class TrafficMonitorMerged(
 
         self.flow_baselines = {}
         self.flow_last_seen = {}
+
+        # PacketIn-derived flow windows used when FlowStats contains only
+        # MAC forwarding matches. This is telemetry state, not forwarding.
+        self.packet_flow_windows = {}
 
         # -----------------------------------------------------
         # Action history
@@ -1493,7 +1502,19 @@ class TrafficMonitorMerged(
                 "byte_count",
                 "packet_rate",
                 "byte_rate",
-                "duration_sec"
+                "duration_sec",
+                "avg_packet_size",
+                "syn_count",
+                "ack_count",
+                "rst_count",
+                "fin_count",
+                "syn_ack_ratio",
+                "rst_ratio",
+                "unique_dst_ports",
+                "failed_connection_count",
+                "tcp_fraction",
+                "udp_fraction",
+                "icmp_fraction"
             ])
 
             self.flow_file.flush()
@@ -1890,6 +1911,19 @@ class TrafficMonitorMerged(
             arp_operation
         ])
 
+        self._update_packet_flow_window(
+            now=time.time(),
+            dpid=dpid,
+            src_ip=src_ip,
+            dst_ip=dst_ip,
+            src_port=src_port,
+            dst_port=dst_port,
+            protocol=protocol,
+            packet_length=packet_length,
+            tcp_flags=tcp_flags
+        )
+        self._flush_packet_flow_windows()
+
         # =====================================================
         # TRUST STATE
         # =====================================================
@@ -2075,6 +2109,139 @@ class TrafficMonitorMerged(
             return False
 
     # =========================================================
+    # PACKET-IN FLOW WINDOW FALLBACK
+    # =========================================================
+
+    def _update_packet_flow_window(
+        self,
+        now,
+        dpid,
+        src_ip,
+        dst_ip,
+        src_port,
+        dst_port,
+        protocol,
+        packet_length,
+        tcp_flags
+    ):
+        """Aggregate observed IP packets when FlowStats is MAC-only.
+
+        This method only records telemetry. It never installs flows and never
+        sends PacketOut. Non-IP/ARP observations are intentionally excluded
+        because they cannot form the model flow contract.
+        """
+        try:
+            protocol = int(protocol)
+        except (TypeError, ValueError):
+            return
+
+        if not src_ip or not dst_ip or protocol not in (1, 6, 17):
+            return
+
+        try:
+            src_addr = ipaddress.ip_address(src_ip)
+            dst_addr = ipaddress.ip_address(dst_ip)
+            if src_addr.version != 4 or dst_addr.version != 4:
+                return
+            if src_addr.is_multicast or dst_addr.is_multicast:
+                return
+        except ValueError:
+            return
+
+        # Aggregate by communicating endpoint pair and protocol, not by the
+        # full 5-tuple. SYN floods use a new source port repeatedly; keeping
+        # it in the key would create one row per SYN and destroy rate/window
+        # semantics. Port diversity is retained in the window features.
+        key = (dpid, src_ip, dst_ip, protocol)
+        state = self.packet_flow_windows.get(key)
+        if state is None or now - state["start_time"] >= PACKET_FLOW_WINDOW:
+            if state is not None:
+                self._write_packet_flow_window(key, state, now)
+            state = {
+                "start_time": now,
+                "last_time": now,
+                "packet_count": 0,
+                "byte_count": 0,
+                "syn_count": 0,
+                "ack_count": 0,
+                "rst_count": 0,
+                "fin_count": 0,
+                "src_ports": set(),
+                "dst_ports": set(),
+            }
+            self.packet_flow_windows[key] = state
+
+        state["last_time"] = now
+        state["packet_count"] += 1
+        state["byte_count"] += int(packet_length or 0)
+        if src_port not in ("", None):
+            state["src_ports"].add(str(src_port))
+        if dst_port not in ("", None):
+            state["dst_ports"].add(str(dst_port))
+
+        try:
+            flags = int(tcp_flags or 0)
+        except (TypeError, ValueError):
+            flags = 0
+        state["syn_count"] += int(bool(flags & 0x02))
+        state["ack_count"] += int(bool(flags & 0x10))
+        state["rst_count"] += int(bool(flags & 0x04))
+        state["fin_count"] += int(bool(flags & 0x01))
+
+    def _write_packet_flow_window(self, key, state, now=None):
+        """Write one completed PacketIn-derived window to traffic_features."""
+        if not state or state["packet_count"] <= 0:
+            return
+        dpid, src_ip, dst_ip, protocol = key
+        src_port = next(iter(state["src_ports"])) if len(state["src_ports"]) == 1 else ""
+        dst_port = next(iter(state["dst_ports"])) if len(state["dst_ports"]) == 1 else ""
+        end_time = state["last_time"] if now is None else state["last_time"]
+        duration = max(end_time - state["start_time"], 0.001)
+        packets = state["packet_count"]
+        bytes_total = state["byte_count"]
+        syn = state["syn_count"]
+        ack = state["ack_count"]
+        rst = state["rst_count"]
+        protocol_name = {6: "tcp", 17: "udp", 1: "icmp"}.get(protocol, str(protocol))
+        tcp_fraction = float(protocol == 6)
+        udp_fraction = float(protocol == 17)
+        icmp_fraction = float(protocol == 1)
+        self._write_flow_feature([
+            end_time,
+            dpid,
+            src_ip,
+            dst_ip,
+            src_port,
+            dst_port,
+            protocol_name,
+            0,
+            packets,
+            bytes_total,
+            packets / duration,
+            bytes_total / duration,
+            duration,
+            bytes_total / max(packets, 1),
+            syn,
+            ack,
+            rst,
+            state["fin_count"],
+            syn / max(ack, 1),
+            rst / max(packets, 1),
+            len(state["dst_ports"]),
+            max(syn - ack, 0),
+            tcp_fraction,
+            udp_fraction,
+            icmp_fraction,
+        ])
+
+    def _flush_packet_flow_windows(self, force=False):
+        now = time.time()
+        for key, state in list(self.packet_flow_windows.items()):
+            if force or now - state["start_time"] >= PACKET_FLOW_WINDOW:
+                self._write_packet_flow_window(key, state, now)
+                self.packet_flow_windows.pop(key, None)
+
+    # =========================================================
     # FLOW STATS LOOP
     # =========================================================
 
@@ -2094,6 +2261,7 @@ class TrafficMonitorMerged(
 
                 self._cleanup_stale_flows()
                 self._cleanup_clff_state()
+                self._flush_packet_flow_windows()
 
             except Exception as e:
 
@@ -2214,7 +2382,17 @@ class TrafficMonitorMerged(
                     ""
                 )
 
-            if not src_ip and not dst_ip:
+            if not src_ip or not dst_ip or protocol not in (1, 6, 17):
+                continue
+
+            try:
+                src_addr = ipaddress.ip_address(src_ip)
+                dst_addr = ipaddress.ip_address(dst_ip)
+                if src_addr.version != 4 or dst_addr.version != 4:
+                    continue
+                if src_addr.is_multicast or dst_addr.is_multicast:
+                    continue
+            except ValueError:
                 continue
 
             packet_count = (
@@ -2371,7 +2549,19 @@ class TrafficMonitorMerged(
                 byte_count,
                 packet_rate,
                 byte_rate,
-                duration_sec
+                duration_sec,
+                byte_count / max(packet_count, 1),
+                0,
+                0,
+                0,
+                0,
+                0.0,
+                0.0,
+                0,
+                0,
+                float(protocol == 6),
+                float(protocol == 17),
+                float(protocol == 1)
             ])
 
     # =========================================================
@@ -2414,6 +2604,11 @@ class TrafficMonitorMerged(
             self.flow_writer.writerow(
                 row
             )
+
+            # Flow windows are sparse (often fewer than CSV_FLUSH_EVERY).
+            # Flush each row so a live collection is durable and inspectable
+            # before the controller is stopped.
+            self.flow_file.flush()
 
             self.flow_rows_since_flush += 1
 
@@ -2861,6 +3056,16 @@ class TrafficMonitorMerged(
     def close(
         self
     ):
+
+        try:
+
+            self._flush_packet_flow_windows(force=True)
+
+        except Exception:
+
+            self.logger.exception(
+                "Failed to flush packet flow windows"
+            )
 
         try:
 

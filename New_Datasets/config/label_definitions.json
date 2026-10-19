@@ -1,0 +1,16 @@
+{
+  "labels": ["Normal", "Malicious_POST", "Port_Scan", "SYN_Flood"],
+  "label_status": ["matched", "unmatched", "ambiguous"],
+  "run_types": ["normal", "attack"],
+  "experiment_categories": [
+    "normal_baseline",
+    "allowed_attack_delivery",
+    "firewall_blocked_attack_attempt",
+    "service_unavailable_control",
+    "failed_experiment"
+  ],
+  "training_policy": {
+    "allowed_label_status": ["matched"],
+    "excluded_categories": ["failed_experiment", "service_unavailable_control"]
+  }
+}
