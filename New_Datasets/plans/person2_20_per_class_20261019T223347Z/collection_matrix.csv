@@ -1,0 +1,61 @@
+planned_run_key,label,attack_type,attacker_host,target_host,service_name,dst_port,rate_value,duration_sec,port_range,scan_delay_ms,syn_rate_pps,normal_interval_sec,command,pause_after_sec
+plan_portscan_001,Port_Scan,port_scan,h9,h11,load_balancer,443,scan_delay_ms=200,variable_from_range_and_delay,400-480,200,,,attack h9 port_scan h11 400-480 200,10
+plan_synflood_001,SYN_Flood,syn_flood,h9,h11,load_balancer,5000,50,20,,,50,,attack h9 syn_flood h11 5000 50 20,10
+plan_normal_001,Normal,,h9,h11,load_balancer,5000,approximately 1 request/sec (current generator),45,,,,1,normal h9 load_balancer h11 45,10
+plan_portscan_002,Port_Scan,port_scan,h7,h4,ssh,22,scan_delay_ms=100,variable_from_range_and_delay,21-30,100,,,attack h7 port_scan h4 21-30 100,10
+plan_synflood_002,SYN_Flood,syn_flood,h7,h3,https,443,25,10,,,25,,attack h7 syn_flood h3 443 25 10,10
+plan_normal_002,Normal,,h7,h8,http_api,5000,approximately 1 request/sec (current generator),10,,,,1,normal h7 http_api h8 10,10
+plan_portscan_003,Port_Scan,port_scan,h5,h3,https,443,scan_delay_ms=50,variable_from_range_and_delay,420-460,50,,,attack h5 port_scan h3 420-460 50,10
+plan_synflood_003,SYN_Flood,syn_flood,h5,h2,http_api,5000,10,8,,,10,,attack h5 syn_flood h2 5000 10 8,10
+plan_normal_003,Normal,,h6,h3,https,443,approximately 1 request/sec (current generator),15,,,,1,normal h6 https h3 15,10
+plan_portscan_004,Port_Scan,port_scan,h6,h8,http_api_backup,5000,scan_delay_ms=25,variable_from_range_and_delay,4980-5020,25,,,attack h6 port_scan h8 4980-5020 25,10
+plan_synflood_004,SYN_Flood,syn_flood,h6,h8,http_api_backup,5000,200,5,,,200,,attack h6 syn_flood h8 5000 200 5,10
+plan_normal_004,Normal,,h5,h2,http_api,5000,approximately 1 request/sec (current generator),20,,,,1,normal h5 http_api h2 20,10
+plan_portscan_005,Port_Scan,port_scan,h7,h2,http_api,5000,scan_delay_ms=400,variable_from_range_and_delay,4990-5010,400,,,attack h7 port_scan h2 4990-5010 400,10
+plan_synflood_005,SYN_Flood,syn_flood,h9,h4,ssh,22,100,15,,,100,,attack h9 syn_flood h4 22 100 15,10
+plan_normal_005,Normal,,h5,h11,load_balancer,5000,approximately 1 request/sec (current generator),30,,,,1,normal h5 load_balancer h11 30,10
+plan_portscan_006,Port_Scan,port_scan,h9,h8,https_backup,443,scan_delay_ms=25,variable_from_range_and_delay,440-446,25,,,attack h9 port_scan h8 440-446 25,10
+plan_synflood_006,SYN_Flood,syn_flood,h5,h8,https_backup,443,25,20,,,25,,attack h5 syn_flood h8 443 25 20,10
+plan_normal_006,Normal,,h9,h3,https,443,approximately 1 request/sec (current generator),15,,,,1,normal h9 https h3 15,10
+plan_portscan_007,Port_Scan,port_scan,h5,h11,load_balancer,443,scan_delay_ms=50,variable_from_range_and_delay,442-448,50,,,attack h5 port_scan h11 442-448 50,10
+plan_synflood_007,SYN_Flood,syn_flood,h7,h11,load_balancer,5000,200,5,,,200,,attack h7 syn_flood h11 5000 200 5,10
+plan_normal_007,Normal,,h6,h8,https,443,approximately 1 request/sec (current generator),10,,,,1,normal h6 https h8 10,10
+plan_portscan_008,Port_Scan,port_scan,h6,h4,ssh,22,scan_delay_ms=100,variable_from_range_and_delay,20-24,100,,,attack h6 port_scan h4 20-24 100,10
+plan_synflood_008,SYN_Flood,syn_flood,h6,h2,http_api,5000,100,15,,,100,,attack h6 syn_flood h2 5000 100 15,10
+plan_normal_008,Normal,,h7,h2,http_api,5000,approximately 1 request/sec (current generator),30,,,,1,normal h7 http_api h2 30,10
+plan_portscan_009,Port_Scan,port_scan,h5,h3,https,443,scan_delay_ms=200,variable_from_range_and_delay,430-450,200,,,attack h5 port_scan h3 430-450 200,10
+plan_synflood_009,SYN_Flood,syn_flood,h5,h3,https,443,50,10,,,50,,attack h5 syn_flood h3 443 50 10,10
+plan_normal_009,Normal,,h5,h11,load_balancer,5000,approximately 1 request/sec (current generator),45,,,,1,normal h5 load_balancer h11 45,10
+plan_portscan_010,Port_Scan,port_scan,h6,h2,http_api,5000,scan_delay_ms=400,variable_from_range_and_delay,4800-5200,400,,,attack h6 port_scan h2 4800-5200 400,10
+plan_synflood_010,SYN_Flood,syn_flood,h7,h4,ssh,22,10,8,,,10,,attack h7 syn_flood h4 22 10 8,10
+plan_normal_010,Normal,,h9,h8,http_api,5000,approximately 1 request/sec (current generator),20,,,,1,normal h9 http_api h8 20,10
+plan_portscan_011,Port_Scan,port_scan,h7,h8,http_api_backup,5000,scan_delay_ms=50,variable_from_range_and_delay,4996-5004,50,,,attack h7 port_scan h8 4996-5004 50,10
+plan_synflood_011,SYN_Flood,syn_flood,h9,h8,https_backup,443,50,8,,,50,,attack h9 syn_flood h8 443 50 8,10
+plan_normal_011,Normal,,h6,h3,https,443,approximately 1 request/sec (current generator),45,,,,1,normal h6 https h3 45,10
+plan_portscan_012,Port_Scan,port_scan,h9,h11,load_balancer,5000,scan_delay_ms=400,variable_from_range_and_delay,4900-5100,400,,,attack h9 port_scan h11 4900-5100 400,10
+plan_synflood_012,SYN_Flood,syn_flood,h6,h11,load_balancer,443,10,15,,,10,,attack h6 syn_flood h11 443 10 15,10
+plan_normal_012,Normal,,h7,h2,http_api,5000,approximately 1 request/sec (current generator),15,,,,1,normal h7 http_api h2 15,10
+plan_portscan_013,Port_Scan,port_scan,h7,h4,ssh,22,scan_delay_ms=25,variable_from_range_and_delay,18-26,25,,,attack h7 port_scan h4 18-26 25,10
+plan_synflood_013,SYN_Flood,syn_flood,h7,h3,https,443,100,20,,,100,,attack h7 syn_flood h3 443 100 20,10
+plan_normal_013,Normal,,h6,h11,load_balancer,5000,approximately 1 request/sec (current generator),10,,,,1,normal h6 load_balancer h11 10,10
+plan_portscan_014,Port_Scan,port_scan,h5,h2,http_api,5000,scan_delay_ms=200,variable_from_range_and_delay,4980-5020,200,,,attack h5 port_scan h2 4980-5020 200,10
+plan_synflood_014,SYN_Flood,syn_flood,h5,h4,ssh,22,25,5,,,25,,attack h5 syn_flood h4 22 25 5,10
+plan_normal_014,Normal,,h9,h8,https,443,approximately 1 request/sec (current generator),30,,,,1,normal h9 https h8 30,10
+plan_portscan_015,Port_Scan,port_scan,h9,h3,https,443,scan_delay_ms=100,variable_from_range_and_delay,420-460,100,,,attack h9 port_scan h3 420-460 100,10
+plan_synflood_015,SYN_Flood,syn_flood,h6,h2,http_api,5000,200,10,,,200,,attack h6 syn_flood h2 5000 200 10,10
+plan_normal_015,Normal,,h7,h3,https,443,approximately 1 request/sec (current generator),20,,,,1,normal h7 https h3 20,10
+plan_portscan_016,Port_Scan,port_scan,h6,h8,https_backup,443,scan_delay_ms=400,variable_from_range_and_delay,440-446,400,,,attack h6 port_scan h8 440-446 400,10
+plan_synflood_016,SYN_Flood,syn_flood,h9,h8,http_api_backup,5000,200,5,,,200,,attack h9 syn_flood h8 5000 200 5,10
+plan_normal_016,Normal,,h5,h2,http_api,5000,approximately 1 request/sec (current generator),45,,,,1,normal h5 http_api h2 45,10
+plan_portscan_017,Port_Scan,port_scan,h9,h4,ssh,22,scan_delay_ms=50,variable_from_range_and_delay,20-30,50,,,attack h9 port_scan h4 20-30 50,10
+plan_synflood_017,SYN_Flood,syn_flood,h7,h11,load_balancer,5000,25,8,,,25,,attack h7 syn_flood h11 5000 25 8,10
+plan_normal_017,Normal,,h5,h11,load_balancer,5000,approximately 1 request/sec (current generator),15,,,,1,normal h5 load_balancer h11 15,10
+plan_portscan_018,Port_Scan,port_scan,h6,h3,https,443,scan_delay_ms=25,variable_from_range_and_delay,430-450,25,,,attack h6 port_scan h3 430-450 25,10
+plan_synflood_018,SYN_Flood,syn_flood,h9,h2,http_api,5000,50,10,,,50,,attack h9 syn_flood h2 5000 50 10,10
+plan_normal_018,Normal,,h7,h3,https,443,approximately 1 request/sec (current generator),10,,,,1,normal h7 https h3 10,10
+plan_portscan_019,Port_Scan,port_scan,h7,h11,load_balancer,5000,scan_delay_ms=100,variable_from_range_and_delay,4996-5004,100,,,attack h7 port_scan h11 4996-5004 100,10
+plan_synflood_019,SYN_Flood,syn_flood,h6,h3,https,443,10,20,,,10,,attack h6 syn_flood h3 443 10 20,10
+plan_normal_019,Normal,,h9,h2,http_api,5000,approximately 1 request/sec (current generator),30,,,,1,normal h9 http_api h2 30,10
+plan_portscan_020,Port_Scan,port_scan,h5,h2,http_api,5000,scan_delay_ms=200,variable_from_range_and_delay,4900-5100,200,,,attack h5 port_scan h2 4900-5100 200,10
+plan_synflood_020,SYN_Flood,syn_flood,h5,h4,ssh,22,100,15,,,100,,attack h5 syn_flood h4 22 100 15,10
+plan_normal_020,Normal,,h6,h8,http_api,5000,approximately 1 request/sec (current generator),20,,,,1,normal h6 http_api h8 20,10

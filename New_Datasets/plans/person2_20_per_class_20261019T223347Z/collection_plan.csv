@@ -1,0 +1,61 @@
+command,pause_after_sec
+attack h9 port_scan h11 400-480 200,10
+attack h9 syn_flood h11 5000 50 20,10
+normal h9 load_balancer h11 45,10
+attack h7 port_scan h4 21-30 100,10
+attack h7 syn_flood h3 443 25 10,10
+normal h7 http_api h8 10,10
+attack h5 port_scan h3 420-460 50,10
+attack h5 syn_flood h2 5000 10 8,10
+normal h6 https h3 15,10
+attack h6 port_scan h8 4980-5020 25,10
+attack h6 syn_flood h8 5000 200 5,10
+normal h5 http_api h2 20,10
+attack h7 port_scan h2 4990-5010 400,10
+attack h9 syn_flood h4 22 100 15,10
+normal h5 load_balancer h11 30,10
+attack h9 port_scan h8 440-446 25,10
+attack h5 syn_flood h8 443 25 20,10
+normal h9 https h3 15,10
+attack h5 port_scan h11 442-448 50,10
+attack h7 syn_flood h11 5000 200 5,10
+normal h6 https h8 10,10
+attack h6 port_scan h4 20-24 100,10
+attack h6 syn_flood h2 5000 100 15,10
+normal h7 http_api h2 30,10
+attack h5 port_scan h3 430-450 200,10
+attack h5 syn_flood h3 443 50 10,10
+normal h5 load_balancer h11 45,10
+attack h6 port_scan h2 4800-5200 400,10
+attack h7 syn_flood h4 22 10 8,10
+normal h9 http_api h8 20,10
+attack h7 port_scan h8 4996-5004 50,10
+attack h9 syn_flood h8 443 50 8,10
+normal h6 https h3 45,10
+attack h9 port_scan h11 4900-5100 400,10
+attack h6 syn_flood h11 443 10 15,10
+normal h7 http_api h2 15,10
+attack h7 port_scan h4 18-26 25,10
+attack h7 syn_flood h3 443 100 20,10
+normal h6 load_balancer h11 10,10
+attack h5 port_scan h2 4980-5020 200,10
+attack h5 syn_flood h4 22 25 5,10
+normal h9 https h8 30,10
+attack h9 port_scan h3 420-460 100,10
+attack h6 syn_flood h2 5000 200 10,10
+normal h7 https h3 20,10
+attack h6 port_scan h8 440-446 400,10
+attack h9 syn_flood h8 5000 200 5,10
+normal h5 http_api h2 45,10
+attack h9 port_scan h4 20-30 50,10
+attack h7 syn_flood h11 5000 25 8,10
+normal h5 load_balancer h11 15,10
+attack h6 port_scan h3 430-450 25,10
+attack h9 syn_flood h2 5000 50 10,10
+normal h7 https h3 10,10
+attack h7 port_scan h11 4996-5004 100,10
+attack h6 syn_flood h3 443 10 20,10
+normal h9 http_api h2 30,10
+attack h5 port_scan h2 4900-5100 200,10
+attack h5 syn_flood h4 22 100 15,10
+normal h6 http_api h8 20,10

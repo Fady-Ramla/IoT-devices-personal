@@ -13,9 +13,14 @@ import secrets
 import shlex
 import time
 import csv
+import json
+import math
 from types import SimpleNamespace
 
-from attack_manager import run_attack, get_run_id, get_timestamp, save_metadata
+from attack_manager import (
+    run_attack, run_experiment, validate_duration, validate_syn_parameters,
+    validate_ipv4, build_syn_command, MAX_RATE_PPS, MAX_DURATION_SEC, MAX_NORMAL_DURATION_SEC,
+)
 from vlan_config import HOSTS, configure_ovs_vlans
 from configure_gateway import configure_gateway
 
@@ -284,163 +289,137 @@ def setup_load_balancer(net):
 # CUSTOM ATTACK CLI
 # ============================================================
 
+def service_name_for_target(target_name, attack_type, dst_port):
+    """Record the known service at the target, not the attack mechanism."""
+    if target_name == 'h8':
+        if attack_type == 'port_scan':
+            try:
+                low, high = map(int, str(dst_port).split('-', 1))
+                midpoint = (low + high) / 2.0
+                return 'https_backup' if abs(midpoint - 443) < abs(midpoint - 5000) else 'http_api_backup'
+            except (TypeError, ValueError):
+                return 'backup_service'
+        return 'https_backup' if str(dst_port) == '443' else 'http_api_backup'
+    if target_name == 'h11':
+        return 'load_balancer'
+    return {'h2': 'http_api', 'h3': 'https', 'h4': 'ssh'}.get(target_name, 'unknown_service')
+
+
+def build_attack_spec(attack_type, dst_ip, parameters):
+    """Pure command builder: validate first, never send traffic or change plans.
+
+    SYN: 10..200 pps and 5..20 seconds. Scan/POST use a 20-second
+    wall-clock cap; a timed-out bounded slice is not a complete port scan or
+    evidence that the requested POST count finished. Notes preserve that fact.
+    """
+    dst_ip = validate_ipv4(dst_ip)
+    parameters = list(parameters)
+    notes = {}
+    duration = MAX_DURATION_SEC
+    if attack_type == 'syn_flood':
+        if len(parameters) > 3:
+            raise ValueError('syn_flood syntax: [dst_port] [rate_pps] [duration_sec]')
+        port = int(parameters[0]) if parameters else 5000
+        if not 1 <= port <= 65535:
+            raise ValueError('destination port must be 1..65535')
+        rate = int(parameters[1]) if len(parameters) >= 2 else 100
+        duration = int(parameters[2]) if len(parameters) >= 3 else 10
+        rate, duration, interval_us = validate_syn_parameters(rate, duration)
+        command = build_syn_command(dst_ip, port, rate, duration)
+        service = {5000: 'http_api', 443: 'https', 22: 'ssh', 53: 'dns'}.get(port, 'tcp')
+        notes = {'rate_unit': 'pps', 'interval_us': interval_us,
+                 'max_packets': rate * duration, 'duration_is_cap': True}
+    elif attack_type == 'port_scan':
+        if len(parameters) > 2:
+            raise ValueError('port_scan syntax: [port_range] [delay_ms]')
+        port = parameters[0] if parameters else '1-1000'
+        delay_ms = int(parameters[1]) if len(parameters) >= 2 else 100
+        if not re.fullmatch(r'\d{1,5}-\d{1,5}', port):
+            raise ValueError('port_scan range must be N-M')
+        low, high = map(int, port.split('-'))
+        if not (1 <= low <= high <= 65535 and 0 <= delay_ms <= 5000):
+            raise ValueError('invalid scan ports/delay: 1..65535, 0..5000ms')
+        rate = min(MAX_RATE_PPS, 1000.0 / delay_ms) if delay_ms else MAX_RATE_PPS
+        command = ('timeout --signal=TERM --kill-after=1s %ds '
+                   'nmap -n -Pn -sS -p %s --scan-delay %dms --max-rate %d '
+                   '--max-retries 1 %s' % (duration, port, delay_ms, MAX_RATE_PPS, dst_ip))
+        service = 'port_scan'
+        notes = {'rate_unit': 'pps_ceiling', 'scan_delay_ms': delay_ms,
+                 'duration_is_cap': True, 'full_scan_guaranteed': False}
+    elif attack_type == 'malicious_post':
+        if not 1 <= len(parameters) <= 4:
+            raise ValueError('malicious_post syntax: <endpoint> [count] [delay_ms] [workers]')
+        endpoint = parameters[0]
+        count = int(parameters[1]) if len(parameters) >= 2 else 100
+        delay_ms = int(parameters[2]) if len(parameters) >= 3 else 100
+        workers = int(parameters[3]) if len(parameters) >= 4 else 1
+        if (not endpoint.startswith('/') or len(endpoint) > 2048
+                or any(char in endpoint for char in '\r\n')
+                or not (1 <= count <= MAX_RATE_PPS * MAX_DURATION_SEC)
+                or not (1 <= workers <= 50) or not (1 <= delay_ms <= 60000)):
+            raise ValueError('POST requires /path, count 1..4000, delay 1..60000ms, workers 1..50')
+        # There is one sleep after EACH launch; workers only cap concurrency,
+        # not the launch rate. Waiting at batch boundaries reduces this ceiling.
+        rate = 1000.0 / delay_ms
+        if rate > MAX_RATE_PPS:
+            raise ValueError('POST launch rate must be <=200 requests/sec (delay >=5ms)')
+        url = shlex.quote('http://' + dst_ip + ':5000' + endpoint)
+        request = ("curl -4 -sS --connect-timeout 1 --max-time 2 -o /dev/null "
+                   "--http1.1 -X POST -H 'Content-Type: application/json' "
+                   "-d '{\"username\":\"attack_probe\",\"password\":\"invalid\"}' " + url)
+        # Wait for EVERY child at each batch boundary and preserve transport
+        # failures. The outer timeout kills the whole shell process group.
+        loop = ('failed=0; pids=""; for i in $(seq 1 %d); do %s & '
+                'pids="$pids $!"; sleep %.6f; '
+                'if [ $((i %% %d)) -eq 0 ]; then '
+                'for pid in $pids; do wait "$pid" || failed=1; done; pids=""; fi; '
+                'done; for pid in $pids; do wait "$pid" || failed=1; done; exit "$failed"' %
+                (count, request, delay_ms / 1000.0, workers))
+        command = 'timeout --signal=TERM --kill-after=1s %ds sh -c %s' % (duration, shlex.quote(loop))
+        port, service = 5000, 'http_api'
+        notes = {'rate_unit': 'requests_per_second_ceiling', 'count': count,
+                 'delay_ms': delay_ms, 'workers': workers, 'endpoint': endpoint,
+                 'duration_is_cap': True, 'requested_count_guaranteed': False}
+    else:
+        raise ValueError('unknown attack type: ' + attack_type)
+    return dict(command=command, dst_port=str(port), src_port='*', protocol='TCP',
+                service_name=service, rate_value=rate, duration_sec=duration,
+                accepted_returncodes=(0, 124), notes=json.dumps(notes, sort_keys=True))
+
+
 class AttackCLI(CLI):
 
     def do_attack(self, line):
-
-        args = line.split()
-
-        if len(args) < 3:
-            print("Usage: attack <attacker> <attack_type> <target> [parameters]")
-            print("  syn_flood [dst_port] [rate_pps] [duration_sec]")
-            print("  port_scan [port_range] [delay_ms]")
-            print("  malicious_post [endpoint] [count] [delay_ms] [workers]")
-            return
-
-        attacker_name = args[0]
-        attack_type = args[1]
-        target_name = args[2]
-
+        # cmd.Cmd treats any truthy handler return as a request to exit.
+        self._last_run_error = None
         try:
-            attacker = self.mn.get(attacker_name)
-        except KeyError:
-            print("Unknown attacker:", attacker_name)
-            return
+            args = shlex.split(line)
+            if len(args) < 3:
+                print('Usage: attack <attacker> <syn_flood|port_scan|malicious_post> <target> [parameters]')
+                return False
+            attacker_name, attack_type, target_name = args[:3]
+            attacker, target = self.mn.get(attacker_name), self.mn.get(target_name)
+            dst_ip = validate_ipv4(target.IP())
+            specification = build_attack_spec(attack_type, dst_ip, args[3:])
+            specification['service_name'] = service_name_for_target(
+                target.name, attack_type, specification['dst_port'])
+            row = run_attack(attacker=attacker, attack_type=attack_type, dst_ip=dst_ip,
+                             target_host=target.name, **specification)
+            print('Run finished: run_id=%s status=%s' % (row.get('run_id'), row.get('status')))
+        except Exception as exc:
+            self._last_run_error = exc
+            print('Run failed; no next run was started: %s' % exc)
+        return False
 
+    def do_normal(self, line):
+        self._last_run_error = None
         try:
-            target = self.mn.get(target_name)
-        except KeyError:
-            print("Unknown target:", target_name)
-            return
-
-        dst_ip = target.IP()
-
-        # ====================================================
-        # SYN FLOOD
-        # ====================================================
-
-        if attack_type == "syn_flood":
-
-            dst_port = args[3] if len(args) >= 4 else "5000"
-            rate_pps = int(args[4]) if len(args) >= 5 else 1000
-            duration_sec = int(args[5]) if len(args) >= 6 else 10
-            if not (1 <= rate_pps <= 1000000 and 1 <= duration_sec <= 300):
-                print("Invalid SYN parameters: rate 1..1000000 pps; duration 1..300 sec")
-                return
-            interval_us = max(1, int(1000000 / rate_pps))
-
-            command = (
-                "timeout " + str(duration_sec) + " "
-                "hping3 -S "
-                "-p " + str(int(dst_port)) + " "
-                "-i u" + str(interval_us) + " "
-                "--flood "
-                + dst_ip
-            )
-
-            run_attack(
-                attacker=attacker,
-                attack_type="syn_flood",
-                dst_ip=dst_ip,
-                command=command,
-                src_port="*",
-                dst_port=str(dst_port),
-                protocol="TCP"
-            )
-
-        # ====================================================
-        # PORT SCAN
-        # ====================================================
-
-        elif attack_type == "port_scan":
-
-            port_range = args[3] if len(args) >= 4 else "1-1000"
-            delay_ms = int(args[4]) if len(args) >= 5 else 100
-            if not re.fullmatch(r"\d{1,5}-\d{1,5}", port_range) or not (0 <= delay_ms <= 5000):
-                print("Invalid scan parameters: range N-M and delay 0..5000 ms")
-                return
-
-            command = (
-                "nmap -Pn -sS -p " + port_range
-                + " --scan-delay " + str(delay_ms) + "ms "
-                + dst_ip
-            )
-
-            run_attack(
-                attacker=attacker,
-                attack_type="port_scan",
-                dst_ip=dst_ip,
-                command=command,
-                src_port="*",
-                dst_port="*",
-                protocol="TCP"
-            )
-
-        # ====================================================
-        # MALICIOUS POST
-        # ====================================================
-
-        elif attack_type == "malicious_post":
-
-            if len(args) < 4:
-                print(
-                    "Usage: attack "
-                    "<attacker> malicious_post "
-                    "<target> <endpoint>"
-                )
-                return
-
-            endpoint = args[3]
-            count = int(args[4]) if len(args) >= 5 else 100
-            delay_ms = int(args[5]) if len(args) >= 6 else 0
-            workers = int(args[6]) if len(args) >= 7 else 1
-            if (not endpoint.startswith("/") or not (1 <= count <= 100000)
-                    or not (0 <= delay_ms <= 60000) or not (1 <= workers <= 50)):
-                print("Invalid POST parameters: endpoint /path; count 1..100000; delay 0..60000 ms; workers 1..50")
-                return
-            sleep_part = (" sleep " + str(delay_ms / 1000.0) + ";") if delay_ms else ""
-            background_part = " &" if workers > 1 else ""
-            command_separator = " " if workers > 1 else "; "
-
-            command = (
-                "for i in $(seq 1 " + str(count) + "); do "
-                "curl -s -o /dev/null --http1.1 -X POST "
-                "-H 'Content-Type: application/json' "
-                "-d '{\"username\":\"attack_probe\",\"password\":\"invalid\"}' "
-                "\"http://"
-                + dst_ip
-                + ":5000"
-                + endpoint
-                + "\""
-                + background_part
-                + command_separator
-                + sleep_part
-                + (" if [ $((i % " + str(workers) + ")) -eq 0 ]; then wait; fi; " if workers > 1 else "")
-                + "done"
-                + ("; wait" if workers > 1 else "")
-            )
-
-            run_attack(
-                attacker=attacker,
-                attack_type="malicious_post",
-                dst_ip=dst_ip,
-                command=command,
-                src_port="*",
-                dst_port="5000",
-                protocol="TCP"
-            )
-
-        # ====================================================
-        # UNKNOWN ATTACK
-        # ====================================================
-
-        else:
-
-            print("Unknown attack type:", attack_type)
-            print("Available attack types:")
-            print("  syn_flood")
-            print("  port_scan")
-            print("  malicious_post")
+            row = run_normal_plan(self.mn, line)
+            print('Run finished: run_id=%s status=%s' % (row.get('run_id'), row.get('status')))
+        except Exception as exc:
+            self._last_run_error = exc
+            print('Run failed; no next run was started: %s' % exc)
+        return False
 
 
 # ============================================================
@@ -493,6 +472,10 @@ def run_batch_plan(net, plan_path):
     if not rows:
         raise RuntimeError('batch plan is empty: ' + plan_path)
     runner = SimpleNamespace(mn=net)
+    # Validate all pauses before any run. No CSV plan is rewritten.
+    pauses = [float(row.get('pause_after_sec') or 5) for row in rows]
+    if any(not math.isfinite(pause) or not 0 <= pause <= 60 for pause in pauses):
+        raise ValueError('batch pauses must be finite in 0..60 seconds')
     info('\n*** Starting automated collection batch: %s\n' % plan_path)
     for index, row in enumerate(rows, 1):
         command = (row.get('command') or '').strip()
@@ -501,42 +484,46 @@ def run_batch_plan(net, plan_path):
         info('*** Batch run %d/%d: %s\n' % (index, len(rows), command))
         if command.startswith('attack '):
             AttackCLI.do_attack(runner, command[len('attack '):])
+            if runner._last_run_error is not None:
+                raise runner._last_run_error
         else:
             run_normal_plan(net, command[len('normal '):])
-        pause = float(row.get('pause_after_sec') or 5)
-        time.sleep(max(0.0, pause))
+        # Both functions return only after the SAME run is drained and committed.
+        time.sleep(pauses[index - 1])
     info('*** Automated collection batch completed.\n')
 
 
-def run_normal_plan(net, specification):
-    """Generate one bounded, labeled normal-traffic experiment."""
-    args = specification.split()
+def run_normal_plan(net, specification, *, controller=None, manifest_path=None, executor=None):
+    """Normal traffic obeys the same planned/start/stop/drain state machine."""
+    args = shlex.split(specification)
     if len(args) != 4:
         raise RuntimeError('normal syntax: normal <client> <service> <target> <duration_sec>')
     client_name, service, target_name, duration_text = args
     client = net.get(client_name)
     target = net.get(target_name)
     duration = int(duration_text)
-    if not (1 <= duration <= 300):
-        raise RuntimeError('normal duration must be 1..300 seconds')
-    target_ip = target.IP()
-    if service == 'http_api':
-        port, command = 5000, 'for i in $(seq 1 %d); do curl -4 -sS --connect-timeout 2 -o /dev/null http://%s:5000/health; sleep 1; done' % (duration, target_ip)
+    validate_duration(duration, MAX_NORMAL_DURATION_SEC)
+    target_ip = validate_ipv4(target.IP())
+    if service in {'http_api', 'load_balancer'}:
+        port, url, extra = 5000, 'http://%s:5000/health' % target_ip, ''
     elif service == 'https':
-        port, command = 443, 'for i in $(seq 1 %d); do curl -4 -ksS --connect-timeout 2 -o /dev/null https://%s/; sleep 1; done' % (duration, target_ip)
-    elif service == 'load_balancer':
-        port, command = 5000, 'for i in $(seq 1 %d); do curl -4 -sS --connect-timeout 2 -o /dev/null http://%s:5000/health; sleep 1; done' % (duration, target_ip)
+        port, url, extra = 443, 'https://%s/' % target_ip, '-k '
     else:
         raise RuntimeError('unsupported normal service: ' + service)
-    run_id = get_run_id()
-    start = get_timestamp()
-    # The loop is shell syntax; run it through sh -c so timeout does not
-    # interpret the `for` keyword as an executable name.
-    result = client.cmd('timeout %d sh -c %s' % (duration + 2, shlex.quote(command)))
-    if result.strip():
-        info('*** Normal traffic output for %s: %s\n' % (run_id, result.strip()[-300:]))
-    end = get_timestamp()
-    save_metadata(run_id, 'normal', start, end, client.IP(), target_ip, '*', str(port), 'TCP')
+    # Each failed transport exits immediately; a curl failure must not be hidden
+    # by a later successful sleep. timeout's 124 is an intentional bounded end.
+    loop = ('for i in $(seq 1 %d); do curl -4 %s-sS --fail --connect-timeout 1 '
+            '--max-time 2 -o /dev/null %s || exit $?; sleep 1; done' %
+            (duration, extra, shlex.quote(url)))
+    command = 'timeout --signal=TERM --kill-after=1s %ds sh -c %s' % (duration, shlex.quote(loop))
+    return run_experiment(
+        client, command, run_type='normal', target_host=target.name, target_ip=target_ip,
+        service_name=service, protocol='TCP', dst_port=str(port), src_port='*',
+        rate_value=1, duration_sec=duration, experiment_category='normal_baseline',
+        accepted_returncodes=(0, 124),
+        notes=json.dumps({'rate_unit': 'requests_per_second_ceiling', 'duration_is_cap': True}),
+        controller=controller, manifest_path=manifest_path, executor=executor,
+    )
 
 
 # ============================================================
@@ -640,19 +627,16 @@ def run():
     # Start CLI or automated batch
     # --------------------------------------------------------
 
-    batch_plan = os.environ.get('SECUREIOT_BATCH_PLAN', '').strip()
-    if batch_plan:
-        run_batch_plan(net, batch_plan)
-    else:
-        AttackCLI(net)
-
-    # --------------------------------------------------------
-    # Stop Network
-    # --------------------------------------------------------
-
-    info('\n*** Stopping network...\n')
-
-    net.stop()
+    try:
+        batch_plan = os.environ.get('SECUREIOT_BATCH_PLAN', '').strip()
+        if batch_plan:
+            run_batch_plan(net, batch_plan)
+        else:
+            AttackCLI(net)
+    finally:
+        # Lifecycle failures abort a batch; never leave its network running.
+        info('\n*** Stopping network...\n')
+        net.stop()
 
 
 # ============================================================
