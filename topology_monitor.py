@@ -21,6 +21,7 @@
 #                        (physical minus isolated links)
 # ================================================================
 
+import os
 import time
 import re
 
@@ -66,8 +67,8 @@ LLDP_STALE_TIMEOUT = 9          # 3 x interval (PortStatus is the fast path)
 
 LLDP_MAC = "01:80:c2:00:00:0e"
 
-EXPECTED_SWITCHES = 6
-EXPECTED_PHYSICAL_LINKS = 11
+EXPECTED_SWITCHES = int(os.getenv("EXPECTED_SWITCHES", "6"))
+EXPECTED_PHYSICAL_LINKS = int(os.getenv("EXPECTED_PHYSICAL_LINKS", "11"))
 
 NORMAL_PRIORITY = 10
 REROUTE_PRIORITY = 100
@@ -2156,7 +2157,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
         return {
             mac: {
-                "ip": self.mac_to_ip.get(mac),
+"ip": self.mac_to_ip.get(mac),
                 "dpid": loc[0],
                 "port": loc[1],
             }
