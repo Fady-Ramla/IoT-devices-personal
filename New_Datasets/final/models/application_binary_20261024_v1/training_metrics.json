@@ -1,0 +1,326 @@
+{
+  "task": "binary HTTP application event classification",
+  "features": [
+    "http_method",
+    "route_category"
+  ],
+  "excluded_fields": [
+    "run_id",
+    "observation_id",
+    "timestamp",
+    "response_status",
+    "src_ip",
+    "dst_ip",
+    "src_port",
+    "dst_port",
+    "request headers",
+    "route path",
+    "body/payload"
+  ],
+  "classes": [
+    "Malicious_POST",
+    "Normal"
+  ],
+  "seed": 42,
+  "training_weighting": "equal total sample weight per run_id",
+  "metrics": {
+    "random_forest": {
+      "validation": {
+        "row_level": {
+          "rows": 85,
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              70,
+              0
+            ],
+            [
+              0,
+              15
+            ]
+          ]
+        },
+        "run_level": {
+          "runs": 4,
+          "aggregation": "mean class probability across HTTP events within run_id",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              2,
+              0
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "predictions": [
+            {
+              "run_id": "3e566a25-1aa4-462a-9b3e-5f496c9832b9",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "a17a25db-69bd-4a1f-8b69-d2f1ffa1cd61",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "d220ed0b-abdb-42a1-915c-50bd4db61737",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "e065eea3-15bb-4794-baba-4e538640565b",
+              "actual": "Normal",
+              "predicted": "Normal"
+            }
+          ]
+        }
+      },
+      "test": {
+        "row_level": {
+          "rows": 60,
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              39,
+              0
+            ],
+            [
+              0,
+              21
+            ]
+          ]
+        },
+        "run_level": {
+          "runs": 6,
+          "aggregation": "mean class probability across HTTP events within run_id",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              3,
+              0
+            ],
+            [
+              0,
+              3
+            ]
+          ],
+          "predictions": [
+            {
+              "run_id": "20099cce-88a3-4379-88b8-b9f172c86fab",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "80575a51-17dc-4a9f-b21d-5f1f9eba76ca",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "a763e2bd-07a6-47d2-bc68-d62570500f85",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "d993b833-816c-4dbc-b251-d1e37b47b81c",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "e7433436-ce32-4ab7-9d39-ec5ed662191f",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "e9c9c550-f811-49da-a192-bab812e02920",
+              "actual": "Normal",
+              "predicted": "Normal"
+            }
+          ]
+        }
+      }
+    },
+    "xgboost": {
+      "validation": {
+        "row_level": {
+          "rows": 85,
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              70,
+              0
+            ],
+            [
+              0,
+              15
+            ]
+          ]
+        },
+        "run_level": {
+          "runs": 4,
+          "aggregation": "mean class probability across HTTP events within run_id",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              2,
+              0
+            ],
+            [
+              0,
+              2
+            ]
+          ],
+          "predictions": [
+            {
+              "run_id": "3e566a25-1aa4-462a-9b3e-5f496c9832b9",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "a17a25db-69bd-4a1f-8b69-d2f1ffa1cd61",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "d220ed0b-abdb-42a1-915c-50bd4db61737",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "e065eea3-15bb-4794-baba-4e538640565b",
+              "actual": "Normal",
+              "predicted": "Normal"
+            }
+          ]
+        }
+      },
+      "test": {
+        "row_level": {
+          "rows": 60,
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              39,
+              0
+            ],
+            [
+              0,
+              21
+            ]
+          ]
+        },
+        "run_level": {
+          "runs": 6,
+          "aggregation": "mean class probability across HTTP events within run_id",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              3,
+              0
+            ],
+            [
+              0,
+              3
+            ]
+          ],
+          "predictions": [
+            {
+              "run_id": "20099cce-88a3-4379-88b8-b9f172c86fab",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "80575a51-17dc-4a9f-b21d-5f1f9eba76ca",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "a763e2bd-07a6-47d2-bc68-d62570500f85",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "d993b833-816c-4dbc-b251-d1e37b47b81c",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "e7433436-ce32-4ab7-9d39-ec5ed662191f",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "e9c9c550-f811-49da-a192-bab812e02920",
+              "actual": "Normal",
+              "predicted": "Normal"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "split_summary": {
+    "train": {
+      "events": 340,
+      "runs": 20,
+      "runs_per_label": {
+        "Malicious_POST": 10,
+        "Normal": 10
+      },
+      "events_per_label": {
+        "Malicious_POST": 262,
+        "Normal": 78
+      }
+    },
+    "validation": {
+      "events": 85,
+      "runs": 4,
+      "runs_per_label": {
+        "Malicious_POST": 2,
+        "Normal": 2
+      },
+      "events_per_label": {
+        "Malicious_POST": 70,
+        "Normal": 15
+      }
+    },
+    "test": {
+      "events": 60,
+      "runs": 6,
+      "runs_per_label": {
+        "Malicious_POST": 3,
+        "Normal": 3
+      },
+      "events_per_label": {
+        "Malicious_POST": 39,
+        "Normal": 21
+      }
+    }
+  }
+}

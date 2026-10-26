@@ -1,0 +1,3873 @@
+{
+  "purpose": "One-shot evaluation of frozen v5 models on 160 independent final-test runs; no fitting or tuning.",
+  "test_policy": "154 telemetry-valid original runs plus six verified POST replacements; all 160 scored once.",
+  "runs": 160,
+  "runs_per_class": {
+    "Normal": 40,
+    "Port_Scan": 40,
+    "Malicious_POST": 40,
+    "SYN_Flood": 40
+  },
+  "frozen_model_sha256": {
+    "packet/random_forest": "e1bbeae62dd3cc9ede94e8e6b7bed79cd8f717e3e0fea17f35482ad83fe6c0bc",
+    "packet/xgboost": "349126845afc6e8c36ff43f8ea00e13d875a471b94f3d30d465d3ee9ed65b70a",
+    "flow/random_forest": "c417e4964a794f875cdc44a1ff43553eb53a69adfc1a69a2fcd7cc069551f4af",
+    "flow/xgboost": "98e0ba48e86b38186fe50bf62f350b7cd2f3d6a8fc5be1a6d025c44ebc0a0ef7"
+  },
+  "levels": {
+    "packet": {
+      "rows": 128780,
+      "runs": 160,
+      "features": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_length",
+        "tcp_syn",
+        "tcp_ack",
+        "tcp_rst",
+        "tcp_fin",
+        "icmp_type",
+        "arp_operation"
+      ],
+      "models": {
+        "random_forest": {
+          "test": {
+            "row_level": {
+              "rows": 128780,
+              "runs": 160,
+              "accuracy": 0.6542009628824351,
+              "precision_macro": 0.46802340079907045,
+              "recall_macro": 0.4866350198658679,
+              "f1_macro": 0.4677271489611322,
+              "confusion_matrix": [
+                [
+                  13618,
+                  5691,
+                  3077,
+                  5927
+                ],
+                [
+                  4391,
+                  4482,
+                  869,
+                  1517
+                ],
+                [
+                  842,
+                  415,
+                  2105,
+                  4032
+                ],
+                [
+                  4325,
+                  4594,
+                  8852,
+                  64043
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.5875906109768726,
+                  "recall": 0.48098046833610003,
+                  "f1-score": 0.5289673522499951,
+                  "support": 28313.0
+                },
+                "Normal": {
+                  "precision": 0.2952180213410618,
+                  "recall": 0.3980815347721823,
+                  "f1-score": 0.339018947846148,
+                  "support": 11259.0
+                },
+                "Port_Scan": {
+                  "precision": 0.14124672884654096,
+                  "recall": 0.28469028942385716,
+                  "f1-score": 0.18881463874063775,
+                  "support": 7394.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.8480382420318066,
+                  "recall": 0.782787786931332,
+                  "f1-score": 0.8141076570077479,
+                  "support": 81814.0
+                },
+                "accuracy": 0.6542009628824351,
+                "macro avg": {
+                  "precision": 0.46802340079907045,
+                  "recall": 0.4866350198658679,
+                  "f1-score": 0.4677271489611322,
+                  "support": 128780.0
+                },
+                "weighted avg": {
+                  "precision": 0.7018643556262522,
+                  "recall": 0.6542009628824351,
+                  "f1-score": 0.6739801698038054,
+                  "support": 128780.0
+                }
+              }
+            },
+            "run_level": {
+              "runs": 160,
+              "aggregation": "mean class probability across observations in each run",
+              "accuracy": 0.625,
+              "precision_macro": 0.6127289969395232,
+              "recall_macro": 0.625,
+              "f1_macro": 0.5994746496441412,
+              "confusion_matrix": [
+                [
+                  23,
+                  9,
+                  2,
+                  6
+                ],
+                [
+                  20,
+                  9,
+                  2,
+                  9
+                ],
+                [
+                  1,
+                  0,
+                  31,
+                  8
+                ],
+                [
+                  0,
+                  1,
+                  2,
+                  37
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.5227272727272727,
+                  "recall": 0.575,
+                  "f1-score": 0.5476190476190477,
+                  "support": 40.0
+                },
+                "Normal": {
+                  "precision": 0.47368421052631576,
+                  "recall": 0.225,
+                  "f1-score": 0.3050847457627119,
+                  "support": 40.0
+                },
+                "Port_Scan": {
+                  "precision": 0.8378378378378378,
+                  "recall": 0.775,
+                  "f1-score": 0.8051948051948052,
+                  "support": 40.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.6166666666666667,
+                  "recall": 0.925,
+                  "f1-score": 0.74,
+                  "support": 40.0
+                },
+                "accuracy": 0.625,
+                "macro avg": {
+                  "precision": 0.6127289969395232,
+                  "recall": 0.625,
+                  "f1-score": 0.5994746496441412,
+                  "support": 160.0
+                },
+                "weighted avg": {
+                  "precision": 0.6127289969395233,
+                  "recall": 0.625,
+                  "f1-score": 0.5994746496441412,
+                  "support": 160.0
+                }
+              },
+              "predictions": [
+                {
+                  "run_id": "00801832-f98b-4dc9-8419-032ede713e98",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "009cbf07-70d3-4b04-acd2-e94b6a9b791e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "019db1a5-be7b-48c8-b320-d07541174a10",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "054aec03-84f1-4e9e-93d2-e3309d3fad15",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0814f249-9e37-430d-ac31-7a49b4a01645",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0f91bb3d-4ed5-4a05-9b46-f75fd1441ae7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "0f99d779-5d4e-4e19-9a53-6399c363da6a",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "13e8ca69-e389-44a1-a8e5-4e5680296ccd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "16e34b9d-779b-4699-b284-31ce38e60743",
+                  "actual": "SYN_Flood",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "17396bf1-4e46-4616-9f7c-50da2ca8aad8",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "17f618ed-7211-46bf-9383-7c4dbcf014e1",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "19977f5f-a48b-4cd6-9da6-c4c6a85c67bf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "1e3fba30-78da-4092-acc6-7ca69e6fb0dd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "1e996421-245a-4ad3-9ef5-586e9ef0e3a3",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "1eea7fa8-19ff-4739-9efc-a4180f999c7f",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2730ccf6-045a-425a-a8ea-f170b46b0047",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "275ac5fc-a765-4312-a3ef-6d5e80ecc508",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "29963f97-2725-4bd9-9b4c-51c3edcd7282",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "29c87a4d-bb4f-4f29-bd6d-6ed331de23e0",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2a4de5a6-2c17-484a-b44d-3e2739ba1cec",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2acb29ac-702e-4311-b437-50a7751fb328",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "2b1a7e13-e329-4708-a07e-ce41f55a1706",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2cddda9f-d809-45e7-a246-0932d79492dc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e31228b-2195-4728-8da6-79976aac744a",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e321dbf-03a3-4d9b-adc1-4bb58654fcab",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "2f7fdfd2-2702-462f-9969-853f93af38a4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2f83ae48-fb49-4f0b-9872-59a721c971ed",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "318f0275-0629-49fa-988e-5eac003862a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "350dff4d-3c44-46f5-89c3-5839cef71eb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "376a3b1b-9bfa-4aea-a384-7e060674adb1",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "382dcbea-86db-4501-8f77-b39f3b9fa214",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "38e4f744-c654-4aaf-82a7-6ff08d84f925",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "3d48baba-d6b0-427a-991b-fc0c5bfffa1c",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "3ee213b8-3006-47c8-b598-8e96d34addb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "3fc59ba4-8a04-4a27-9317-3296bce55fcc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "400f3b33-5a14-4839-b8d7-5f016b4607ce",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "40d3f9be-452e-4f04-8c92-21f2e60265a3",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "428ea0d4-b93d-4002-801e-0d2b6aeeca10",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "45f340bf-6da6-4ca8-abc7-f412c7e67feb",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "462a9ca4-5519-45c8-912d-37023d56e805",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "464935d0-06bb-4fa8-b85d-a1b7379cf9fe",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "489bf0cc-9e4f-40b3-be5b-84b905c07563",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4b9f977e-a885-4e55-8ad0-7a5b154ccba4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "4cd5f575-af5c-436e-a97c-53b652b5ea9f",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4fcaa495-f2dd-4390-bab7-cdab740cef3a",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "505b5d31-b9fd-4e6f-a0c1-e42b8bdd6de6",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "51c89c0f-46af-41cb-83eb-3ac8b6d8ac6e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5385d18b-9ced-4098-a923-e87037d6e715",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "55ccf921-239b-4e5e-8053-68f10bb411ab",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "58e3a504-9101-43c5-ba74-7fad661805d7",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "5976280f-5973-423a-b362-aab75163f90d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5e7bde15-057e-41d7-9e65-087b44941839",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "62cc7bcc-2122-4476-8752-4cf791b3cdfc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "639f1921-f16b-4cc3-af3d-9663fcfd508d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "64fd8429-aa4e-4a1e-acec-a7ae7e58ffa4",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "652eb6b7-9856-42aa-9ec3-99f80366e6a4",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "65aca9f0-b908-477e-87b9-083f9e5058a7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "672885dd-7da5-4bb4-b2ae-2441a84e93fc",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "67da9945-b259-4f7d-bc1d-65c8c70da72d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "6816b912-77d8-4b44-bc72-95cc0854b65c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "68273c74-4662-4c85-9b90-43dd544b804f",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "69a14f63-607f-4920-8444-b1c2f2b3bd2b",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "6c911f77-758f-43af-b1c0-5fb1a886bc1a",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70522351-0ec6-4287-9b23-9eead14c28b9",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70b23c0e-ad51-41ce-9670-8e28e765768c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "741068bc-8d85-46a3-b49c-985d6c9a4ff4",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "7577493a-5020-494e-8147-e9293d522032",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "75a4d7f8-639c-432e-9f9e-ef8897405c03",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "7a00a465-5d48-4131-b86b-62547c0e6995",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "7a8a5780-f6b0-4918-955c-d1f4f3e94bca",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "829ca21c-682b-46a3-81f2-65e2bbf37a29",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "82c37cc4-9eaa-4883-a102-6c3395a83219",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "82c6ec7a-fa9b-4314-8660-cf5965b84826",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "835ca026-c3c0-47ef-b36f-6f60c3c77cd7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "839fa5ac-1c99-497b-8bfe-872738cee929",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "847f2336-de98-4b14-8758-50a39828c50d",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "88200d3c-732f-42f0-9cb1-7333b157ff43",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "88ba2671-f3a2-46d0-a199-d9dc17eaf036",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "892d11c5-4501-4eb5-a968-39d6a434fbd8",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8a87b1d9-7cba-4ca4-8a39-38000315095e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "8ac6a3c4-d763-4623-b915-fe9c6895ac72",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8c64fbc3-127c-4d6e-94a6-cc2a9ba6d634",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "8d4d2d75-88bb-4c29-af7a-c87ea53c9d78",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8dc47623-c1a3-4a8c-8971-c88b93699288",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "921bf559-050f-47dd-9e71-d732a62a07d8",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "931df5b8-5ee2-4432-b7ea-d3789ec97eb9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "93e912d3-7253-491f-b1ab-00d183e320f7",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "940c1a6d-b752-4061-842e-cb135d2e578e",
+                  "actual": "SYN_Flood",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "97890497-ac20-487c-b35c-accf51d4982c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "9a10deae-53b1-4155-b178-48c2ea23ecc9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "9acf5365-7313-4ce7-9ce7-e994dc5e28cb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "a0178b7e-1a96-4677-9def-b7b9f22f4fd2",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a26f021d-13d9-4b8a-b5ba-0e341bfe7833",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a56dc5cd-32cf-4c5a-a473-2c84bc642a59",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "a695d22d-d747-42cd-b885-9c7c3fc0e80d",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a7188fec-3d09-4a3f-913f-e467c0584bdf",
+                  "actual": "SYN_Flood",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "a75b7d02-3663-47ce-a7cd-a44245141624",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a7f7e72d-4a73-434c-ad35-082f41d6a77e",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a97eccdd-6238-4011-a3a6-99d0fb01f275",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "abd85717-6b8e-4551-94fe-5e9c5cd7154d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b2a5d081-a4ff-42e8-8a3f-c361ff3dcd42",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b2b2e350-facb-4834-a860-880c5116db4b",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b3faafc6-62e8-49f5-899c-62513abd3f8a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b3fe18bd-c3cf-4337-9044-63d0e71a9e4c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b59d66b5-41ea-4797-8569-8c825f009ba8",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b5cbc4bf-373a-4122-bc0e-94c8e94913af",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b661c641-f79c-4f5b-8120-9ead2cfbef9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b6e9bfe2-74d3-4719-bb4e-bd6ecccef73e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b6eab340-9e20-4428-b913-956b774e756d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b959801b-2244-410c-adf3-b47b69fe1eb6",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "bbf7a83c-6bc5-451a-9c0f-15ce6e0aff97",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "befb07db-b5eb-440b-a538-ab16f8ce6170",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c1bbda5c-baee-43e1-b832-6eb70bb13d9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1d0e459-b9ff-48fd-b951-f7eef1adc928",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1ddddbd-a0af-4b0b-95f6-bc2ab3c79280",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "c65a1b4e-56f0-4efb-9743-cb4af0f84550",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c7e48dd0-1ba1-4359-8778-a56f56a6fd74",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "c7f199d0-ee92-44fe-b3fb-1dc6a6e0dc04",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c8c7e5c9-30c5-43e3-85fb-a54af019935f",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "cee6826f-5c70-4135-a421-d9736c47ca9d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d0515209-0a83-4548-9884-9e3595db2ceb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "d095d598-485c-45d4-acd8-2e84cee039cc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d0b05b65-bd6f-46fe-b258-19ec7ead20cf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d1b13da4-aeff-4de9-b39d-1f57c483eb08",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d2019f54-beaa-4e6d-9006-dbe244225fcb",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d359a7b7-ebcb-44b2-b973-462d49c2b9a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d59fa380-b6da-4904-9086-a98307ab8cbe",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d9ef9350-66cd-454c-99f5-6bee4a7b5a0e",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "dbe19304-a31b-4b38-baa2-4c0a0ec6715c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ded0efa8-529b-4a7c-a746-ee556923ccae",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "df36f003-889f-4126-8e39-fe93eb76e981",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e15f142e-743b-4475-9fe0-fe55fde7b709",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e3a99402-769f-4787-b743-4e671cd3a786",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e3b53b06-933f-469f-a2cd-f19c8864aa33",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "e64e6efa-18fd-4e88-82d9-9d5468f9ba92",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e8bc92a5-1d89-4e73-b762-db62722403b3",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e92b8064-9e20-4849-8d16-b47c28983593",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ea963abd-4347-46bc-bbf2-614e214b29a5",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ec4df034-96e0-45e7-b979-f0df537aace5",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ecca2ef8-fdf9-4a2d-b3ef-f9f2c6863486",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ed80e715-4db1-4709-ab13-81e739f9456e",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ede4a59c-0147-4a3c-8e44-637b0fe47243",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ee615c8a-aeb2-45e8-af87-a87cb2be7fd7",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ee6fc508-efcb-45ec-85e6-aee6ea2c8c31",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f0a1b17c-7f8b-470b-bdd8-5d31ed86d282",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f102c291-15a7-438e-899c-ab8582f13683",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f26c3c95-e23e-427a-9f23-847b13430d4c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f2ff8ef0-d30f-4b39-84a0-a96b5bf49e99",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f36fc8d7-c1f8-4e4d-8604-f05ab0809473",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f41ecc32-1c27-4489-b3df-07e61a639721",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f4cb04a8-1079-45cf-8bc1-6c7cd96f7164",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f5e22175-c026-4b8c-a189-85bf1b5f9f2f",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f62b3ab5-1148-44ef-919e-1566756fa976",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f88c80ed-9e70-4481-8acd-d565a495f3b4",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f9bbf9d9-eba5-4c67-a402-22b6a46fc73b",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "fa6c825c-6084-4724-8185-2d078ee58168",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "faac7e5f-6057-4603-94da-c6e12a5d9c0b",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "fba1264b-020d-4fed-89c4-475296042a3d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "fbb0be5d-c9ad-43ad-8d13-de0d11a4d422",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "fbe515da-0eaf-49c2-bacf-a15a4315fca8",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                }
+              ]
+            }
+          }
+        },
+        "xgboost": {
+          "test": {
+            "row_level": {
+              "rows": 128780,
+              "runs": 160,
+              "accuracy": 0.680967541543718,
+              "precision_macro": 0.5088382593950648,
+              "recall_macro": 0.48702689859309123,
+              "f1_macro": 0.4808663363030716,
+              "confusion_matrix": [
+                [
+                  13208,
+                  5082,
+                  4089,
+                  5934
+                ],
+                [
+                  4348,
+                  4015,
+                  1138,
+                  1758
+                ],
+                [
+                  220,
+                  596,
+                  2143,
+                  4435
+                ],
+                [
+                  59,
+                  2544,
+                  10882,
+                  68329
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.7405663022147463,
+                  "recall": 0.4664994878677639,
+                  "f1-score": 0.5724191730952587,
+                  "support": 28313.0
+                },
+                "Normal": {
+                  "precision": 0.32810329329083926,
+                  "recall": 0.35660360600408564,
+                  "f1-score": 0.34176029962546817,
+                  "support": 11259.0
+                },
+                "Port_Scan": {
+                  "precision": 0.11741179048871357,
+                  "recall": 0.2898295915607249,
+                  "f1-score": 0.16712157841378772,
+                  "support": 7394.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.8492716515859601,
+                  "recall": 0.8351749089397903,
+                  "f1-score": 0.8421642940777716,
+                  "support": 81814.0
+                },
+                "accuracy": 0.680967541543718,
+                "macro avg": {
+                  "precision": 0.5088382593950648,
+                  "recall": 0.48702689859309123,
+                  "f1-score": 0.4808663363030716,
+                  "support": 128780.0
+                },
+                "weighted avg": {
+                  "precision": 0.7377870971850828,
+                  "recall": 0.680967541543718,
+                  "f1-score": 0.7003518385448017,
+                  "support": 128780.0
+                }
+              }
+            },
+            "run_level": {
+              "runs": 160,
+              "aggregation": "mean class probability across observations in each run",
+              "accuracy": 0.75,
+              "precision_macro": 0.7665466717190855,
+              "recall_macro": 0.75,
+              "f1_macro": 0.73620900386939,
+              "confusion_matrix": [
+                [
+                  31,
+                  3,
+                  2,
+                  4
+                ],
+                [
+                  10,
+                  17,
+                  4,
+                  9
+                ],
+                [
+                  1,
+                  0,
+                  33,
+                  6
+                ],
+                [
+                  0,
+                  1,
+                  0,
+                  39
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.7380952380952381,
+                  "recall": 0.775,
+                  "f1-score": 0.7560975609756098,
+                  "support": 40.0
+                },
+                "Normal": {
+                  "precision": 0.8095238095238095,
+                  "recall": 0.425,
+                  "f1-score": 0.5573770491803278,
+                  "support": 40.0
+                },
+                "Port_Scan": {
+                  "precision": 0.8461538461538461,
+                  "recall": 0.825,
+                  "f1-score": 0.8354430379746836,
+                  "support": 40.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.6724137931034483,
+                  "recall": 0.975,
+                  "f1-score": 0.7959183673469388,
+                  "support": 40.0
+                },
+                "accuracy": 0.75,
+                "macro avg": {
+                  "precision": 0.7665466717190855,
+                  "recall": 0.75,
+                  "f1-score": 0.73620900386939,
+                  "support": 160.0
+                },
+                "weighted avg": {
+                  "precision": 0.7665466717190855,
+                  "recall": 0.75,
+                  "f1-score": 0.73620900386939,
+                  "support": 160.0
+                }
+              },
+              "predictions": [
+                {
+                  "run_id": "00801832-f98b-4dc9-8419-032ede713e98",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "009cbf07-70d3-4b04-acd2-e94b6a9b791e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "019db1a5-be7b-48c8-b320-d07541174a10",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "054aec03-84f1-4e9e-93d2-e3309d3fad15",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0814f249-9e37-430d-ac31-7a49b4a01645",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0f91bb3d-4ed5-4a05-9b46-f75fd1441ae7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "0f99d779-5d4e-4e19-9a53-6399c363da6a",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "13e8ca69-e389-44a1-a8e5-4e5680296ccd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "16e34b9d-779b-4699-b284-31ce38e60743",
+                  "actual": "SYN_Flood",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "17396bf1-4e46-4616-9f7c-50da2ca8aad8",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "17f618ed-7211-46bf-9383-7c4dbcf014e1",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "19977f5f-a48b-4cd6-9da6-c4c6a85c67bf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "1e3fba30-78da-4092-acc6-7ca69e6fb0dd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "1e996421-245a-4ad3-9ef5-586e9ef0e3a3",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "1eea7fa8-19ff-4739-9efc-a4180f999c7f",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2730ccf6-045a-425a-a8ea-f170b46b0047",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "275ac5fc-a765-4312-a3ef-6d5e80ecc508",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "29963f97-2725-4bd9-9b4c-51c3edcd7282",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "29c87a4d-bb4f-4f29-bd6d-6ed331de23e0",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2a4de5a6-2c17-484a-b44d-3e2739ba1cec",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2acb29ac-702e-4311-b437-50a7751fb328",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "2b1a7e13-e329-4708-a07e-ce41f55a1706",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2cddda9f-d809-45e7-a246-0932d79492dc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e31228b-2195-4728-8da6-79976aac744a",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e321dbf-03a3-4d9b-adc1-4bb58654fcab",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "2f7fdfd2-2702-462f-9969-853f93af38a4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2f83ae48-fb49-4f0b-9872-59a721c971ed",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "318f0275-0629-49fa-988e-5eac003862a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "350dff4d-3c44-46f5-89c3-5839cef71eb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "376a3b1b-9bfa-4aea-a384-7e060674adb1",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "382dcbea-86db-4501-8f77-b39f3b9fa214",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "38e4f744-c654-4aaf-82a7-6ff08d84f925",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "3d48baba-d6b0-427a-991b-fc0c5bfffa1c",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "3ee213b8-3006-47c8-b598-8e96d34addb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "3fc59ba4-8a04-4a27-9317-3296bce55fcc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "400f3b33-5a14-4839-b8d7-5f016b4607ce",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "40d3f9be-452e-4f04-8c92-21f2e60265a3",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "428ea0d4-b93d-4002-801e-0d2b6aeeca10",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "45f340bf-6da6-4ca8-abc7-f412c7e67feb",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "462a9ca4-5519-45c8-912d-37023d56e805",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "464935d0-06bb-4fa8-b85d-a1b7379cf9fe",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "489bf0cc-9e4f-40b3-be5b-84b905c07563",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "4b9f977e-a885-4e55-8ad0-7a5b154ccba4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4cd5f575-af5c-436e-a97c-53b652b5ea9f",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4fcaa495-f2dd-4390-bab7-cdab740cef3a",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "505b5d31-b9fd-4e6f-a0c1-e42b8bdd6de6",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "51c89c0f-46af-41cb-83eb-3ac8b6d8ac6e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5385d18b-9ced-4098-a923-e87037d6e715",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "55ccf921-239b-4e5e-8053-68f10bb411ab",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "58e3a504-9101-43c5-ba74-7fad661805d7",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "5976280f-5973-423a-b362-aab75163f90d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5e7bde15-057e-41d7-9e65-087b44941839",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "62cc7bcc-2122-4476-8752-4cf791b3cdfc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "639f1921-f16b-4cc3-af3d-9663fcfd508d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "64fd8429-aa4e-4a1e-acec-a7ae7e58ffa4",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "652eb6b7-9856-42aa-9ec3-99f80366e6a4",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "65aca9f0-b908-477e-87b9-083f9e5058a7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "672885dd-7da5-4bb4-b2ae-2441a84e93fc",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "67da9945-b259-4f7d-bc1d-65c8c70da72d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "6816b912-77d8-4b44-bc72-95cc0854b65c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "68273c74-4662-4c85-9b90-43dd544b804f",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "69a14f63-607f-4920-8444-b1c2f2b3bd2b",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "6c911f77-758f-43af-b1c0-5fb1a886bc1a",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70522351-0ec6-4287-9b23-9eead14c28b9",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "70b23c0e-ad51-41ce-9670-8e28e765768c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "741068bc-8d85-46a3-b49c-985d6c9a4ff4",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "7577493a-5020-494e-8147-e9293d522032",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "75a4d7f8-639c-432e-9f9e-ef8897405c03",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "7a00a465-5d48-4131-b86b-62547c0e6995",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "7a8a5780-f6b0-4918-955c-d1f4f3e94bca",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "829ca21c-682b-46a3-81f2-65e2bbf37a29",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "82c37cc4-9eaa-4883-a102-6c3395a83219",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "82c6ec7a-fa9b-4314-8660-cf5965b84826",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "835ca026-c3c0-47ef-b36f-6f60c3c77cd7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "839fa5ac-1c99-497b-8bfe-872738cee929",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "847f2336-de98-4b14-8758-50a39828c50d",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "88200d3c-732f-42f0-9cb1-7333b157ff43",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "88ba2671-f3a2-46d0-a199-d9dc17eaf036",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "892d11c5-4501-4eb5-a968-39d6a434fbd8",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8a87b1d9-7cba-4ca4-8a39-38000315095e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "8ac6a3c4-d763-4623-b915-fe9c6895ac72",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "8c64fbc3-127c-4d6e-94a6-cc2a9ba6d634",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "8d4d2d75-88bb-4c29-af7a-c87ea53c9d78",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8dc47623-c1a3-4a8c-8971-c88b93699288",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "921bf559-050f-47dd-9e71-d732a62a07d8",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "931df5b8-5ee2-4432-b7ea-d3789ec97eb9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "93e912d3-7253-491f-b1ab-00d183e320f7",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "940c1a6d-b752-4061-842e-cb135d2e578e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "97890497-ac20-487c-b35c-accf51d4982c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "9a10deae-53b1-4155-b178-48c2ea23ecc9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "9acf5365-7313-4ce7-9ce7-e994dc5e28cb",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "a0178b7e-1a96-4677-9def-b7b9f22f4fd2",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "a26f021d-13d9-4b8a-b5ba-0e341bfe7833",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a56dc5cd-32cf-4c5a-a473-2c84bc642a59",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "a695d22d-d747-42cd-b885-9c7c3fc0e80d",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a7188fec-3d09-4a3f-913f-e467c0584bdf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a75b7d02-3663-47ce-a7cd-a44245141624",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a7f7e72d-4a73-434c-ad35-082f41d6a77e",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a97eccdd-6238-4011-a3a6-99d0fb01f275",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "abd85717-6b8e-4551-94fe-5e9c5cd7154d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b2a5d081-a4ff-42e8-8a3f-c361ff3dcd42",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b2b2e350-facb-4834-a860-880c5116db4b",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b3faafc6-62e8-49f5-899c-62513abd3f8a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b3fe18bd-c3cf-4337-9044-63d0e71a9e4c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b59d66b5-41ea-4797-8569-8c825f009ba8",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b5cbc4bf-373a-4122-bc0e-94c8e94913af",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b661c641-f79c-4f5b-8120-9ead2cfbef9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b6e9bfe2-74d3-4719-bb4e-bd6ecccef73e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b6eab340-9e20-4428-b913-956b774e756d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b959801b-2244-410c-adf3-b47b69fe1eb6",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "bbf7a83c-6bc5-451a-9c0f-15ce6e0aff97",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "befb07db-b5eb-440b-a538-ab16f8ce6170",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1bbda5c-baee-43e1-b832-6eb70bb13d9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1d0e459-b9ff-48fd-b951-f7eef1adc928",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c1ddddbd-a0af-4b0b-95f6-bc2ab3c79280",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "c65a1b4e-56f0-4efb-9743-cb4af0f84550",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c7e48dd0-1ba1-4359-8778-a56f56a6fd74",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "c7f199d0-ee92-44fe-b3fb-1dc6a6e0dc04",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c8c7e5c9-30c5-43e3-85fb-a54af019935f",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "cee6826f-5c70-4135-a421-d9736c47ca9d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d0515209-0a83-4548-9884-9e3595db2ceb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "d095d598-485c-45d4-acd8-2e84cee039cc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d0b05b65-bd6f-46fe-b258-19ec7ead20cf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d1b13da4-aeff-4de9-b39d-1f57c483eb08",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d2019f54-beaa-4e6d-9006-dbe244225fcb",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d359a7b7-ebcb-44b2-b973-462d49c2b9a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d59fa380-b6da-4904-9086-a98307ab8cbe",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d9ef9350-66cd-454c-99f5-6bee4a7b5a0e",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "dbe19304-a31b-4b38-baa2-4c0a0ec6715c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ded0efa8-529b-4a7c-a746-ee556923ccae",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "df36f003-889f-4126-8e39-fe93eb76e981",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e15f142e-743b-4475-9fe0-fe55fde7b709",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e3a99402-769f-4787-b743-4e671cd3a786",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e3b53b06-933f-469f-a2cd-f19c8864aa33",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "e64e6efa-18fd-4e88-82d9-9d5468f9ba92",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e8bc92a5-1d89-4e73-b762-db62722403b3",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "e92b8064-9e20-4849-8d16-b47c28983593",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ea963abd-4347-46bc-bbf2-614e214b29a5",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ec4df034-96e0-45e7-b979-f0df537aace5",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ecca2ef8-fdf9-4a2d-b3ef-f9f2c6863486",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ed80e715-4db1-4709-ab13-81e739f9456e",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "ede4a59c-0147-4a3c-8e44-637b0fe47243",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ee615c8a-aeb2-45e8-af87-a87cb2be7fd7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ee6fc508-efcb-45ec-85e6-aee6ea2c8c31",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f0a1b17c-7f8b-470b-bdd8-5d31ed86d282",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f102c291-15a7-438e-899c-ab8582f13683",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f26c3c95-e23e-427a-9f23-847b13430d4c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f2ff8ef0-d30f-4b39-84a0-a96b5bf49e99",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "f36fc8d7-c1f8-4e4d-8604-f05ab0809473",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f41ecc32-1c27-4489-b3df-07e61a639721",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f4cb04a8-1079-45cf-8bc1-6c7cd96f7164",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f5e22175-c026-4b8c-a189-85bf1b5f9f2f",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f62b3ab5-1148-44ef-919e-1566756fa976",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f88c80ed-9e70-4481-8acd-d565a495f3b4",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f9bbf9d9-eba5-4c67-a402-22b6a46fc73b",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "fa6c825c-6084-4724-8185-2d078ee58168",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "faac7e5f-6057-4603-94da-c6e12a5d9c0b",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "fba1264b-020d-4fed-89c4-475296042a3d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "fbb0be5d-c9ad-43ad-8d13-de0d11a4d422",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "fbe515da-0eaf-49c2-bacf-a15a4315fca8",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "flow": {
+      "rows": 7174,
+      "runs": 160,
+      "features": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "models": {
+        "random_forest": {
+          "test": {
+            "row_level": {
+              "rows": 7174,
+              "runs": 160,
+              "accuracy": 0.43183718985224423,
+              "precision_macro": 0.4093792559444327,
+              "recall_macro": 0.4083279125579743,
+              "f1_macro": 0.4087270565150791,
+              "confusion_matrix": [
+                [
+                  1075,
+                  413,
+                  260,
+                  472
+                ],
+                [
+                  450,
+                  535,
+                  189,
+                  385
+                ],
+                [
+                  276,
+                  223,
+                  337,
+                  308
+                ],
+                [
+                  464,
+                  347,
+                  289,
+                  1151
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.4746136865342163,
+                  "recall": 0.48423423423423423,
+                  "f1-score": 0.4793756967670011,
+                  "support": 2220.0
+                },
+                "Normal": {
+                  "precision": 0.35243741765480896,
+                  "recall": 0.3431686978832585,
+                  "f1-score": 0.3477413064673383,
+                  "support": 1559.0
+                },
+                "Port_Scan": {
+                  "precision": 0.31348837209302327,
+                  "recall": 0.2945804195804196,
+                  "f1-score": 0.30374042361424064,
+                  "support": 1144.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.49697754749568224,
+                  "recall": 0.5113282985339849,
+                  "f1-score": 0.5040507992117363,
+                  "support": 2251.0
+                },
+                "accuracy": 0.43183718985224423,
+                "macro avg": {
+                  "precision": 0.4093792559444327,
+                  "recall": 0.4083279125579743,
+                  "f1-score": 0.4087270565150791,
+                  "support": 7174.0
+                },
+                "weighted avg": {
+                  "precision": 0.42938660096417713,
+                  "recall": 0.43183718985224423,
+                  "f1-score": 0.4305046190752206,
+                  "support": 7174.0
+                }
+              }
+            },
+            "run_level": {
+              "runs": 160,
+              "aggregation": "mean class probability across observations in each run",
+              "accuracy": 0.68125,
+              "precision_macro": 0.7287090844402278,
+              "recall_macro": 0.6812499999999999,
+              "f1_macro": 0.6605712098359157,
+              "confusion_matrix": [
+                [
+                  36,
+                  1,
+                  2,
+                  1
+                ],
+                [
+                  10,
+                  25,
+                  0,
+                  5
+                ],
+                [
+                  11,
+                  6,
+                  13,
+                  10
+                ],
+                [
+                  5,
+                  0,
+                  0,
+                  35
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.5806451612903226,
+                  "recall": 0.9,
+                  "f1-score": 0.7058823529411765,
+                  "support": 40.0
+                },
+                "Normal": {
+                  "precision": 0.78125,
+                  "recall": 0.625,
+                  "f1-score": 0.6944444444444444,
+                  "support": 40.0
+                },
+                "Port_Scan": {
+                  "precision": 0.8666666666666667,
+                  "recall": 0.325,
+                  "f1-score": 0.4727272727272727,
+                  "support": 40.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.6862745098039216,
+                  "recall": 0.875,
+                  "f1-score": 0.7692307692307693,
+                  "support": 40.0
+                },
+                "accuracy": 0.68125,
+                "macro avg": {
+                  "precision": 0.7287090844402278,
+                  "recall": 0.6812499999999999,
+                  "f1-score": 0.6605712098359157,
+                  "support": 160.0
+                },
+                "weighted avg": {
+                  "precision": 0.7287090844402278,
+                  "recall": 0.68125,
+                  "f1-score": 0.6605712098359158,
+                  "support": 160.0
+                }
+              },
+              "predictions": [
+                {
+                  "run_id": "00801832-f98b-4dc9-8419-032ede713e98",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "009cbf07-70d3-4b04-acd2-e94b6a9b791e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "019db1a5-be7b-48c8-b320-d07541174a10",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "054aec03-84f1-4e9e-93d2-e3309d3fad15",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0814f249-9e37-430d-ac31-7a49b4a01645",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0f91bb3d-4ed5-4a05-9b46-f75fd1441ae7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "0f99d779-5d4e-4e19-9a53-6399c363da6a",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "13e8ca69-e389-44a1-a8e5-4e5680296ccd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "16e34b9d-779b-4699-b284-31ce38e60743",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "17396bf1-4e46-4616-9f7c-50da2ca8aad8",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "17f618ed-7211-46bf-9383-7c4dbcf014e1",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "19977f5f-a48b-4cd6-9da6-c4c6a85c67bf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "1e3fba30-78da-4092-acc6-7ca69e6fb0dd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "1e996421-245a-4ad3-9ef5-586e9ef0e3a3",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "1eea7fa8-19ff-4739-9efc-a4180f999c7f",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2730ccf6-045a-425a-a8ea-f170b46b0047",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "275ac5fc-a765-4312-a3ef-6d5e80ecc508",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "29963f97-2725-4bd9-9b4c-51c3edcd7282",
+                  "actual": "Malicious_POST",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "29c87a4d-bb4f-4f29-bd6d-6ed331de23e0",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2a4de5a6-2c17-484a-b44d-3e2739ba1cec",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2acb29ac-702e-4311-b437-50a7751fb328",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2b1a7e13-e329-4708-a07e-ce41f55a1706",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2cddda9f-d809-45e7-a246-0932d79492dc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e31228b-2195-4728-8da6-79976aac744a",
+                  "actual": "SYN_Flood",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2e321dbf-03a3-4d9b-adc1-4bb58654fcab",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2f7fdfd2-2702-462f-9969-853f93af38a4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2f83ae48-fb49-4f0b-9872-59a721c971ed",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "318f0275-0629-49fa-988e-5eac003862a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "350dff4d-3c44-46f5-89c3-5839cef71eb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "376a3b1b-9bfa-4aea-a384-7e060674adb1",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "382dcbea-86db-4501-8f77-b39f3b9fa214",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "38e4f744-c654-4aaf-82a7-6ff08d84f925",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "3d48baba-d6b0-427a-991b-fc0c5bfffa1c",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "3ee213b8-3006-47c8-b598-8e96d34addb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "3fc59ba4-8a04-4a27-9317-3296bce55fcc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "400f3b33-5a14-4839-b8d7-5f016b4607ce",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "40d3f9be-452e-4f04-8c92-21f2e60265a3",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "428ea0d4-b93d-4002-801e-0d2b6aeeca10",
+                  "actual": "Port_Scan",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "45f340bf-6da6-4ca8-abc7-f412c7e67feb",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "462a9ca4-5519-45c8-912d-37023d56e805",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "464935d0-06bb-4fa8-b85d-a1b7379cf9fe",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "489bf0cc-9e4f-40b3-be5b-84b905c07563",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4b9f977e-a885-4e55-8ad0-7a5b154ccba4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4cd5f575-af5c-436e-a97c-53b652b5ea9f",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4fcaa495-f2dd-4390-bab7-cdab740cef3a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "505b5d31-b9fd-4e6f-a0c1-e42b8bdd6de6",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "51c89c0f-46af-41cb-83eb-3ac8b6d8ac6e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5385d18b-9ced-4098-a923-e87037d6e715",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "55ccf921-239b-4e5e-8053-68f10bb411ab",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "58e3a504-9101-43c5-ba74-7fad661805d7",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "5976280f-5973-423a-b362-aab75163f90d",
+                  "actual": "Port_Scan",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "5e7bde15-057e-41d7-9e65-087b44941839",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "62cc7bcc-2122-4476-8752-4cf791b3cdfc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "639f1921-f16b-4cc3-af3d-9663fcfd508d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "64fd8429-aa4e-4a1e-acec-a7ae7e58ffa4",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "652eb6b7-9856-42aa-9ec3-99f80366e6a4",
+                  "actual": "Port_Scan",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "65aca9f0-b908-477e-87b9-083f9e5058a7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "672885dd-7da5-4bb4-b2ae-2441a84e93fc",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "67da9945-b259-4f7d-bc1d-65c8c70da72d",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "6816b912-77d8-4b44-bc72-95cc0854b65c",
+                  "actual": "SYN_Flood",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "68273c74-4662-4c85-9b90-43dd544b804f",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "69a14f63-607f-4920-8444-b1c2f2b3bd2b",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "6c911f77-758f-43af-b1c0-5fb1a886bc1a",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70522351-0ec6-4287-9b23-9eead14c28b9",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70b23c0e-ad51-41ce-9670-8e28e765768c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "741068bc-8d85-46a3-b49c-985d6c9a4ff4",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "7577493a-5020-494e-8147-e9293d522032",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "75a4d7f8-639c-432e-9f9e-ef8897405c03",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "7a00a465-5d48-4131-b86b-62547c0e6995",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "7a8a5780-f6b0-4918-955c-d1f4f3e94bca",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "829ca21c-682b-46a3-81f2-65e2bbf37a29",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "82c37cc4-9eaa-4883-a102-6c3395a83219",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "82c6ec7a-fa9b-4314-8660-cf5965b84826",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "835ca026-c3c0-47ef-b36f-6f60c3c77cd7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "839fa5ac-1c99-497b-8bfe-872738cee929",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "847f2336-de98-4b14-8758-50a39828c50d",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "88200d3c-732f-42f0-9cb1-7333b157ff43",
+                  "actual": "SYN_Flood",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "88ba2671-f3a2-46d0-a199-d9dc17eaf036",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "892d11c5-4501-4eb5-a968-39d6a434fbd8",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8a87b1d9-7cba-4ca4-8a39-38000315095e",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8ac6a3c4-d763-4623-b915-fe9c6895ac72",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "8c64fbc3-127c-4d6e-94a6-cc2a9ba6d634",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "8d4d2d75-88bb-4c29-af7a-c87ea53c9d78",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8dc47623-c1a3-4a8c-8971-c88b93699288",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "921bf559-050f-47dd-9e71-d732a62a07d8",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "931df5b8-5ee2-4432-b7ea-d3789ec97eb9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "93e912d3-7253-491f-b1ab-00d183e320f7",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "940c1a6d-b752-4061-842e-cb135d2e578e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "97890497-ac20-487c-b35c-accf51d4982c",
+                  "actual": "Port_Scan",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "9a10deae-53b1-4155-b178-48c2ea23ecc9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "9acf5365-7313-4ce7-9ce7-e994dc5e28cb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "a0178b7e-1a96-4677-9def-b7b9f22f4fd2",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a26f021d-13d9-4b8a-b5ba-0e341bfe7833",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a56dc5cd-32cf-4c5a-a473-2c84bc642a59",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a695d22d-d747-42cd-b885-9c7c3fc0e80d",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "a7188fec-3d09-4a3f-913f-e467c0584bdf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a75b7d02-3663-47ce-a7cd-a44245141624",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a7f7e72d-4a73-434c-ad35-082f41d6a77e",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a97eccdd-6238-4011-a3a6-99d0fb01f275",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "abd85717-6b8e-4551-94fe-5e9c5cd7154d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b2a5d081-a4ff-42e8-8a3f-c361ff3dcd42",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b2b2e350-facb-4834-a860-880c5116db4b",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b3faafc6-62e8-49f5-899c-62513abd3f8a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b3fe18bd-c3cf-4337-9044-63d0e71a9e4c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b59d66b5-41ea-4797-8569-8c825f009ba8",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b5cbc4bf-373a-4122-bc0e-94c8e94913af",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b661c641-f79c-4f5b-8120-9ead2cfbef9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b6e9bfe2-74d3-4719-bb4e-bd6ecccef73e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b6eab340-9e20-4428-b913-956b774e756d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b959801b-2244-410c-adf3-b47b69fe1eb6",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "bbf7a83c-6bc5-451a-9c0f-15ce6e0aff97",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "befb07db-b5eb-440b-a538-ab16f8ce6170",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1bbda5c-baee-43e1-b832-6eb70bb13d9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1d0e459-b9ff-48fd-b951-f7eef1adc928",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c1ddddbd-a0af-4b0b-95f6-bc2ab3c79280",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c65a1b4e-56f0-4efb-9743-cb4af0f84550",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c7e48dd0-1ba1-4359-8778-a56f56a6fd74",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "c7f199d0-ee92-44fe-b3fb-1dc6a6e0dc04",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c8c7e5c9-30c5-43e3-85fb-a54af019935f",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "cee6826f-5c70-4135-a421-d9736c47ca9d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d0515209-0a83-4548-9884-9e3595db2ceb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "d095d598-485c-45d4-acd8-2e84cee039cc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d0b05b65-bd6f-46fe-b258-19ec7ead20cf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d1b13da4-aeff-4de9-b39d-1f57c483eb08",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d2019f54-beaa-4e6d-9006-dbe244225fcb",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d359a7b7-ebcb-44b2-b973-462d49c2b9a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d59fa380-b6da-4904-9086-a98307ab8cbe",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "d9ef9350-66cd-454c-99f5-6bee4a7b5a0e",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "dbe19304-a31b-4b38-baa2-4c0a0ec6715c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ded0efa8-529b-4a7c-a746-ee556923ccae",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "df36f003-889f-4126-8e39-fe93eb76e981",
+                  "actual": "Port_Scan",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e15f142e-743b-4475-9fe0-fe55fde7b709",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "e3a99402-769f-4787-b743-4e671cd3a786",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e3b53b06-933f-469f-a2cd-f19c8864aa33",
+                  "actual": "SYN_Flood",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e64e6efa-18fd-4e88-82d9-9d5468f9ba92",
+                  "actual": "Port_Scan",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "e8bc92a5-1d89-4e73-b762-db62722403b3",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e92b8064-9e20-4849-8d16-b47c28983593",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ea963abd-4347-46bc-bbf2-614e214b29a5",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ec4df034-96e0-45e7-b979-f0df537aace5",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ecca2ef8-fdf9-4a2d-b3ef-f9f2c6863486",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ed80e715-4db1-4709-ab13-81e739f9456e",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "ede4a59c-0147-4a3c-8e44-637b0fe47243",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ee615c8a-aeb2-45e8-af87-a87cb2be7fd7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ee6fc508-efcb-45ec-85e6-aee6ea2c8c31",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f0a1b17c-7f8b-470b-bdd8-5d31ed86d282",
+                  "actual": "Port_Scan",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "f102c291-15a7-438e-899c-ab8582f13683",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f26c3c95-e23e-427a-9f23-847b13430d4c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f2ff8ef0-d30f-4b39-84a0-a96b5bf49e99",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f36fc8d7-c1f8-4e4d-8604-f05ab0809473",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f41ecc32-1c27-4489-b3df-07e61a639721",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "f4cb04a8-1079-45cf-8bc1-6c7cd96f7164",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f5e22175-c026-4b8c-a189-85bf1b5f9f2f",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "f62b3ab5-1148-44ef-919e-1566756fa976",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f88c80ed-9e70-4481-8acd-d565a495f3b4",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f9bbf9d9-eba5-4c67-a402-22b6a46fc73b",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "fa6c825c-6084-4724-8185-2d078ee58168",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "faac7e5f-6057-4603-94da-c6e12a5d9c0b",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "fba1264b-020d-4fed-89c4-475296042a3d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "fbb0be5d-c9ad-43ad-8d13-de0d11a4d422",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "fbe515da-0eaf-49c2-bacf-a15a4315fca8",
+                  "actual": "SYN_Flood",
+                  "predicted": "Malicious_POST"
+                }
+              ]
+            }
+          }
+        },
+        "xgboost": {
+          "test": {
+            "row_level": {
+              "rows": 7174,
+              "runs": 160,
+              "accuracy": 0.43671591859492614,
+              "precision_macro": 0.44138766519721084,
+              "recall_macro": 0.4363107902253286,
+              "f1_macro": 0.41553610662068236,
+              "confusion_matrix": [
+                [
+                  968,
+                  209,
+                  518,
+                  525
+                ],
+                [
+                  405,
+                  323,
+                  408,
+                  423
+                ],
+                [
+                  110,
+                  59,
+                  660,
+                  315
+                ],
+                [
+                  349,
+                  125,
+                  595,
+                  1182
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.5283842794759825,
+                  "recall": 0.436036036036036,
+                  "f1-score": 0.4777887462981244,
+                  "support": 2220.0
+                },
+                "Normal": {
+                  "precision": 0.4511173184357542,
+                  "recall": 0.20718409236690186,
+                  "f1-score": 0.28395604395604396,
+                  "support": 1559.0
+                },
+                "Port_Scan": {
+                  "precision": 0.30261348005502064,
+                  "recall": 0.5769230769230769,
+                  "f1-score": 0.3969924812030075,
+                  "support": 1144.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.4834355828220859,
+                  "recall": 0.5250999555752999,
+                  "f1-score": 0.5034071550255537,
+                  "support": 2251.0
+                },
+                "accuracy": 0.43671591859492614,
+                "macro avg": {
+                  "precision": 0.44138766519721084,
+                  "recall": 0.4363107902253286,
+                  "f1-score": 0.41553610662068236,
+                  "support": 7174.0
+                },
+                "weighted avg": {
+                  "precision": 0.4614870808465961,
+                  "recall": 0.43671591859492614,
+                  "f1-score": 0.43082065706273637,
+                  "support": 7174.0
+                }
+              }
+            },
+            "run_level": {
+              "runs": 160,
+              "aggregation": "mean class probability across observations in each run",
+              "accuracy": 0.825,
+              "precision_macro": 0.8510317383909374,
+              "recall_macro": 0.825,
+              "f1_macro": 0.8191644429095324,
+              "confusion_matrix": [
+                [
+                  37,
+                  0,
+                  2,
+                  1
+                ],
+                [
+                  9,
+                  23,
+                  2,
+                  6
+                ],
+                [
+                  0,
+                  0,
+                  34,
+                  6
+                ],
+                [
+                  1,
+                  0,
+                  1,
+                  38
+                ]
+              ],
+              "classification_report": {
+                "Malicious_POST": {
+                  "precision": 0.7872340425531915,
+                  "recall": 0.925,
+                  "f1-score": 0.8505747126436781,
+                  "support": 40.0
+                },
+                "Normal": {
+                  "precision": 1.0,
+                  "recall": 0.575,
+                  "f1-score": 0.7301587301587301,
+                  "support": 40.0
+                },
+                "Port_Scan": {
+                  "precision": 0.8717948717948718,
+                  "recall": 0.85,
+                  "f1-score": 0.8607594936708861,
+                  "support": 40.0
+                },
+                "SYN_Flood": {
+                  "precision": 0.7450980392156863,
+                  "recall": 0.95,
+                  "f1-score": 0.8351648351648352,
+                  "support": 40.0
+                },
+                "accuracy": 0.825,
+                "macro avg": {
+                  "precision": 0.8510317383909374,
+                  "recall": 0.825,
+                  "f1-score": 0.8191644429095324,
+                  "support": 160.0
+                },
+                "weighted avg": {
+                  "precision": 0.8510317383909374,
+                  "recall": 0.825,
+                  "f1-score": 0.8191644429095323,
+                  "support": 160.0
+                }
+              },
+              "predictions": [
+                {
+                  "run_id": "00801832-f98b-4dc9-8419-032ede713e98",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "009cbf07-70d3-4b04-acd2-e94b6a9b791e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "019db1a5-be7b-48c8-b320-d07541174a10",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "054aec03-84f1-4e9e-93d2-e3309d3fad15",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0814f249-9e37-430d-ac31-7a49b4a01645",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "0f91bb3d-4ed5-4a05-9b46-f75fd1441ae7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "0f99d779-5d4e-4e19-9a53-6399c363da6a",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "13e8ca69-e389-44a1-a8e5-4e5680296ccd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "16e34b9d-779b-4699-b284-31ce38e60743",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "17396bf1-4e46-4616-9f7c-50da2ca8aad8",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "17f618ed-7211-46bf-9383-7c4dbcf014e1",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "19977f5f-a48b-4cd6-9da6-c4c6a85c67bf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "1e3fba30-78da-4092-acc6-7ca69e6fb0dd",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "1e996421-245a-4ad3-9ef5-586e9ef0e3a3",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "1eea7fa8-19ff-4739-9efc-a4180f999c7f",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2730ccf6-045a-425a-a8ea-f170b46b0047",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "275ac5fc-a765-4312-a3ef-6d5e80ecc508",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "29963f97-2725-4bd9-9b4c-51c3edcd7282",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "29c87a4d-bb4f-4f29-bd6d-6ed331de23e0",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2a4de5a6-2c17-484a-b44d-3e2739ba1cec",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "2acb29ac-702e-4311-b437-50a7751fb328",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "2b1a7e13-e329-4708-a07e-ce41f55a1706",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2cddda9f-d809-45e7-a246-0932d79492dc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e31228b-2195-4728-8da6-79976aac744a",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "2e321dbf-03a3-4d9b-adc1-4bb58654fcab",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "2f7fdfd2-2702-462f-9969-853f93af38a4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "2f83ae48-fb49-4f0b-9872-59a721c971ed",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "318f0275-0629-49fa-988e-5eac003862a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "350dff4d-3c44-46f5-89c3-5839cef71eb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "376a3b1b-9bfa-4aea-a384-7e060674adb1",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "382dcbea-86db-4501-8f77-b39f3b9fa214",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "38e4f744-c654-4aaf-82a7-6ff08d84f925",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "3d48baba-d6b0-427a-991b-fc0c5bfffa1c",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "3ee213b8-3006-47c8-b598-8e96d34addb7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "3fc59ba4-8a04-4a27-9317-3296bce55fcc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "400f3b33-5a14-4839-b8d7-5f016b4607ce",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "40d3f9be-452e-4f04-8c92-21f2e60265a3",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "428ea0d4-b93d-4002-801e-0d2b6aeeca10",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "45f340bf-6da6-4ca8-abc7-f412c7e67feb",
+                  "actual": "Malicious_POST",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "462a9ca4-5519-45c8-912d-37023d56e805",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "464935d0-06bb-4fa8-b85d-a1b7379cf9fe",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "489bf0cc-9e4f-40b3-be5b-84b905c07563",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4b9f977e-a885-4e55-8ad0-7a5b154ccba4",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4cd5f575-af5c-436e-a97c-53b652b5ea9f",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "4fcaa495-f2dd-4390-bab7-cdab740cef3a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "505b5d31-b9fd-4e6f-a0c1-e42b8bdd6de6",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "51c89c0f-46af-41cb-83eb-3ac8b6d8ac6e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5385d18b-9ced-4098-a923-e87037d6e715",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "55ccf921-239b-4e5e-8053-68f10bb411ab",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "58e3a504-9101-43c5-ba74-7fad661805d7",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5976280f-5973-423a-b362-aab75163f90d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "5e7bde15-057e-41d7-9e65-087b44941839",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "62cc7bcc-2122-4476-8752-4cf791b3cdfc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "639f1921-f16b-4cc3-af3d-9663fcfd508d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "64fd8429-aa4e-4a1e-acec-a7ae7e58ffa4",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "652eb6b7-9856-42aa-9ec3-99f80366e6a4",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "65aca9f0-b908-477e-87b9-083f9e5058a7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "672885dd-7da5-4bb4-b2ae-2441a84e93fc",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "67da9945-b259-4f7d-bc1d-65c8c70da72d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "6816b912-77d8-4b44-bc72-95cc0854b65c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "68273c74-4662-4c85-9b90-43dd544b804f",
+                  "actual": "Malicious_POST",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "69a14f63-607f-4920-8444-b1c2f2b3bd2b",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "6c911f77-758f-43af-b1c0-5fb1a886bc1a",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70522351-0ec6-4287-9b23-9eead14c28b9",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "70b23c0e-ad51-41ce-9670-8e28e765768c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "741068bc-8d85-46a3-b49c-985d6c9a4ff4",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "7577493a-5020-494e-8147-e9293d522032",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "75a4d7f8-639c-432e-9f9e-ef8897405c03",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "7a00a465-5d48-4131-b86b-62547c0e6995",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "7a8a5780-f6b0-4918-955c-d1f4f3e94bca",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "829ca21c-682b-46a3-81f2-65e2bbf37a29",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "82c37cc4-9eaa-4883-a102-6c3395a83219",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "82c6ec7a-fa9b-4314-8660-cf5965b84826",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "835ca026-c3c0-47ef-b36f-6f60c3c77cd7",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "839fa5ac-1c99-497b-8bfe-872738cee929",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "847f2336-de98-4b14-8758-50a39828c50d",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "88200d3c-732f-42f0-9cb1-7333b157ff43",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "88ba2671-f3a2-46d0-a199-d9dc17eaf036",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "892d11c5-4501-4eb5-a968-39d6a434fbd8",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "8a87b1d9-7cba-4ca4-8a39-38000315095e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "8ac6a3c4-d763-4623-b915-fe9c6895ac72",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "8c64fbc3-127c-4d6e-94a6-cc2a9ba6d634",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "8d4d2d75-88bb-4c29-af7a-c87ea53c9d78",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "8dc47623-c1a3-4a8c-8971-c88b93699288",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "921bf559-050f-47dd-9e71-d732a62a07d8",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "931df5b8-5ee2-4432-b7ea-d3789ec97eb9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "93e912d3-7253-491f-b1ab-00d183e320f7",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "940c1a6d-b752-4061-842e-cb135d2e578e",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "97890497-ac20-487c-b35c-accf51d4982c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "9a10deae-53b1-4155-b178-48c2ea23ecc9",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "9acf5365-7313-4ce7-9ce7-e994dc5e28cb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "a0178b7e-1a96-4677-9def-b7b9f22f4fd2",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a26f021d-13d9-4b8a-b5ba-0e341bfe7833",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a56dc5cd-32cf-4c5a-a473-2c84bc642a59",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "a695d22d-d747-42cd-b885-9c7c3fc0e80d",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "a7188fec-3d09-4a3f-913f-e467c0584bdf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a75b7d02-3663-47ce-a7cd-a44245141624",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "a7f7e72d-4a73-434c-ad35-082f41d6a77e",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "a97eccdd-6238-4011-a3a6-99d0fb01f275",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "abd85717-6b8e-4551-94fe-5e9c5cd7154d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b2a5d081-a4ff-42e8-8a3f-c361ff3dcd42",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b2b2e350-facb-4834-a860-880c5116db4b",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b3faafc6-62e8-49f5-899c-62513abd3f8a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b3fe18bd-c3cf-4337-9044-63d0e71a9e4c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b59d66b5-41ea-4797-8569-8c825f009ba8",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b5cbc4bf-373a-4122-bc0e-94c8e94913af",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "b661c641-f79c-4f5b-8120-9ead2cfbef9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "b6e9bfe2-74d3-4719-bb4e-bd6ecccef73e",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "b6eab340-9e20-4428-b913-956b774e756d",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "b959801b-2244-410c-adf3-b47b69fe1eb6",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "bbf7a83c-6bc5-451a-9c0f-15ce6e0aff97",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "befb07db-b5eb-440b-a538-ab16f8ce6170",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c1bbda5c-baee-43e1-b832-6eb70bb13d9a",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "c1d0e459-b9ff-48fd-b951-f7eef1adc928",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c1ddddbd-a0af-4b0b-95f6-bc2ab3c79280",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c65a1b4e-56f0-4efb-9743-cb4af0f84550",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c7e48dd0-1ba1-4359-8778-a56f56a6fd74",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "c7f199d0-ee92-44fe-b3fb-1dc6a6e0dc04",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "c8c7e5c9-30c5-43e3-85fb-a54af019935f",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "cee6826f-5c70-4135-a421-d9736c47ca9d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d0515209-0a83-4548-9884-9e3595db2ceb",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "d095d598-485c-45d4-acd8-2e84cee039cc",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d0b05b65-bd6f-46fe-b258-19ec7ead20cf",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d1b13da4-aeff-4de9-b39d-1f57c483eb08",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d2019f54-beaa-4e6d-9006-dbe244225fcb",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "d359a7b7-ebcb-44b2-b973-462d49c2b9a7",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d59fa380-b6da-4904-9086-a98307ab8cbe",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "d9ef9350-66cd-454c-99f5-6bee4a7b5a0e",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "dbe19304-a31b-4b38-baa2-4c0a0ec6715c",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ded0efa8-529b-4a7c-a746-ee556923ccae",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "df36f003-889f-4126-8e39-fe93eb76e981",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e15f142e-743b-4475-9fe0-fe55fde7b709",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "e3a99402-769f-4787-b743-4e671cd3a786",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e3b53b06-933f-469f-a2cd-f19c8864aa33",
+                  "actual": "SYN_Flood",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e64e6efa-18fd-4e88-82d9-9d5468f9ba92",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "e8bc92a5-1d89-4e73-b762-db62722403b3",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "e92b8064-9e20-4849-8d16-b47c28983593",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ea963abd-4347-46bc-bbf2-614e214b29a5",
+                  "actual": "SYN_Flood",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ec4df034-96e0-45e7-b979-f0df537aace5",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ecca2ef8-fdf9-4a2d-b3ef-f9f2c6863486",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "ed80e715-4db1-4709-ab13-81e739f9456e",
+                  "actual": "Normal",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ede4a59c-0147-4a3c-8e44-637b0fe47243",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "ee615c8a-aeb2-45e8-af87-a87cb2be7fd7",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "ee6fc508-efcb-45ec-85e6-aee6ea2c8c31",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f0a1b17c-7f8b-470b-bdd8-5d31ed86d282",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f102c291-15a7-438e-899c-ab8582f13683",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f26c3c95-e23e-427a-9f23-847b13430d4c",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "f2ff8ef0-d30f-4b39-84a0-a96b5bf49e99",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f36fc8d7-c1f8-4e4d-8604-f05ab0809473",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f41ecc32-1c27-4489-b3df-07e61a639721",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "f4cb04a8-1079-45cf-8bc1-6c7cd96f7164",
+                  "actual": "Port_Scan",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f5e22175-c026-4b8c-a189-85bf1b5f9f2f",
+                  "actual": "Normal",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f62b3ab5-1148-44ef-919e-1566756fa976",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "f88c80ed-9e70-4481-8acd-d565a495f3b4",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "f9bbf9d9-eba5-4c67-a402-22b6a46fc73b",
+                  "actual": "Normal",
+                  "predicted": "Normal"
+                },
+                {
+                  "run_id": "fa6c825c-6084-4724-8185-2d078ee58168",
+                  "actual": "Malicious_POST",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "faac7e5f-6057-4603-94da-c6e12a5d9c0b",
+                  "actual": "Normal",
+                  "predicted": "Malicious_POST"
+                },
+                {
+                  "run_id": "fba1264b-020d-4fed-89c4-475296042a3d",
+                  "actual": "Port_Scan",
+                  "predicted": "Port_Scan"
+                },
+                {
+                  "run_id": "fbb0be5d-c9ad-43ad-8d13-de0d11a4d422",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                },
+                {
+                  "run_id": "fbe515da-0eaf-49c2-bacf-a15a4315fca8",
+                  "actual": "SYN_Flood",
+                  "predicted": "SYN_Flood"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

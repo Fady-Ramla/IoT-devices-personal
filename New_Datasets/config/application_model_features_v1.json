@@ -1,0 +1,44 @@
+{
+  "schema_version": "trustflow-application-v1",
+  "task": "binary HTTP request event classification",
+  "target": "label",
+  "group_column": "run_id",
+  "features": [
+    "http_method",
+    "route_category"
+  ],
+  "categorical_values": {
+    "http_method": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "OTHER"],
+    "route_category": ["health", "auth", "iot_api", "root", "other"]
+  },
+  "labels": ["Normal", "Malicious_POST"],
+  "excluded_columns": [
+    "run_id",
+    "observation_id",
+    "timestamp",
+    "generation",
+    "response_status",
+    "src_ip",
+    "src_port",
+    "dst_ip",
+    "dst_port",
+    "label_status",
+    "route_path",
+    "url_query",
+    "http_headers",
+    "request_body",
+    "payload",
+    "password",
+    "authorization",
+    "cookie"
+  ],
+  "training_controls": {
+    "group_split": "run_id",
+    "sample_weighting": "equal total weight per run_id",
+    "normal_controls": ["GET /health", "POST /api/iot/telemetry", "GET /login"],
+    "malicious_control": "POST /login",
+    "response_status_is_model_feature": false,
+    "request_body_is_collected": false
+  },
+  "scope_note": "This binary application classifier supplements, but does not replace, the four-class packet/flow classifier for SYN_Flood and Port_Scan."
+}

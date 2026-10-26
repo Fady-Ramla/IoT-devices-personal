@@ -1,0 +1,13 @@
+{
+  "manifest": "/home/zolikha/Graduation_Project/IoT-devices/New_Datasets/experiments/run_manifest.csv",
+  "rows": 55,
+  "run_ids": 55,
+  "labels": {
+    "Normal": 25,
+    "SYN_Flood": 5,
+    "Port_Scan": 8,
+    "Malicious_POST": 17
+  },
+  "errors": [],
+  "status": "PASS"
+}

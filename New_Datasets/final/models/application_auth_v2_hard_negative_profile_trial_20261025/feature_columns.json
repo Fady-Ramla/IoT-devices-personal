@@ -1,0 +1,18 @@
+[
+  "total_requests",
+  "post_count",
+  "auth_post_count",
+  "auth_post_2xx_count",
+  "auth_post_401_count",
+  "auth_post_4xx_other_count",
+  "auth_post_5xx_count",
+  "auth_get_count",
+  "health_get_count",
+  "iot_api_post_count",
+  "other_route_post_count",
+  "all_2xx_count",
+  "all_4xx_count",
+  "all_5xx_count",
+  "auth_post_rate_per_sec",
+  "auth_401_rate_per_sec"
+]

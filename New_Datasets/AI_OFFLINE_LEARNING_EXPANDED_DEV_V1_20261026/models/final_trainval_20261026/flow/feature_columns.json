@@ -1,0 +1,25 @@
+{
+  "level": "flow",
+  "features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction"
+  ]
+}

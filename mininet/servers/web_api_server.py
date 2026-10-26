@@ -32,6 +32,9 @@ from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
+# TrustFlow: request metadata only; never records request bodies.
+from trustflow_app_telemetry import install_trustflow_telemetry
+install_trustflow_telemetry(app)
 JWT_ALG = "HS256"
 JWT_TTL_SECONDS = int(os.getenv("JWT_TTL_SECONDS", "900"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
@@ -206,6 +209,20 @@ def admin(**kwargs: Any):
     if action not in SAFE_ADMIN_ACTIONS:
         return jsonify({"status": "failed", "message": "Unsupported administrative action"}), 400
     return jsonify({"status": "success", "action": SAFE_ADMIN_ACTIONS[action], "executed": False, "message": "Demo action acknowledged; no system command is executed"})
+
+
+@app.route("/api/iot/telemetry", methods=["POST"])
+def receive_iot_telemetry():
+    """Accept a minimal demo telemetry envelope without persisting its body."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "rejected", "message": "JSON object required"}), 400
+    device_id = data.get("device_id")
+    telemetry = data.get("telemetry")
+    if not isinstance(device_id, str) or not device_id.strip() or not isinstance(telemetry, dict):
+        return jsonify({"status": "rejected", "message": "device_id and telemetry object required"}), 400
+    # Do not store or echo readings, identifiers, credentials, or payload content.
+    return jsonify({"status": "accepted"}), 202
 
 
 @app.route("/health", methods=["GET"])

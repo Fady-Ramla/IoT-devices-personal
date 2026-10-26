@@ -1,210 +1,407 @@
 #!/usr/bin/env python3
+"""Sequential, fail-closed run orchestration; imports never start traffic.
 
+Local controller contract (paths may be overridden, the address may not):
+  POST /dataset/run        {operation: start|stop, run_id, generation,
+                            expected_switches: 6}  # start only
+  GET  /dataset/run/status?run_id=...&generation=...
+ACKs must contain success=true, the SAME run_id and integer generation, and
+state active/running for start, draining/drained for stop/status. The monitor
+uses `active` internally; the client also accepts `running` for compatible builds.
+
+The collector must fence generations and only ACK start after all six switches
+are ready. Drained means its pending stats and durable dataset writes finished.
+This client cannot invent a missing controller endpoint or weakened ACK.
+"""
+from __future__ import annotations
+
+import http.client
+import importlib.util
+import ipaddress
+import json
+import math
 import os
-import csv
+from pathlib import Path
+import shlex
+import signal
+import subprocess
 import time
-from datetime import datetime
+from urllib.parse import urlencode
+import uuid
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+MANIFEST_FILE = BASE_DIR / "New_Datasets" / "experiments" / "run_manifest.csv"
+ACTIVE_RUN_FILE = Path(os.environ.get("SECUREIOT_ACTIVE_RUN_FILE", str(BASE_DIR / "New_Datasets" / "active_run.json"))).expanduser().resolve()
+_REGISTER_PATH = BASE_DIR / "New_Datasets" / "scripts" / "register_run.py"
+_SPEC = importlib.util.spec_from_file_location("_secureiot_run_manifest", _REGISTER_PATH)
+if _SPEC is None or _SPEC.loader is None:
+    raise ImportError("missing run manifest implementation: " + str(_REGISTER_PATH))
+_manifest = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_manifest)
+
+MIN_RATE_PPS, MAX_RATE_PPS = 10, 200
+MIN_DURATION_SEC, MAX_DURATION_SEC = 5, 20
+MAX_NORMAL_DURATION_SEC = 45
+EXPECTED_SWITCHES = 6
+ATTACK_LABELS = {"syn_flood": "SYN_Flood", "port_scan": "Port_Scan",
+                 "malicious_post": "Malicious_POST"}
 
 
-# ============================================================
-# Metadata file
-# ============================================================
-
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-METADATA_DIR = os.path.join(
-    BASE_DIR,
-    "datasets",
-    "metadata"
-)
-
-METADATA_FILE = os.path.join(
-    METADATA_DIR,
-    "attack_metadata.csv"
-)
+class RunLifecycleError(RuntimeError):
+    """Abort the batch; never silently advance to another unconfirmed run."""
 
 
-# ============================================================
-# Timestamp
-# ============================================================
+class ControllerProtocolError(RunLifecycleError):
+    pass
+
+
+class ControllerUnavailable(RunLifecycleError):
+    pass
+
 
 def get_timestamp():
-    """
-    Return current timestamp with high precision.
-    """
     return time.time()
 
 
-# ============================================================
-# Run ID
-# ============================================================
-
 def get_run_id():
-    """
-    Generate a unique ID for every attack run.
-    """
+    return str(uuid.uuid4())
 
-    return "run_" + datetime.now().strftime(
-        "%Y%m%d_%H%M%S_%f"
+
+def validate_duration(duration_sec, maximum=MAX_DURATION_SEC):
+    duration = float(duration_sec)
+    if not math.isfinite(duration) or not MIN_DURATION_SEC <= duration <= maximum:
+        raise ValueError("duration must be %d..%d seconds" % (MIN_DURATION_SEC, maximum))
+    return duration
+
+
+def validate_syn_parameters(rate_pps, duration_sec):
+    rate = int(rate_pps)
+    if float(rate_pps) != rate or not MIN_RATE_PPS <= rate <= MAX_RATE_PPS:
+        raise ValueError("SYN rate must be an integer in 10..200 pps")
+    duration = validate_duration(duration_sec)
+    if duration != int(duration):
+        raise ValueError("SYN duration must be an integer in 5..20 seconds")
+    # ceil avoids ever exceeding the requested rate for non-divisors of 1e6.
+    return rate, int(duration), math.ceil(1_000_000 / rate)
+
+
+def validate_ipv4(value):
+    return str(ipaddress.IPv4Address(value))
+
+
+def build_syn_command(dst_ip, dst_port, rate_pps, duration_sec):
+    """Canonical bounded SYN command, shared by CLI and direct run_attack."""
+    dst_ip = validate_ipv4(dst_ip)
+    port = int(dst_port)
+    if not 1 <= port <= 65535:
+        raise ValueError("destination port must be 1..65535")
+    rate, duration, interval = validate_syn_parameters(rate_pps, duration_sec)
+    return ("timeout --signal=TERM --kill-after=1s %ds "
+            "hping3 -S -p %d -i u%d -c %d %s" %
+            (duration, port, interval, rate * duration, dst_ip))
+
+
+class LocalRunController:
+    """Fixed literal loopback HTTP: no proxy, DNS, redirect or remote fallback."""
+
+    def __init__(self, action_path=None, status_path=None, request_timeout=10.0,
+                 drain_timeout=60.0, poll_interval=0.25):
+        self.action_path = action_path or os.environ.get("SECUREIOT_RUN_ACTION_PATH", "/dataset/run")
+        self.status_path = status_path or os.environ.get("SECUREIOT_RUN_STATUS_PATH", "/dataset/run/status")
+        for path in (self.action_path, self.status_path):
+            if (not path.startswith("/") or path.startswith("//")
+                    or any(char in path for char in "?#\r\n")
+                    or any(char.isspace() for char in path)):
+                raise ValueError("controller paths must be local absolute URL paths")
+        for value in (request_timeout, drain_timeout, poll_interval):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("controller timeouts must be positive and finite")
+        self.request_timeout = request_timeout
+        self.drain_timeout = drain_timeout
+        self.poll_interval = poll_interval
+
+    def _request(self, method, path, payload=None, timeout=None):
+        connection = None
+        try:
+            connection = http.client.HTTPConnection("127.0.0.1", 8080,
+                                                   timeout=timeout or self.request_timeout)
+            body = None if payload is None else json.dumps(payload).encode("utf-8")
+            connection.request(method, path, body=body,
+                               headers={"Content-Type": "application/json", "Accept": "application/json"})
+            response = connection.getresponse()
+            raw = response.read(65537)
+            if len(raw) > 65536:
+                raise ControllerProtocolError("controller response exceeds 64 KiB")
+            if not 200 <= response.status < 300:
+                detail = raw.decode("utf-8", errors="replace")[:500]
+                try:
+                    error_data = json.loads(detail)
+                    if isinstance(error_data, dict):
+                        detail = str(error_data.get("message", detail))
+                except ValueError:
+                    pass
+                raise ControllerProtocolError(
+                    "controller HTTP %s: %s" % (response.status, detail))
+            if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                raise ControllerProtocolError("controller response is not JSON")
+            try:
+                data = json.loads(raw.decode("utf-8"))
+            except (UnicodeError, ValueError) as exc:
+                raise ControllerProtocolError("malformed controller JSON") from exc
+            if not isinstance(data, dict):
+                raise ControllerProtocolError("controller ACK must be an object")
+            return data
+        except (OSError, http.client.HTTPException) as exc:
+            raise ControllerUnavailable("local Ryu WSGI unavailable: " + str(exc)) from exc
+        finally:
+            if connection is not None:
+                connection.close()
+
+    @staticmethod
+    def _check(data, run_id, generation, states):
+        if not isinstance(data, dict):
+            raise ControllerProtocolError("missing controller ACK")
+        state = data.get("status", data.get("state"))
+        if "status" in data and "state" in data and data["status"] != data["state"]:
+            raise ControllerProtocolError("conflicting controller states")
+        if (data.get("success") is not True or data.get("run_id") != run_id
+                or type(data.get("generation")) is not int
+                or data["generation"] != generation or state not in states):
+            raise ControllerProtocolError("missing, stale or mismatched run ACK")
+        return state
+
+    def start(self, run_id, generation):
+        data = self._request("POST", self.action_path, {
+            "operation": "start", "run_id": run_id, "generation": generation,
+            "expected_switches": EXPECTED_SWITCHES,
+        })
+        self._check(data, run_id, generation, {"active", "running"})
+        return data
+
+    def stop(self, run_id, generation):
+        data = self._request("POST", self.action_path, {
+            "operation": "stop", "run_id": run_id, "generation": generation,
+        })
+        self._check(data, run_id, generation, {"draining", "drained"})
+        return data
+
+    def wait_drained(self, run_id, generation):
+        deadline = time.monotonic() + self.drain_timeout
+        last_error = None
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RunLifecycleError("collector drain timeout" + (": " + str(last_error) if last_error else ""))
+            try:
+                data = self._request("GET", self.status_path + "?" + urlencode({
+                    "run_id": run_id, "generation": generation,
+                }), timeout=min(self.request_timeout, remaining))
+                state = self._check(data, run_id, generation, {"draining", "drained"})
+                if state == "drained":
+                    return data
+            except ControllerUnavailable as exc:
+                # A lost stop response can be followed by a valid drained status;
+                # a mismatched ACK is NOT retried or interpreted as confirmation.
+                last_error = exc
+            time.sleep(min(self.poll_interval, max(0.0, deadline - time.monotonic())))
+
+
+def _terminate_process_group(process):
+    """Kill only the new session we created, including shell children."""
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    try:
+        process.communicate(timeout=1.0)
+    except subprocess.TimeoutExpired:
+        pass
+    # The shell may exit while a child remains; always kill the original group.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.communicate(timeout=2.0)
+
+
+def execute_host_command(host, command, run_id, generation, duration_sec):
+    """Trusted lab command, synchronous, bounded and with a real exit status.
+
+    Host.cmd hides the exit code, so use Mininet Host.popen instead. No process
+    is launched until the caller has validated start ACK AND saved running.
+    """
+    env = os.environ.copy()
+    env["SECUREIOT_RUN_ID"] = run_id
+    env["SECUREIOT_RUN_GENERATION"] = str(generation)
+    process = host.popen(["/bin/sh", "-c", command], stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, start_new_session=True, env=env)
+    try:
+        output, _ = process.communicate(timeout=duration_sec + 3.0)
+    except BaseException:
+        _terminate_process_group(process)
+        raise
+    if process.returncode is None:
+        raise RunLifecycleError("host process did not provide an exit code")
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", errors="replace")
+    return process.returncode, output or ""
+
+
+def run_experiment(host, command, *, run_type, label="", attack_type="",
+                   target_host="", target_ip="", service_name="", protocol="TCP",
+                   src_port="*", dst_port="*", rate_value="", duration_sec=10,
+                   experiment_category="", notes="", accepted_returncodes=(0,),
+                   controller=None, manifest_path=None, executor=None, lock_timeout=5.0):
+    """planned -> ACK -> running -> command -> stop -> drained -> completed.
+
+    Any failure is persisted as failed and raised, so a batch cannot continue.
+    An in-flight latch survives SIGKILL/reboots and blocks later runs unless
+    this SAME identity is positively confirmed drained. Recovery is manual.
+    """
+    duration = validate_duration(duration_sec, MAX_NORMAL_DURATION_SEC if run_type == "normal" else MAX_DURATION_SEC)
+    target_ip = validate_ipv4(target_ip)
+    attacker_ip = validate_ipv4(host.IP())
+    if not command or "--flood" in command:
+        raise ValueError("empty command or uncontrolled flood flag")
+    manifest = Path(manifest_path) if manifest_path is not None else MANIFEST_FILE
+    controller = controller if controller is not None else LocalRunController()
+    executor = executor if executor is not None else execute_host_command
+    lifetime_lock = manifest.with_name(manifest.name + ".orchestrator.lock")
+    pending = manifest.with_name(manifest.name + ".in_flight.json")
+    with _manifest.file_lock(lifetime_lock, lock_timeout):
+        if pending.exists():
+            raise RunLifecycleError("unresolved collector latch: " + str(pending))
+        generation = _manifest.next_generation(manifest)
+        # Exactly one call per run; no new identity at stop or metadata time.
+        run_id = get_run_id()
+        planned_time = get_timestamp()
+        row = _manifest.register_run({
+            "run_id": run_id, "generation": generation, "run_type": run_type,
+            "label": label, "attack_type": attack_type,
+            "experiment_category": experiment_category, "start_time": "", "end_time": "",
+            "attacker_host": host.name, "attacker_ip": attacker_ip,
+            "target_host": target_host, "target_ip": target_ip,
+            "service_name": service_name, "protocol": protocol,
+            "src_port": src_port, "dst_port": dst_port, "rate_value": rate_value,
+            "duration_sec": duration, "status": "planned", "notes": notes,
+        }, manifest)
+        problems = []
+        interrupted = None
+        start_attempted = False
+        active_run_written = False
+        drained = False
+        output = ""
+        command_started = None
+        command_ended = None
+        try:
+            _manifest.atomic_text(pending, json.dumps({
+                "run_id": run_id, "generation": generation, "pid": os.getpid(),
+                "planned_time": planned_time,
+            }, sort_keys=True) + "\n", mode=0o644)
+            # The orchestrator's UUID is the only run identity source. Publish
+            # it atomically before asking Ryu to start; Ryu validates this exact ID.
+            _manifest.atomic_text(ACTIVE_RUN_FILE, json.dumps({
+                "run_id": run_id, "generation": generation, "status": "active",
+                "started_at": planned_time,
+            }, sort_keys=True) + "\n", mode=0o644)
+            active_run_written = True
+            start_attempted = True
+            ack = controller.start(run_id, generation)
+            LocalRunController._check(ack, run_id, generation, {"active", "running"})
+            row = _manifest.register_run({"run_id": run_id, "status": "running",
+                                          "start_time": f"{get_timestamp():.6f}"}, manifest)
+            command_started = get_timestamp()
+            returncode, output = executor(host, command, run_id, generation, duration)
+            command_ended = get_timestamp()
+            if returncode not in accepted_returncodes:
+                raise RunLifecycleError("command exit code: " + str(returncode))
+        except BaseException as exc:
+            problems.append(type(exc).__name__ + ": " + str(exc))
+            if not isinstance(exc, Exception):
+                interrupted = exc
+        finally:
+            if start_attempted:
+                try:
+                    ack = controller.stop(run_id, generation)
+                    LocalRunController._check(ack, run_id, generation, {"draining", "drained"})
+                except BaseException as exc:
+                    problems.append("stop: " + type(exc).__name__ + ": " + str(exc))
+                    if not isinstance(exc, Exception):
+                        interrupted = exc
+                try:
+                    ack = controller.wait_drained(run_id, generation)
+                    LocalRunController._check(ack, run_id, generation, {"drained"})
+                    drained = True
+                except BaseException as exc:
+                    problems.append("drain: " + type(exc).__name__ + ": " + str(exc))
+                    if not isinstance(exc, Exception):
+                        interrupted = exc
+        # Fence the collector after drain (or after a failed lifecycle) so a
+        # stale active identity can never authorize observations for a later run.
+        if active_run_written:
+            try:
+                current = json.loads(ACTIVE_RUN_FILE.read_text(encoding="utf-8"))
+                if current.get("run_id") != run_id or current.get("generation") != generation:
+                    raise RunLifecycleError("active_run.json identity changed during run")
+                _manifest.atomic_text(ACTIVE_RUN_FILE, json.dumps({
+                    "run_id": run_id, "generation": generation,
+                    "status": "inactive" if drained else "active",
+                    "ended_at": get_timestamp(),
+                }, sort_keys=True) + "\n", mode=0o600)
+            except Exception as exc:
+                problems.append("active_run finalization: " + type(exc).__name__ + ": " + str(exc))
+                # Fail closed if atomic finalization fails; absence denies collection.
+                try:
+                    current = json.loads(ACTIVE_RUN_FILE.read_text(encoding="utf-8"))
+                    if current.get("run_id") == run_id and current.get("generation") == generation:
+                        ACTIVE_RUN_FILE.unlink(missing_ok=True)
+                        _manifest.fsync_directory(ACTIVE_RUN_FILE.parent)
+                except Exception:
+                    pass
+        status = "failed" if problems else "completed"
+        details = {"operator_notes": notes, "planned_time": planned_time,
+                   "command_start": command_started, "command_end": command_ended,
+                   "collector_drained": drained, "errors": problems,
+                   "output_tail": output[-1000:]}
+        # Pre-ACK failures use lifecycle time, explicitly no command_start.
+        row = _manifest.register_run({
+            "run_id": run_id, "status": status,
+            "start_time": row.get("start_time") or f"{planned_time:.6f}",
+            "end_time": f"{get_timestamp():.6f}",
+            "experiment_category": "failed_experiment" if problems else experiment_category,
+            "notes": json.dumps(details, sort_keys=True),
+        }, manifest)
+        # Commit terminal metadata BEFORE removing the crash-recovery latch.
+        if drained:
+            pending.unlink(missing_ok=True)
+            _manifest.fsync_directory(pending.parent)
+        if interrupted is not None:
+            raise interrupted
+        if problems:
+            raise RunLifecycleError(f"run {run_id} failed: " + "; ".join(problems))
+        return row
+
+
+def run_attack(attacker, attack_type, dst_ip, command, dst_port="*", src_port="*",
+               protocol="TCP", *, target_host="", service_name="", rate_value=None,
+               duration_sec=None, accepted_returncodes=(0,), experiment_category="",
+               notes="", controller=None, manifest_path=None, executor=None):
+    """Use the SAME lifecycle as normal traffic; no legacy metadata writes."""
+    if attack_type not in ATTACK_LABELS:
+        raise ValueError("unsupported attack type: " + attack_type)
+    if duration_sec is None or rate_value is None:
+        raise ValueError("attack requires explicit rate and duration metadata")
+    if attack_type == "syn_flood":
+        safe_command = build_syn_command(dst_ip, dst_port, rate_value, duration_sec)
+        if shlex.split(command) != shlex.split(safe_command):
+            raise ValueError("SYN command must match bounded rate/duration/target metadata")
+    elif not math.isfinite(float(rate_value)) or not 0 < float(rate_value) <= MAX_RATE_PPS:
+        raise ValueError("attack rate ceiling is 200 per second")
+    return run_experiment(
+        attacker, command, run_type="attack", label=ATTACK_LABELS[attack_type],
+        attack_type=attack_type, target_host=target_host, target_ip=dst_ip,
+        service_name=service_name, protocol=protocol, src_port=src_port,
+        dst_port=dst_port, rate_value=rate_value, duration_sec=duration_sec,
+        accepted_returncodes=accepted_returncodes, experiment_category=experiment_category,
+        notes=notes, controller=controller, manifest_path=manifest_path, executor=executor,
     )
-
-
-# ============================================================
-# Prepare metadata file
-# ============================================================
-
-def prepare_metadata_file():
-    """
-    Create datasets/metadata directory and CSV file
-    if they do not already exist.
-    """
-
-    os.makedirs(
-        METADATA_DIR,
-        exist_ok=True
-    )
-
-    if not os.path.exists(METADATA_FILE):
-
-        with open(
-            METADATA_FILE,
-            "w",
-            newline=""
-        ) as file:
-
-            writer = csv.writer(file)
-
-            writer.writerow([
-                "run_id",
-                "attack_type",
-                "start_timestamp",
-                "end_timestamp",
-                "src_ip",
-                "dst_ip",
-                "src_port",
-                "dst_port",
-                "protocol"
-            ])
-
-
-# ============================================================
-# Save metadata
-# ============================================================
-
-def save_metadata(
-    run_id,
-    attack_type,
-    start_timestamp,
-    end_timestamp,
-    src_ip,
-    dst_ip,
-    src_port="*",
-    dst_port="*",
-    protocol="TCP"
-):
-    """
-    Save one attack record into attack_metadata.csv.
-    """
-
-    prepare_metadata_file()
-
-    with open(
-        METADATA_FILE,
-        "a",
-        newline=""
-    ) as file:
-
-        writer = csv.writer(file)
-
-        writer.writerow([
-            run_id,
-            attack_type,
-            start_timestamp,
-            end_timestamp,
-            src_ip,
-            dst_ip,
-            src_port,
-            dst_port,
-            protocol
-        ])
-
-    print()
-    print("==============================================")
-    print(" Attack Metadata Saved")
-    print("==============================================")
-    print("Run ID       :", run_id)
-    print("Attack Type  :", attack_type)
-    print("Source IP    :", src_ip)
-    print("Destination  :", dst_ip)
-    print("Source Port  :", src_port)
-    print("Destination Port:", dst_port)
-    print("Protocol     :", protocol)
-    print("Start        :", start_timestamp)
-    print("End          :", end_timestamp)
-    print("Metadata     :", METADATA_FILE)
-    print("==============================================")
-    print()
-
-
-# ============================================================
-# Run Attack
-# ============================================================
-
-def run_attack(
-    attacker,
-    attack_type,
-    dst_ip,
-    command,
-    dst_port="*",
-    src_port="*",
-    protocol="TCP"
-):
-    """
-    Execute an attack from a Mininet host
-    and automatically generate attack metadata.
-    """
-
-    prepare_metadata_file()
-
-    # Get attacker IP automatically
-    src_ip = attacker.IP()
-
-    # Generate unique run ID
-    run_id = get_run_id()
-
-    print()
-    print("==============================================")
-    print(" Starting Attack")
-    print("==============================================")
-    print("Run ID       :", run_id)
-    print("Attack Type  :", attack_type)
-    print("Attacker     :", attacker.name)
-    print("Source IP    :", src_ip)
-    print("Destination  :", dst_ip)
-    print("Command      :", command)
-    print("==============================================")
-    print()
-
-    # Start timestamp
-    start_timestamp = get_timestamp()
-
-    # Execute command inside Mininet host
-    attacker.cmd(command)
-
-    # End timestamp
-    end_timestamp = get_timestamp()
-
-    # Save metadata
-    save_metadata(
-        run_id=run_id,
-        attack_type=attack_type,
-        start_timestamp=start_timestamp,
-        end_timestamp=end_timestamp,
-        src_ip=src_ip,
-        dst_ip=dst_ip,
-        src_port=src_port,
-        dst_port=dst_port,
-        protocol=protocol
-    )
-
-    print("Attack finished successfully.")

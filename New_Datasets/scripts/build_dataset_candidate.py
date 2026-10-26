@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+"""Build run-grouped offline datasets from fresh, per-run raw CSV files.
+
+Packet examples are kept only at the source endpoint's access switch and in
+manifest source-to-target direction. Flow examples additionally require the
+collector's packetin_window source; per-switch forwarding-rule counters are
+operational telemetry, not independent model flows. Raw files are unchanged.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import ipaddress
+import re
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = ROOT.parent
+MANIFEST = ROOT / "experiments" / "run_manifest.csv"
+LABELS = {"Normal", "Malicious_POST", "Port_Scan", "SYN_Flood"}
+
+
+def protocol_name(value: object) -> str:
+    text = str(value).strip().lower()
+    if text.endswith(".0"):
+        text = text[:-2]
+    return {
+        "6": "tcp", "17": "udp", "1": "icmp", "58": "icmpv6",
+        "0": "other", "2": "igmp", "tcp": "tcp", "udp": "udp",
+        "icmp": "icmp", "icmpv6": "icmpv6", "igmp": "igmp",
+        "unknown": "unknown", "other": "other",
+    }.get(text, "other")
+
+
+def flag_has(flags: object, name: str) -> int:
+    text = str(flags).upper().strip()
+    if not text or text in {"NAN", "NONE"}:
+        return 0
+    bits = {"FIN": 0x01, "SYN": 0x02, "RST": 0x04, "ACK": 0x10}
+    try:
+        return int(int(float(text)) & bits[name] != 0)
+    except (TypeError, ValueError):
+        return int(bool(re.search(rf"\b{name}\b|{name[0]}", text)))
+
+
+def numeric(df: pd.DataFrame, columns: list[str]) -> None:
+    for col in columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+
+def read_manifest() -> dict[str, dict[str, str]]:
+    if not MANIFEST.exists():
+        raise SystemExit(f"missing manifest: {MANIFEST}")
+    with MANIFEST.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    result = {row["run_id"]: row for row in rows if row.get("run_id")}
+    if not result:
+        raise SystemExit("run_manifest.csv is empty")
+    return result
+
+
+def load_host_switch_map() -> dict[str, int]:
+    """Map endpoint IPv4 addresses to the configured access-switch DPID."""
+    mininet_dir = str(PROJECT_ROOT / "mininet")
+    if mininet_dir not in sys.path:
+        sys.path.insert(0, mininet_dir)
+    try:
+        from vlan_config_38host import HOSTS
+    except Exception as exc:
+        raise SystemExit(
+            "cannot load mininet/vlan_config_38host.py; refusing to guess "
+            f"access switches: {exc}"
+        ) from exc
+
+    result: dict[str, int] = {}
+    for host, spec in HOSTS.items():
+        try:
+            address = str(ipaddress.ip_interface(spec["ip"]).ip)
+            switch = str(spec["switch"])
+            if not switch.startswith("s"):
+                raise ValueError("switch name must look like s1")
+            dpid = int(switch[1:])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SystemExit(f"invalid topology entry {host!r}: {exc}") from exc
+        if address in result:
+            raise SystemExit(f"duplicate host IP in topology map: {address}")
+        result[address] = dpid
+    if len(result) != 38:
+        raise SystemExit(f"expected 38 hosts in topology map, found {len(result)}")
+    return result
+
+
+def filter_run_window(df: pd.DataFrame, run: dict[str, str], run_id: str,
+                      grace_sec: float = 5.0) -> pd.DataFrame:
+    """Keep observations inside the registered run interval; fail closed."""
+    if "timestamp" not in df.columns:
+        raise SystemExit(f"{run_id}: raw CSV has no timestamp column")
+    try:
+        start = float(run.get("start_time", ""))
+        end = float(run.get("end_time", ""))
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"{run_id}: invalid manifest timestamps") from exc
+    if start <= 0 or end <= 0 or end < start:
+        raise SystemExit(f"{run_id}: invalid manifest run interval")
+    timestamp = pd.to_numeric(df["timestamp"], errors="coerce")
+    filtered = df.loc[(timestamp >= start) & (timestamp <= end + grace_sec)].copy()
+    if filtered.empty:
+        raise SystemExit(f"{run_id}: no observations inside its registered run interval")
+    filtered["timestamp"] = timestamp.loc[filtered.index]
+    return filtered
+
+
+def validate_raw_identity(df: pd.DataFrame, run_id: str, path: Path) -> None:
+    required = {"run_id", "observation_id"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise SystemExit(f"{path.name}: missing identity columns {missing}")
+    raw_run_ids = df["run_id"].fillna("").astype(str).str.strip()
+    if raw_run_ids.empty or not raw_run_ids.eq(run_id).all():
+        raise SystemExit(f"{path.name}: row run_id does not match filename")
+    observation_ids = df["observation_id"].fillna("").astype(str).str.strip()
+    if observation_ids.eq("").any():
+        raise SystemExit(f"{path.name}: blank observation_id found")
+    if observation_ids.duplicated().any():
+        raise SystemExit(f"{path.name}: duplicate observation_id found")
+
+
+def run_endpoints(run: dict[str, str], run_id: str,
+                  host_switch: dict[str, int]) -> tuple[str, str, int, str]:
+    if run.get("status", "").strip().lower() != "completed":
+        raise SystemExit(f"{run_id}: status must be completed")
+    label = run.get("label", "").strip()
+    if label not in LABELS:
+        raise SystemExit(f"{run_id}: missing or invalid label {label!r}")
+    try:
+        source_ip = str(ipaddress.ip_address(run.get("attacker_ip", "").strip()))
+        target_ip = str(ipaddress.ip_address(run.get("target_ip", "").strip()))
+    except ValueError as exc:
+        raise SystemExit(f"{run_id}: missing/invalid source or target IP") from exc
+    source_dpid = host_switch.get(source_ip)
+    if source_dpid is None:
+        raise SystemExit(f"{run_id}: source {source_ip} is not in the 38-host map")
+    return source_ip, target_ip, source_dpid, label
+
+
+def select_canonical_rows(df: pd.DataFrame, run_id: str, level: str,
+                          source_ip: str, target_ip: str,
+                          source_dpid: int) -> pd.DataFrame:
+    required = {"src_ip", "dst_ip", "switch_dpid"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise SystemExit(f"{run_id}: raw CSV missing endpoint fields {missing}")
+    selected = df.copy()
+    selected["src_ip"] = selected["src_ip"].fillna("").astype(str).str.strip()
+    selected["dst_ip"] = selected["dst_ip"].fillna("").astype(str).str.strip()
+    selected["switch_dpid"] = pd.to_numeric(selected["switch_dpid"], errors="coerce")
+    keep = (
+        selected["src_ip"].eq(source_ip)
+        & selected["dst_ip"].eq(target_ip)
+        & selected["switch_dpid"].eq(source_dpid)
+    )
+    if level == "flow":
+        if "source" not in selected.columns:
+            raise SystemExit(f"{run_id}: flow CSV missing source field")
+        keep &= selected["source"].fillna("").astype(str).eq("packetin_window")
+    selected = selected.loc[keep].copy()
+    if selected.empty:
+        raise SystemExit(
+            f"{run_id}: no canonical {level} rows for {source_ip}→{target_ip} "
+            f"at source access switch s{source_dpid}"
+        )
+    return selected
+
+
+def build_packet(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for col in ["protocol", "src_port", "dst_port", "packet_length", "icmp_type", "arp_operation"]:
+        if col not in df.columns:
+            df[col] = "" if col == "protocol" else 0
+    df["protocol"] = df["protocol"].fillna("unknown").map(protocol_name)
+    numeric(df, ["src_port", "dst_port", "packet_length", "icmp_type", "arp_operation"])
+    flags = df.get("tcp_flags", pd.Series(index=df.index, dtype="object"))
+    for name in ["syn", "ack", "rst", "fin"]:
+        df[f"tcp_{name}"] = flags.map(lambda value, flag=name.upper(): flag_has(value, flag)).astype("int8")
+    keep = ["protocol", "src_port", "dst_port", "packet_length", "tcp_syn", "tcp_ack", "tcp_rst", "tcp_fin", "icmp_type", "arp_operation"]
+    return df[keep]
+
+
+def build_flow(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    required = ["protocol", "src_port", "dst_port", "packet_count", "byte_count", "packet_rate", "byte_rate", "duration_sec"]
+    for col in required:
+        if col not in df.columns:
+            df[col] = "" if col == "protocol" else 0
+    df["protocol"] = df["protocol"].fillna("unknown").map(protocol_name)
+    numeric(df, ["src_port", "dst_port", "packet_count", "byte_count", "packet_rate", "byte_rate", "duration_sec"])
+    if "avg_packet_size" not in df.columns:
+        df["avg_packet_size"] = (df["byte_count"] / df["packet_count"].clip(lower=1)).fillna(0)
+    for col in ["syn_count", "ack_count", "rst_count", "fin_count", "unique_dst_ports", "failed_connection_count"]:
+        if col not in df.columns:
+            df[col] = 0
+    if "syn_ack_ratio" not in df.columns:
+        df["syn_ack_ratio"] = 0.0
+    if "rst_ratio" not in df.columns:
+        df["rst_ratio"] = 0.0
+    df["tcp_fraction"] = (df["protocol"] == "tcp").astype(float)
+    df["udp_fraction"] = (df["protocol"] == "udp").astype(float)
+    df["icmp_fraction"] = (df["protocol"] == "icmp").astype(float)
+    keep = ["protocol", "src_port", "dst_port", "packet_count", "byte_count", "packet_rate", "byte_rate", "duration_sec", "avg_packet_size", "syn_count", "ack_count", "rst_count", "fin_count", "syn_ack_ratio", "rst_ratio", "unique_dst_ports", "failed_connection_count", "tcp_fraction", "udp_fraction", "icmp_fraction"]
+    return df[keep]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--level", choices=["packet", "flow"], required=True)
+    parser.add_argument("--input-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--exclude-runs", type=Path, default=None,
+                        help="CSV with run_id,reason columns for explicit dataset exclusions")
+    args = parser.parse_args()
+    manifest = read_manifest()
+    host_switch = load_host_switch_map()
+    exclusions = {}
+    if args.exclude_runs is not None:
+        with args.exclude_runs.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            if not {"run_id", "reason"}.issubset(reader.fieldnames or []):
+                raise SystemExit("exclusion CSV must contain run_id and reason columns")
+            for row in reader:
+                run_id = (row.get("run_id") or "").strip()
+                reason = (row.get("reason") or "").strip()
+                if not run_id or not reason or run_id in exclusions:
+                    raise SystemExit("exclusion CSV has blank or duplicate run_id/reason")
+                if run_id not in manifest:
+                    raise SystemExit(f"exclusion run_id is absent from manifest: {run_id}")
+                exclusions[run_id] = reason
+    frames = []
+
+    for path in sorted(args.input_dir.glob("*.csv")):
+        run_id = path.stem
+        run = manifest.get(run_id)
+        if run is None:
+            raise SystemExit(f"{path.name}: run_id is not in run_manifest.csv")
+        if run_id in exclusions:
+            print(f"exclude {run_id}: {exclusions[run_id]}")
+            continue
+        status = run.get("status", "").strip().lower()
+        if status != "completed":
+            print(f"skip {run_id}: manifest status={status or 'blank'}")
+            continue
+        source_ip, target_ip, source_dpid, label = run_endpoints(run, run_id, host_switch)
+        df = pd.read_csv(path)
+        if df.empty:
+            raise SystemExit(f"{run_id}: raw CSV is empty")
+        validate_raw_identity(df, run_id, path)
+        df = filter_run_window(df, run, run_id)
+        df = select_canonical_rows(df, run_id, args.level, source_ip, target_ip, source_dpid)
+
+        out = build_packet(df) if args.level == "packet" else build_flow(df)
+        # Preserve the raw observation identity; never invent replacement IDs.
+        out.insert(0, "observation_id", df["observation_id"].astype(str).to_numpy())
+        out.insert(0, "run_id", run_id)
+        out["label"] = label
+        out["label_status"] = "matched"
+        frames.append(out)
+        print(
+            f"{run_id}: {args.level} rows={len(out)} label={label} "
+            f"source={source_ip} target={target_ip} edge=s{source_dpid}"
+        )
+
+    if not frames:
+        raise SystemExit(f"no CSV files found in {args.input_dir}")
+    result = pd.concat(frames, ignore_index=True)
+    if result["observation_id"].duplicated().any():
+        raise SystemExit("duplicate observation_id in assembled dataset")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(args.output, index=False)
+    print(
+        f"wrote {len(result)} canonical {args.level} rows from "
+        f"{result['run_id'].nunique()} runs to {args.output}"
+    )
+    print(result.groupby(["run_id", "label"]).size().to_string())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

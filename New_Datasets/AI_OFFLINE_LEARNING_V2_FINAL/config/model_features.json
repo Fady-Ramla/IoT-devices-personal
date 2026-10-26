@@ -1,0 +1,63 @@
+{
+  "version": "offline-v1",
+  "target": "label",
+  "group_column": "run_id",
+  "excluded_columns": [
+    "run_id",
+    "observation_id",
+    "timestamp",
+    "src_ip",
+    "dst_ip",
+    "src_mac",
+    "dst_mac",
+    "switch_dpid",
+    "in_port",
+    "label",
+    "label_status",
+    "attack_type",
+    "trust_score",
+    "decision",
+    "blocked",
+    "firewall_outcome"
+  ],
+  "flow_features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction"
+  ],
+  "packet_features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_length",
+    "tcp_syn",
+    "tcp_ack",
+    "tcp_rst",
+    "tcp_fin",
+    "icmp_type",
+    "arp_operation"
+  ],
+  "labels": [
+    "Normal",
+    "Malicious_POST",
+    "Port_Scan",
+    "SYN_Flood"
+  ]
+}

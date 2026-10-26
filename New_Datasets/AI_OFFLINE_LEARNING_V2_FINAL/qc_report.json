@@ -1,0 +1,219 @@
+{
+  "version": "AI_OFFLINE_LEARNING_V2_FINAL",
+  "source_split_directory": "New_Datasets/AI_OFFLINE_LEARNING_V2",
+  "source_qc_candidates": {
+    "packet": "New_Datasets/reports/balanced_candidate_packet_qc_v2.csv",
+    "flow": "New_Datasets/reports/balanced_candidate_flow_qc_v2.csv"
+  },
+  "split_method": "preserved existing run-grouped train/validation/test split; no reshuffle",
+  "packet": {
+    "splits": {
+      "train": {
+        "rows": 10197,
+        "runs": 40,
+        "rows_by_label": {
+          "Malicious_POST": 1334,
+          "Normal": 1189,
+          "Port_Scan": 2262,
+          "SYN_Flood": 5412
+        },
+        "runs_by_label": {
+          "Malicious_POST": 10,
+          "Normal": 10,
+          "Port_Scan": 10,
+          "SYN_Flood": 10
+        },
+        "exact_duplicate_rows": 0,
+        "duplicate_observation_id": 0
+      },
+      "validation": {
+        "rows": 1763,
+        "runs": 8,
+        "rows_by_label": {
+          "Malicious_POST": 301,
+          "Normal": 96,
+          "Port_Scan": 147,
+          "SYN_Flood": 1219
+        },
+        "runs_by_label": {
+          "Malicious_POST": 2,
+          "Normal": 2,
+          "Port_Scan": 2,
+          "SYN_Flood": 2
+        },
+        "exact_duplicate_rows": 0,
+        "duplicate_observation_id": 0
+      },
+      "test": {
+        "rows": 2008,
+        "runs": 12,
+        "rows_by_label": {
+          "Malicious_POST": 508,
+          "Normal": 448,
+          "Port_Scan": 223,
+          "SYN_Flood": 829
+        },
+        "runs_by_label": {
+          "Malicious_POST": 3,
+          "Normal": 3,
+          "Port_Scan": 3,
+          "SYN_Flood": 3
+        },
+        "exact_duplicate_rows": 0,
+        "duplicate_observation_id": 0
+      }
+    },
+    "source": {
+      "rows": 13968,
+      "runs": 60,
+      "runs_by_label": {
+        "Malicious_POST": 15,
+        "Normal": 15,
+        "Port_Scan": 15,
+        "SYN_Flood": 15
+      },
+      "rows_by_label": {
+        "Malicious_POST": 2143,
+        "Normal": 1733,
+        "Port_Scan": 2632,
+        "SYN_Flood": 7460
+      },
+      "exact_duplicate_rows": 0,
+      "duplicate_observation_id": 0,
+      "repeated_feature_vector_groups": 3499,
+      "rows_in_repeated_feature_vectors": 9017,
+      "feature_vectors_with_conflicting_labels": 125,
+      "unique_values_per_feature": {
+        "protocol": 1,
+        "src_port": 2772,
+        "dst_port": 334,
+        "packet_length": 11,
+        "tcp_syn": 2,
+        "tcp_ack": 2,
+        "tcp_rst": 2,
+        "tcp_fin": 2,
+        "icmp_type": 1,
+        "arp_operation": 1
+      }
+    }
+  },
+  "flow": {
+    "splits": {
+      "train": {
+        "rows": 57,
+        "runs": 40,
+        "rows_by_label": {
+          "Malicious_POST": 13,
+          "Normal": 14,
+          "Port_Scan": 15,
+          "SYN_Flood": 15
+        },
+        "runs_by_label": {
+          "Malicious_POST": 10,
+          "Normal": 10,
+          "Port_Scan": 10,
+          "SYN_Flood": 10
+        },
+        "exact_duplicate_rows": 0,
+        "duplicate_observation_id": 0
+      },
+      "validation": {
+        "rows": 13,
+        "runs": 8,
+        "rows_by_label": {
+          "Malicious_POST": 3,
+          "Normal": 3,
+          "Port_Scan": 4,
+          "SYN_Flood": 3
+        },
+        "runs_by_label": {
+          "Malicious_POST": 2,
+          "Normal": 2,
+          "Port_Scan": 2,
+          "SYN_Flood": 2
+        },
+        "exact_duplicate_rows": 0,
+        "duplicate_observation_id": 0
+      },
+      "test": {
+        "rows": 16,
+        "runs": 12,
+        "rows_by_label": {
+          "Malicious_POST": 6,
+          "Normal": 3,
+          "Port_Scan": 4,
+          "SYN_Flood": 3
+        },
+        "runs_by_label": {
+          "Malicious_POST": 3,
+          "Normal": 3,
+          "Port_Scan": 3,
+          "SYN_Flood": 3
+        },
+        "exact_duplicate_rows": 0,
+        "duplicate_observation_id": 0
+      }
+    },
+    "source": {
+      "rows": 86,
+      "runs": 60,
+      "runs_by_label": {
+        "Malicious_POST": 15,
+        "Normal": 15,
+        "Port_Scan": 15,
+        "SYN_Flood": 15
+      },
+      "rows_by_label": {
+        "Malicious_POST": 22,
+        "Normal": 20,
+        "Port_Scan": 23,
+        "SYN_Flood": 21
+      },
+      "exact_duplicate_rows": 0,
+      "duplicate_observation_id": 0,
+      "repeated_feature_vector_groups": 0,
+      "rows_in_repeated_feature_vectors": 0,
+      "feature_vectors_with_conflicting_labels": 0,
+      "unique_values_per_feature": {
+        "protocol": 1,
+        "src_port": 3,
+        "dst_port": 3,
+        "packet_count": 68,
+        "byte_count": 80,
+        "packet_rate": 86,
+        "byte_rate": 86,
+        "duration_sec": 86,
+        "avg_packet_size": 45,
+        "syn_count": 53,
+        "ack_count": 33,
+        "rst_count": 23,
+        "fin_count": 23,
+        "syn_ack_ratio": 59,
+        "rst_ratio": 28,
+        "unique_dst_ports": 17,
+        "failed_connection_count": 37,
+        "tcp_fraction": 1,
+        "udp_fraction": 1,
+        "icmp_fraction": 1
+      }
+    }
+  },
+  "integrity": {
+    "exact_duplicate_rows": 0,
+    "duplicate_observation_id": 0,
+    "run_id_overlap_across_splits": 0,
+    "all_candidate_observations_included_once": true,
+    "same_run_split_assignment_for_packet_and_flow": true,
+    "packet_train_at_least_10000_rows": true,
+    "feature_vector_collisions_are_informational_not_removed": true,
+    "bias_free_claim": false
+  },
+  "notes": [
+    "No data rows were resampled, synthesized, duplicated, dropped, or reshuffled.",
+    "The separate collection_report.json says 55 runs; this package uses only the verified balanced QC candidates (15 runs per label, 60 total) and does not merge that separate collection.",
+    "Equal run counts do not imply equal packet-row counts. Use macro-F1, balanced accuracy, and per-class confusion matrices.",
+    "Feature-vector collisions can occur between distinct observations and are not exact duplicates or proof of leakage.",
+    "The flow candidate contains 86 rows and is an exploratory dataset, not a large benchmark.",
+    "Training metrics were not copied; if models are retrained, save metrics against these exact splits."
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "level": "flow",
+  "network_features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction"
+  ],
+  "application_features": [
+    "app_event_count",
+    "app_post_count",
+    "app_get_count",
+    "app_auth_count",
+    "app_iot_api_count",
+    "app_health_count",
+    "app_status_200_count",
+    "app_status_202_count",
+    "app_status_401_count",
+    "app_other_status_count",
+    "app_post_ratio",
+    "app_auth_ratio",
+    "app_401_ratio"
+  ]
+}

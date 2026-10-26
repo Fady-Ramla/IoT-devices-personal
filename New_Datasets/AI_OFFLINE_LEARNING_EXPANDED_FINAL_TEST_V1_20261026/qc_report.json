@@ -1,0 +1,21 @@
+{
+  "runs": 160,
+  "runs_per_class": {
+    "Normal": 40,
+    "Port_Scan": 40,
+    "Malicious_POST": 40,
+    "SYN_Flood": 40
+  },
+  "excluded_original_bad_post_profiles": [
+    "MPNEW001",
+    "MPNEW004",
+    "MPNEW020",
+    "MPNEW064",
+    "MPNEW068",
+    "MPNEW072"
+  ],
+  "replacement_count": 6,
+  "run_leakage": false,
+  "models_retrained": false,
+  "final_test_features_opened_once": true
+}

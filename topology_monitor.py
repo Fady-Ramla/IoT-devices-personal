@@ -21,6 +21,10 @@
 #                        (physical minus isolated links)
 # ================================================================
 
+import ipaddress
+import json
+import os
+from pathlib import Path
 import time
 import re
 
@@ -44,6 +48,8 @@ from ryu.lib.packet import (
     ethernet,
     arp,
     ipv4,
+    ipv6,
+    vlan,
 )
 
 try:
@@ -66,8 +72,27 @@ LLDP_STALE_TIMEOUT = 9          # 3 x interval (PortStatus is the fast path)
 
 LLDP_MAC = "01:80:c2:00:00:0e"
 
-EXPECTED_SWITCHES = 6
-EXPECTED_PHYSICAL_LINKS = 11
+EXPECTED_SWITCHES = int(os.getenv("EXPECTED_SWITCHES", "6"))
+EXPECTED_PHYSICAL_LINKS = int(os.getenv("EXPECTED_PHYSICAL_LINKS", "11"))
+EXPECTED_VLAN_NETWORKS = {
+    10: "10.10.10.0/24",
+    20: "10.10.20.0/24",
+    30: "10.10.30.0/24",
+    40: "10.10.40.0/24",
+    50: "10.10.50.0/24",
+}
+EXPECTED_ENDPOINTS_BY_VLAN = {10: 12, 20: 7, 30: 2, 40: 2, 50: 15}
+ALLOWED_VLANS = frozenset(
+    int(value) for value in os.getenv("SECUREIOT_ALLOWED_VLANS", "10,20,30,40,50").split(",")
+)
+if ALLOWED_VLANS != frozenset(EXPECTED_VLAN_NETWORKS):
+    raise RuntimeError("TrustFlow 38-host controller requires VLANs 10,20,30,40,50")
+VLAN_PORT_MAP_FILE = Path(os.getenv(
+    "SECUREIOT_VLAN_PORT_MAP",
+    str(Path(__file__).resolve().parent / "New_Datasets" / "config" / "vlan_port_map.json"),
+))
+OFPVID_PRESENT = 0x1000
+VLAN_PORT_MAP_POLL_INTERVAL = 1
 
 NORMAL_PRIORITY = 10
 REROUTE_PRIORITY = 100
@@ -194,6 +219,14 @@ class TopologyMonitor(app_manager.RyuApp):
         self.host_location = {}
         self.ip_to_mac = {}
         self.mac_to_ip = {}
+        self.mac_vlan = {}
+        self.ip_vlan = {}
+
+        # Fail-closed VLAN membership learned from Mininet's atomic port map.
+        self.vlan_port_map = {}
+        self.vlan_networks = {}
+        self.vlan_map_ready = False
+        self.vlan_map_topology_id = None
 
         # Explicit Security blocks keyed by normalized source MAC.
         # IP is retained only for audit; enforcement matches eth_src.
@@ -225,11 +258,211 @@ class TopologyMonitor(app_manager.RyuApp):
         self.congestion_thread = hub.spawn(
             self._congestion_reoptimization_loop
         )
+        self.vlan_map_thread = hub.spawn(self._vlan_port_map_loop)
 
         self.logger.info("TopologyMonitor initialized")
         self.logger.info("Forwarding owner: TopologyMonitor")
         self.logger.info("CLFF: %s",
                          "available" if self.clff else "NOT available")
+
+    def _vlan_port_map_loop(self):
+        last_signature = None
+        while True:
+            try:
+                stat = VLAN_PORT_MAP_FILE.stat()
+                signature = (stat.st_mtime_ns, stat.st_size)
+                if signature != last_signature:
+                    payload = json.loads(VLAN_PORT_MAP_FILE.read_text(encoding="utf-8"))
+                    if payload.get("schema_version") != 2:
+                        raise ValueError("unsupported VLAN map schema")
+                    if int(payload.get("expected_switches", -1)) != EXPECTED_SWITCHES:
+                        raise ValueError("switch-count mismatch in VLAN map")
+                    if int(payload.get("expected_inter_switch_links", -1)) != EXPECTED_PHYSICAL_LINKS:
+                        raise ValueError("link-count mismatch in VLAN map")
+                    if set(int(value) for value in payload.get("allowed_vlans", [])) != set(ALLOWED_VLANS):
+                        raise ValueError("allowed VLAN list mismatch")
+                    if int(payload.get("host_count", -1)) != 38:
+                        raise ValueError("expected 38-host topology map")
+                    topology_id = str(payload.get("topology_id", ""))
+                    if not re.fullmatch(r"[0-9a-f]{32}", topology_id):
+                        raise ValueError("invalid topology ID")
+
+                    networks = {
+                        int(vlan_id): ipaddress.ip_network(cidr, strict=True)
+                        for vlan_id, cidr in payload.get("networks", {}).items()
+                    }
+                    expected_networks = {
+                        vlan_id: ipaddress.ip_network(cidr, strict=True)
+                        for vlan_id, cidr in EXPECTED_VLAN_NETWORKS.items()
+                    }
+                    if networks != expected_networks:
+                        raise ValueError("network/VLAN definitions mismatch")
+
+                    port_map = {}
+                    access_count = trunk_count = endpoint_count = gateway_count = 0
+                    endpoint_vlan_counts = {vlan_id: 0 for vlan_id in ALLOWED_VLANS}
+                    gateway_vlan_counts = {vlan_id: 0 for vlan_id in ALLOWED_VLANS}
+                    switch_names_by_dpid = {}
+                    dpids_by_switch_name = {}
+                    for row in payload.get("ports", []):
+                        dpid, port_no = int(row["dpid"]), int(row["port_no"])
+                        switch_name = str(row.get("switch", ""))
+                        if not re.fullmatch(r"s[1-6]", switch_name):
+                            raise ValueError("invalid switch identity in VLAN map")
+                        if (dpid in switch_names_by_dpid and switch_names_by_dpid[dpid] != switch_name) or (
+                            switch_name in dpids_by_switch_name and dpids_by_switch_name[switch_name] != dpid
+                        ):
+                            raise ValueError("inconsistent switch DPID mapping")
+                        switch_names_by_dpid[dpid] = switch_name
+                        dpids_by_switch_name[switch_name] = dpid
+                        kind = row["kind"]
+                        if dpid <= 0 or port_no <= 0 or kind not in ("access", "trunk"):
+                            raise ValueError("invalid port-map entry")
+                        key = (dpid, port_no)
+                        if key in port_map:
+                            raise ValueError("duplicate switch port in VLAN map")
+                        if kind == "access":
+                            if "role" not in row:
+                                raise ValueError("access port role missing from VLAN map")
+                            vlan_id = int(row["vlan_id"])
+                            if vlan_id not in ALLOWED_VLANS:
+                                raise ValueError("access port uses disallowed VLAN")
+                            role = row.get("role", "endpoint")
+                            if role not in ("endpoint", "gateway"):
+                                raise ValueError("invalid access-port role")
+                            entry = {"kind": kind, "role": role, "vlan_id": vlan_id, "allowed_vlans": frozenset()}
+                            access_count += 1
+                            if role == "gateway":
+                                gateway_count += 1
+                                gateway_vlan_counts[vlan_id] += 1
+                            else:
+                                endpoint_count += 1
+                                endpoint_vlan_counts[vlan_id] += 1
+                        else:
+                            allowed = frozenset(int(value) for value in row["allowed_vlans"])
+                            if allowed != ALLOWED_VLANS or row.get("vlan_id") is not None:
+                                raise ValueError("trunk VLAN set mismatch")
+                            entry = {"kind": kind, "vlan_id": None, "allowed_vlans": allowed}
+                            trunk_count += 1
+                        port_map[key] = entry
+
+                    dpids = {dpid for dpid, _port in port_map}
+                    if (len(dpids) != EXPECTED_SWITCHES or access_count != 43
+                            or endpoint_count != 38 or gateway_count != 5
+                            or trunk_count != EXPECTED_PHYSICAL_LINKS * 2
+                            or len(port_map) != 65
+                            or set(switch_names_by_dpid.values()) != {"s1", "s2", "s3", "s4", "s5", "s6"}
+                            or endpoint_vlan_counts != EXPECTED_ENDPOINTS_BY_VLAN
+                            or gateway_vlan_counts != {vlan_id: 1 for vlan_id in ALLOWED_VLANS}):
+                        raise ValueError("port-map inventory count mismatch")
+
+                    if self.vlan_map_ready:
+                        self._clear_tracked_forwarding_state()
+                    self.vlan_port_map = port_map
+                    self.vlan_networks = networks
+                    self.vlan_map_topology_id = topology_id
+                    self.vlan_map_ready = True
+                    last_signature = signature
+                    self.logger.info(
+                        "VLAN map ready topology=%s access=%d trunks=%d",
+                        self.vlan_map_topology_id, access_count, trunk_count)
+            except FileNotFoundError:
+                if self.vlan_map_ready:
+                    self.logger.warning("VLAN map removed; data forwarding is fail-closed")
+                    self._clear_tracked_forwarding_state()
+                self.vlan_port_map = {}
+                self.vlan_networks = {}
+                self.vlan_map_topology_id = None
+                self.vlan_map_ready = False
+                last_signature = None
+            except Exception:
+                if self.vlan_map_ready:
+                    self.logger.exception("Invalid VLAN map; data forwarding is fail-closed")
+                    self._clear_tracked_forwarding_state()
+                self.vlan_port_map = {}
+                self.vlan_networks = {}
+                self.vlan_map_topology_id = None
+                self.vlan_map_ready = False
+                last_signature = None
+            hub.sleep(VLAN_PORT_MAP_POLL_INTERVAL)
+
+    def _clear_tracked_forwarding_state(self):
+        """Delete tracked forwarding flows and learned VLAN identities."""
+        for key, match in list(self.installed_flows.items()):
+            dpid, priority, _track_key = key
+            if priority not in (NORMAL_PRIORITY, REROUTE_PRIORITY):
+                continue
+            datapath = self.datapaths.get(dpid)
+            if datapath is not None:
+                parser, ofproto = datapath.ofproto_parser, datapath.ofproto
+                datapath.send_msg(parser.OFPFlowMod(
+                    datapath=datapath,
+                    command=ofproto.OFPFC_DELETE_STRICT,
+                    table_id=0,
+                    priority=priority,
+                    out_port=ofproto.OFPP_ANY,
+                    out_group=ofproto.OFPG_ANY,
+                    match=match))
+            self.installed_flows.pop(key, None)
+        self.host_location.clear()
+        self.ip_to_mac.clear()
+        self.mac_to_ip.clear()
+        self.mac_vlan.clear()
+        self.ip_vlan.clear()
+        self.active_flows.clear()
+
+    @staticmethod
+    def _observed_vlan_id(msg, pkt):
+        try:
+            raw = msg.match.get("vlan_vid")
+            if raw is not None:
+                raw = int(raw)
+                if raw & OFPVID_PRESENT:
+                    return raw & 0x0FFF
+                return None
+        except (AttributeError, TypeError, ValueError):
+            pass
+        tag = pkt.get_protocol(vlan.vlan)
+        return int(tag.vid) if tag is not None else None
+
+    def _resolve_ingress_vlan(self, datapath, in_port, msg, pkt):
+        if not self.vlan_map_ready:
+            return None
+        entry = self.vlan_port_map.get((int(datapath.id), int(in_port)))
+        if entry is None:
+            return None
+        observed = self._observed_vlan_id(msg, pkt)
+        if entry["kind"] == "access":
+            expected = entry["vlan_id"]
+            return expected if observed in (None, expected) else None
+        if observed is None or observed not in entry["allowed_vlans"]:
+            return None
+        return observed
+
+    def _source_ip_allowed(self, vlan_id, pkt, datapath, in_port):
+        network = self.vlan_networks.get(vlan_id)
+        if network is None:
+            return False
+        entry = self.vlan_port_map.get((int(datapath.id), int(in_port)), {})
+        if entry.get("role") == "gateway":
+            return True
+        ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        if ip_pkt is not None:
+            if ip_pkt.src == "0.0.0.0":
+                return True
+            try:
+                return ipaddress.ip_address(ip_pkt.src) in network
+            except ValueError:
+                return False
+        if pkt.get_protocol(ipv6.ipv6) is not None:
+            return False
+        arp_pkt = pkt.get_protocol(arp.arp)
+        if arp_pkt is not None and arp_pkt.src_ip not in (None, "0.0.0.0"):
+            try:
+                return ipaddress.ip_address(arp_pkt.src_ip) in network
+            except ValueError:
+                return False
+        return True
 
     # ============================================================
     # Switch connect / disconnect
@@ -504,31 +737,55 @@ class TopologyMonitor(app_manager.RyuApp):
         if not self.full_topology_discovered:
             return
 
+        vlan_id = self._resolve_ingress_vlan(datapath, in_port, msg, pkt)
+        if vlan_id is None:
+            self.logger.warning(
+                "Drop packet with unknown/invalid VLAN membership on s%d:%d",
+                dpid, in_port)
+            return
+        if not self._source_ip_allowed(vlan_id, pkt, datapath, in_port):
+            self.logger.warning(
+                "Drop source IP outside VLAN %d subnet on s%d:%d",
+                vlan_id, dpid, in_port)
+            return
+
         # ARP: learn, and answer from the controller when possible.
         arp_pkt = pkt.get_protocol(arp.arp)
 
         if arp_pkt is not None:
+            if str(arp_pkt.src_mac).lower() != str(src_mac).lower():
+                self.logger.warning("Drop ARP Ethernet/source MAC mismatch on s%d:%d", dpid, in_port)
+                return
 
-            self._learn_from_arp(dpid, in_port, arp_pkt)
+            self._learn_from_arp(dpid, in_port, arp_pkt, vlan_id)
 
             if (arp_pkt.opcode == arp.ARP_REQUEST
-                    and self._try_proxy_arp(datapath, in_port, arp_pkt)):
+                    and self._try_proxy_arp(datapath, in_port, arp_pkt, vlan_id)):
                 return
 
         # Host learning.
         if not self.is_inter_switch_port(dpid, in_port):
-            self._learn_host(dpid, in_port, src_mac, pkt)
+            self._learn_host(dpid, in_port, src_mac, pkt, vlan_id)
+        if self.mac_vlan.get(src_mac) != vlan_id:
+            self.logger.warning("Drop source MAC %s outside learned VLAN %d", src_mac, vlan_id)
+            return
 
         # Broadcast / multicast -> CLFF.
         if self._is_broadcast_or_multicast(dst_mac):
-            self._flood_ethernet(datapath, msg, in_port)
+            self._flood_ethernet(datapath, msg, in_port, vlan_id)
             return
 
         # Known destination.
         destination = self.host_location.get(dst_mac)
 
         if destination is None:
-            self._flood_ethernet(datapath, msg, in_port)
+            self._flood_ethernet(datapath, msg, in_port, vlan_id)
+            return
+
+        if self.mac_vlan.get(dst_mac) != vlan_id:
+            self.logger.warning(
+                "Drop cross-VLAN unicast VLAN %d -> learned VLAN %s MAC %s",
+                vlan_id, self.mac_vlan.get(dst_mac), dst_mac)
             return
 
         dst_dpid, dst_port = destination
@@ -539,8 +796,8 @@ class TopologyMonitor(app_manager.RyuApp):
             if dst_port == in_port:
                 return
 
-            self._install_output_flow(datapath, in_port, dst_mac, dst_port)
-            self._packet_out(datapath, msg, dst_port)
+            self._install_output_flow(datapath, in_port, dst_mac, dst_port, vlan_id)
+            self._packet_out(datapath, msg, dst_port, vlan_id)
             return
 
         # Different switch: prefer the full path from the source's switch.
@@ -568,20 +825,21 @@ class TopologyMonitor(app_manager.RyuApp):
                 "No forwarding port on s%d towards s%d", dpid, dst_dpid)
             return
 
-        self._install_path(path, src_mac, dst_mac)
+        self._install_path(path, src_mac, dst_mac, vlan_id)
 
         self.register_active_flow(
-            ("mac", src_mac, dst_mac),
+            ("vlan_mac", vlan_id, src_mac, dst_mac),
             {
                 "src_mac": src_mac,
                 "dst_mac": dst_mac,
+                "vlan_id": vlan_id,
                 "src_ip": self.mac_to_ip.get(src_mac),
                 "dst_ip": self.mac_to_ip.get(dst_mac),
                 "path": list(path),
             }
         )
 
-        self._packet_out(datapath, msg, out_port)
+        self._packet_out(datapath, msg, out_port, vlan_id)
 
     # ============================================================
     # LLDP receive
@@ -589,7 +847,10 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _handle_lldp(self, datapath, in_port, pkt):
 
-        if lldp is None:
+        if lldp is None or not self.vlan_map_ready:
+            return
+        ingress = self.vlan_port_map.get((int(datapath.id), int(in_port)))
+        if ingress is None or ingress["kind"] != "trunk":
             return
 
         dpid = datapath.id
@@ -1205,24 +1466,41 @@ class TopologyMonitor(app_manager.RyuApp):
     # Host learning / ARP
     # ============================================================
 
-    def _learn_ip(self, ip, mac):
+    def _learn_ip(self, ip, mac, vlan_id):
 
         if not ip or ip == "0.0.0.0" or not mac:
             return
 
+        if ip in self.ip_vlan and (
+            self.ip_vlan[ip] != vlan_id or self.ip_to_mac.get(ip) != mac
+        ):
+            self.logger.warning("Ignoring conflicting IP learning for %s", ip)
+            return
+
         self.ip_to_mac[ip] = mac
         self.mac_to_ip[mac] = ip
+        self.ip_vlan[ip] = vlan_id
 
-    def _learn_host(self, dpid, in_port, src_mac, pkt=None):
+    def _learn_host(self, dpid, in_port, src_mac, pkt=None, vlan_id=None):
 
         if self.is_inter_switch_port(dpid, in_port):
-            return
+            return False
+
+        if vlan_id not in ALLOWED_VLANS:
+            return False
+
+        known_vlan = self.mac_vlan.get(src_mac)
+        if known_vlan is not None and known_vlan != vlan_id:
+            self.logger.warning(
+                "Ignoring MAC %s seen in VLAN %d; already learned in VLAN %d",
+                src_mac, vlan_id, known_vlan)
+            return False
 
         if src_mac and src_mac.startswith("02:00:00:00:00:"):
-            return
+            return False
 
         if self._is_broadcast_or_multicast(src_mac):
-            return
+            return False
 
         new_location = (dpid, in_port)
         old_location = self.host_location.get(src_mac)
@@ -1234,7 +1512,7 @@ class TopologyMonitor(app_manager.RyuApp):
                     "Ignoring MAC flap: %s s%d:%d -> s%d:%d",
                     src_mac, old_location[0], old_location[1],
                     dpid, in_port)
-                return
+                return False
 
             self.logger.warning(
                 "Host MAC moved: %s s%d:%d -> s%d:%d",
@@ -1243,23 +1521,25 @@ class TopologyMonitor(app_manager.RyuApp):
         if old_location != new_location:
             self.host_location[src_mac] = new_location
             self.logger.info(
-                "Host learned: %s -> s%d:%d", src_mac, dpid, in_port)
+                "Host learned: %s VLAN %d -> s%d:%d", src_mac, vlan_id, dpid, in_port)
+        self.mac_vlan[src_mac] = vlan_id
 
         if pkt is not None:
             ipv4_pkt = pkt.get_protocol(ipv4.ipv4)
 
             if ipv4_pkt is not None:
-                self._learn_ip(ipv4_pkt.src, src_mac)
+                self._learn_ip(ipv4_pkt.src, src_mac, vlan_id)
+        return True
 
-    def _learn_from_arp(self, dpid, in_port, arp_pkt):
+    def _learn_from_arp(self, dpid, in_port, arp_pkt, vlan_id):
 
         if self.is_inter_switch_port(dpid, in_port):
             return
 
-        self._learn_host(dpid, in_port, arp_pkt.src_mac)
-        self._learn_ip(arp_pkt.src_ip, arp_pkt.src_mac)
+        self._learn_host(dpid, in_port, arp_pkt.src_mac, vlan_id=vlan_id)
+        self._learn_ip(arp_pkt.src_ip, arp_pkt.src_mac, vlan_id)
 
-    def _try_proxy_arp(self, datapath, in_port, arp_pkt):
+    def _try_proxy_arp(self, datapath, in_port, arp_pkt, vlan_id):
         """Answer an ARP request from the controller. True if answered."""
 
         if arp_pkt.dst_ip == arp_pkt.src_ip:
@@ -1267,19 +1547,21 @@ class TopologyMonitor(app_manager.RyuApp):
 
         target_mac = self.ip_to_mac.get(arp_pkt.dst_ip)
 
-        if target_mac is None or target_mac not in self.host_location:
+        if (target_mac is None or target_mac not in self.host_location
+                or self.ip_vlan.get(arp_pkt.dst_ip) != vlan_id
+                or self.mac_vlan.get(target_mac) != vlan_id):
             return False
 
         self._send_arp_reply(
             datapath, in_port,
             arp_pkt.src_mac, arp_pkt.src_ip,
-            target_mac, arp_pkt.dst_ip)
+            target_mac, arp_pkt.dst_ip, vlan_id)
 
         return True
 
     def _send_arp_reply(self, datapath, out_port,
                         requester_mac, requester_ip,
-                        target_mac, target_ip):
+                        target_mac, target_ip, vlan_id):
 
         pkt = packet.Packet()
 
@@ -1294,27 +1576,52 @@ class TopologyMonitor(app_manager.RyuApp):
 
         pkt.serialize()
 
-        parser = datapath.ofproto_parser
-        ofproto = datapath.ofproto
-
-        datapath.send_msg(parser.OFPPacketOut(
-            datapath=datapath,
-            buffer_id=ofproto.OFP_NO_BUFFER,
-            in_port=ofproto.OFPP_CONTROLLER,
-            actions=[parser.OFPActionOutput(out_port)],
-            data=pkt.data))
+        self._send_packet_out_bytes(
+            datapath, datapath.ofproto.OFPP_CONTROLLER, out_port,
+            pkt.data, vlan_id, data_has_vlan=False)
 
     # ============================================================
     # Broadcast / unknown unicast  (CLFF)
     # ============================================================
 
-    def _flood_ethernet(self, datapath, msg, in_port):
+    def _port_allows_vlan(self, dpid, port_no, vlan_id):
+        entry = self.vlan_port_map.get((int(dpid), int(port_no)))
+        if entry is None:
+            return False
+        if entry["kind"] == "trunk":
+            return vlan_id in entry["allowed_vlans"]
+        return entry["vlan_id"] == vlan_id
+
+    def _flow_output_actions(self, datapath, in_port, out_port, vlan_id):
+        """Build fail-closed VLAN-aware actions for one installed flow hop."""
+        dpid = int(datapath.id)
+        ingress = self.vlan_port_map.get((dpid, int(in_port)))
+        egress = self.vlan_port_map.get((dpid, int(out_port)))
+        if (ingress is None or egress is None
+                or not self._port_allows_vlan(dpid, in_port, vlan_id)
+                or not self._port_allows_vlan(dpid, out_port, vlan_id)):
+            return None
+
+        parser = datapath.ofproto_parser
+        data_has_vlan = ingress["kind"] == "trunk"
+        actions = []
+        if egress["kind"] == "trunk" and not data_has_vlan:
+            actions.extend((
+                parser.OFPActionPushVlan(0x8100),
+                parser.OFPActionSetField(vlan_vid=OFPVID_PRESENT | vlan_id),
+            ))
+        elif egress["kind"] == "access" and data_has_vlan:
+            actions.append(parser.OFPActionPopVlan())
+        actions.append(parser.OFPActionOutput(int(out_port)))
+        return actions
+
+    def _flood_ethernet(self, datapath, msg, in_port, vlan_id):
 
         dpid = datapath.id
 
         self._cleanup_clff_packet_state()
 
-        key = self._get_clff_packet_key(msg)
+        key = (vlan_id, self._get_clff_packet_key(msg))
         state = self.clff_packet_state.get(key)
 
         if state is None:
@@ -1369,10 +1676,14 @@ class TopologyMonitor(app_manager.RyuApp):
                 "CLFF unusable on s%d (root=s%d): host ports only",
                 dpid, root)
 
+        ports = {
+            port_no for port_no in ports
+            if self._port_allows_vlan(dpid, port_no, vlan_id)
+        }
         if not ports:
             return
 
-        self._packet_out(datapath, msg, sorted(ports))
+        self._packet_out(datapath, msg, sorted(ports), vlan_id)
 
     def _collect_host_ports(self, dpid, in_port):
 
@@ -1545,12 +1856,17 @@ class TopologyMonitor(app_manager.RyuApp):
     # Flow installation
     # ============================================================
 
-    def _install_path(self, path, src_mac, dst_mac):
+    def _install_path(self, path, src_mac, dst_mac, vlan_id=None):
         """
         Install priority-100 rules along `path`, INCLUDING the last hop
         to the destination host port. The reverse direction is installed
         only when the path starts on the source host's switch.
         """
+
+        if vlan_id is None:
+            vlan_id = self.mac_vlan.get(src_mac)
+        if vlan_id not in ALLOWED_VLANS:
+            return False
 
         dst_loc = self.host_location.get(dst_mac)
         src_loc = self.host_location.get(src_mac)
@@ -1563,17 +1879,20 @@ class TopologyMonitor(app_manager.RyuApp):
         if path[-1] != dst_dpid:
             return False
 
-        self._install_direction(path, src_mac, dst_mac, dst_port)
+        self._install_direction(path, src_mac, dst_mac, dst_port, vlan_id)
 
         if src_loc is not None and src_loc[0] == path[0]:
             self._install_direction(
-                list(reversed(path)), dst_mac, src_mac, src_loc[1])
+                list(reversed(path)), dst_mac, src_mac, src_loc[1], vlan_id)
 
         return True
 
-    def _install_direction(self, path, eth_src, eth_dst, final_port):
+    def _install_direction(self, path, eth_src, eth_dst, final_port, vlan_id):
 
         hops = []
+        src_loc = self.host_location.get(eth_src)
+        if src_loc is None:
+            return False
 
         for i in range(len(path) - 1):
             link = self.link_to_port.get((path[i], path[i + 1]))
@@ -1583,42 +1902,69 @@ class TopologyMonitor(app_manager.RyuApp):
                     "Missing port mapping s%d->s%d", path[i], path[i + 1])
                 return False
 
-            hops.append((path[i], link[0]))
+            ingress_port = src_loc[1] if i == 0 else self.link_to_port[(path[i - 1], path[i])][1]
+            hops.append((path[i], ingress_port, link[0]))
 
-        hops.append((path[-1], final_port))
+        last_ingress = src_loc[1] if len(path) == 1 else self.link_to_port[(path[-2], path[-1])][1]
+        hops.append((path[-1], last_ingress, final_port))
 
-        for dpid, out_port in hops:
-
+        flow_rules = []
+        for dpid, in_port, out_port in hops:
             datapath = self.datapaths.get(dpid)
-
             if datapath is None:
-                continue
+                self.logger.warning("Cannot install path: s%d is disconnected", dpid)
+                return False
 
             parser = datapath.ofproto_parser
+            actions = self._flow_output_actions(
+                datapath, in_port, out_port, vlan_id)
+            if actions is None:
+                self.logger.warning(
+                    "Cannot install VLAN %d path on s%d:%d -> %d",
+                    vlan_id, dpid, in_port, out_port)
+                return False
+            match = parser.OFPMatch(
+                in_port=in_port, eth_src=eth_src, eth_dst=eth_dst,
+                vlan_vid=OFPVID_PRESENT | vlan_id)
+            flow_rules.append((datapath, match, actions))
 
-            match = parser.OFPMatch(eth_src=eth_src, eth_dst=eth_dst)
-
+        for datapath, match, actions in flow_rules:
             self._add_flow(
-                datapath, REROUTE_PRIORITY, match,
-                [parser.OFPActionOutput(out_port)],
+                datapath, REROUTE_PRIORITY, match, actions,
                 idle_timeout=HOST_FLOW_IDLE_TIMEOUT,
                 hard_timeout=HOST_FLOW_HARD_TIMEOUT,
-                track_key=("path", eth_src, eth_dst))
+                track_key=("path", vlan_id, eth_src, eth_dst))
 
         return True
 
-    def _install_output_flow(self, datapath, in_port, dst_mac, out_port):
+    def _install_output_flow(self, datapath, in_port, dst_mac, out_port, vlan_id):
 
         parser = datapath.ofproto_parser
 
-        match = parser.OFPMatch(in_port=in_port, eth_dst=dst_mac)
+        src_mac = None
+        for mac, location in self.host_location.items():
+            if location == (datapath.id, in_port):
+                src_mac = mac
+                break
+        if src_mac is None:
+            return
+        match = parser.OFPMatch(
+            in_port=in_port, eth_src=src_mac, eth_dst=dst_mac,
+            vlan_vid=OFPVID_PRESENT | vlan_id)
+
+        actions = self._flow_output_actions(
+            datapath, in_port, out_port, vlan_id)
+        if actions is None:
+            self.logger.warning(
+                "Cannot install VLAN %d output flow on s%d:%d -> %d",
+                vlan_id, datapath.id, in_port, out_port)
+            return
 
         self._add_flow(
-            datapath, NORMAL_PRIORITY, match,
-            [parser.OFPActionOutput(out_port)],
+            datapath, NORMAL_PRIORITY, match, actions,
             idle_timeout=HOST_FLOW_IDLE_TIMEOUT,
             hard_timeout=HOST_FLOW_HARD_TIMEOUT,
-            track_key=("out", in_port, dst_mac))
+            track_key=("out", vlan_id, in_port, src_mac, dst_mac))
 
     def _add_flow(self, datapath, priority, match, actions,
                   idle_timeout=0, hard_timeout=0, track_key=None):
@@ -1639,22 +1985,40 @@ class TopologyMonitor(app_manager.RyuApp):
             self.installed_flows[
                 (datapath.id, priority, track_key)] = match
 
-    def _packet_out(self, datapath, msg, out_port):
+    def _packet_out(self, datapath, msg, out_port, vlan_id):
+        in_port = int(msg.match["in_port"])
+        ingress = self.vlan_port_map.get((int(datapath.id), in_port), {})
+        data_has_vlan = ingress.get("kind") == "trunk"
+        ports = out_port if isinstance(out_port, (list, tuple, set)) else [out_port]
+        self._send_packet_out_bytes(
+            datapath, in_port, ports, msg.data, vlan_id,
+            data_has_vlan=data_has_vlan)
 
+    def _send_packet_out_bytes(self, datapath, in_port, out_ports,
+                               data, vlan_id, data_has_vlan):
         parser = datapath.ofproto_parser
         ofproto = datapath.ofproto
-
-        if isinstance(out_port, (list, tuple, set)):
-            actions = [parser.OFPActionOutput(p) for p in out_port]
-        else:
-            actions = [parser.OFPActionOutput(out_port)]
-
-        datapath.send_msg(parser.OFPPacketOut(
-            datapath=datapath,
-            buffer_id=ofproto.OFP_NO_BUFFER,
-            in_port=msg.match["in_port"],
-            actions=actions,
-            data=msg.data))
+        if not isinstance(out_ports, (list, tuple, set)):
+            out_ports = [out_ports]
+        for port_no in out_ports:
+            if not self._port_allows_vlan(datapath.id, port_no, vlan_id):
+                continue
+            entry = self.vlan_port_map[(int(datapath.id), int(port_no))]
+            actions = []
+            if entry["kind"] == "trunk" and not data_has_vlan:
+                actions.extend((
+                    parser.OFPActionPushVlan(0x8100),
+                    parser.OFPActionSetField(vlan_vid=OFPVID_PRESENT | vlan_id),
+                ))
+            elif entry["kind"] == "access" and data_has_vlan:
+                actions.append(parser.OFPActionPopVlan())
+            actions.append(parser.OFPActionOutput(int(port_no)))
+            datapath.send_msg(parser.OFPPacketOut(
+                datapath=datapath,
+                buffer_id=ofproto.OFP_NO_BUFFER,
+                in_port=in_port,
+                actions=actions,
+                data=data))
 
     # ============================================================
     # PortStats sampler
@@ -1825,12 +2189,15 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _send_lldp_once(self):
 
-        if lldp is None:
+        if lldp is None or not self.vlan_map_ready:
             return
 
         for dpid, datapath in list(self.datapaths.items()):
 
             for port_no in self._get_valid_physical_ports(dpid):
+                entry = self.vlan_port_map.get((int(dpid), int(port_no)))
+                if entry is None or entry["kind"] != "trunk":
+                    continue
 
                 try:
                     self._send_lldp(datapath, port_no)
@@ -1850,7 +2217,10 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _send_lldp(self, datapath, port_no):
 
-        if lldp is None:
+        if lldp is None or not self.vlan_map_ready:
+            return
+        entry = self.vlan_port_map.get((int(datapath.id), int(port_no)))
+        if entry is None or entry["kind"] != "trunk":
             return
 
         dpid = datapath.id
@@ -2156,7 +2526,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
         return {
             mac: {
-                "ip": self.mac_to_ip.get(mac),
+"ip": self.mac_to_ip.get(mac),
                 "dpid": loc[0],
                 "port": loc[1],
             }
