@@ -168,3 +168,9 @@ traffic_features.csv
 New_Datasets/raw/
 New_Datasets/processed/*.csv
 old_dataset_backup_before_new_pipeline/
+
+# Local ML model artifacts
+*.joblib
+
+# ML models stay local
+*.joblib
