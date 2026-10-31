@@ -4,8 +4,8 @@
 This file is the Mininet implementation of
 SECUREIOT_TARGET_DESIGN_38HOSTS_FINAL.md.
 
-Run Ryu first with EXPECTED_SWITCHES=6 and EXPECTED_PHYSICAL_LINKS=11.
-The topology creates a Linux gateway node with five zone interfaces and
+Run Ryu first with EXPECTED_SWITCHES=6 and EXPECTED_PHYSICAL_LINKS=12.
+The topology creates a Linux gateway node with one 802.1Q trunk and
 installs a conservative inter-zone iptables policy. VLAN access/trunk
 programming is kept explicit in configure_ovs_zones so it can be audited
 against the VLAN-aware Ryu forwarding implementation before production tests.
@@ -36,7 +36,9 @@ from mininet.node import OVSSwitch, RemoteController
 from mininet.topo import Topo
 
 from configure_gateway import configure_gateway
-from vlan_config_38host import HOSTS, INTER_SWITCH_LINKS, NETWORKS, host_cidr, gateway_for
+from vlan_config_38host import (
+    HOSTS, INTER_SWITCH_LINKS, NETWORKS, SWITCH_NAMES, host_cidr, gateway_for,
+)
 
 
 RYU_IP = os.getenv("RYU_IP", "127.0.0.1")
@@ -51,7 +53,7 @@ VLAN_PORT_MAP_FILE = os.getenv(
 class SecureIoT38Topo(Topo):
     def build(self):
         switches = {name: self.addSwitch(name, cls=OVSSwitch)
-                    for name in ("s1", "s2", "s3", "s4", "s5", "s6")}
+                    for name in SWITCH_NAMES}
         gateway = self.addHost("gw", ip=None)
 
         for host_id, spec in HOSTS.items():
@@ -62,10 +64,8 @@ class SecureIoT38Topo(Topo):
             )
             self.addLink(host, switches[spec["switch"]])
 
-        # Five routed zone interfaces. Interface order is stable because these
-        # links are created in this order: IoT, services, DNS, management, employees.
-        for zone_switch in ("s3", "s2", "s2", "s6", "s5"):
-            self.addLink(gateway, switches[zone_switch])
+        # One tagged trunk carries all five VLANs to Linux VLAN subinterfaces.
+        self.addLink(gateway, switches["s3"])
 
         for left, right in INTER_SWITCH_LINKS:
             self.addLink(switches[left], switches[right])
@@ -144,19 +144,10 @@ def _write_vlan_port_map(net):
     for host_id, spec in HOSTS.items():
         add_record(net.get(spec["switch"]), net.get(host_id), "access", spec["vlan"])
 
-    gateway_zones = (
-        ("gw-eth0", "s3", 10),
-        ("gw-eth1", "s2", 20),
-        ("gw-eth2", "s2", 30),
-        ("gw-eth3", "s6", 40),
-        ("gw-eth4", "s5", 50),
-    )
     gateway = net.get("gw")
-    for gateway_intf, switch_name, vlan_id in gateway_zones:
-        switch = net.get(switch_name)
-        add_record(
-            switch, gateway, "access", vlan_id,
-            role="gateway", node_intf_name=gateway_intf)
+    add_record(
+        net.get("s3"), gateway, "trunk", role="gateway",
+        node_intf_name="gw-eth0")
 
     for left_name, right_name in INTER_SWITCH_LINKS:
         left, right = net.get(left_name), net.get(right_name)
@@ -168,8 +159,8 @@ def _write_vlan_port_map(net):
         raise RuntimeError("duplicate switch/port in VLAN map")
     access_count = sum(row["kind"] == "access" for row in records)
     trunk_count = sum(row["kind"] == "trunk" for row in records)
-    if (len(HOSTS) != 38 or access_count != 43 or trunk_count != 22
-            or len(records) != 65 or len(allowed_vlans) != 5):
+    if (len(HOSTS) != 38 or access_count != 38 or trunk_count != 25
+            or len(records) != 63 or len(allowed_vlans) != 5):
         raise RuntimeError(
             "unexpected VLAN map size: hosts=%d access=%d trunks=%d vlans=%d"
             % (len(HOSTS), access_count, trunk_count, len(allowed_vlans))
@@ -179,7 +170,7 @@ def _write_vlan_port_map(net):
         "schema_version": 2,
         "topology_id": uuid.uuid4().hex,
         "expected_switches": 6,
-        "expected_inter_switch_links": 11,
+        "expected_inter_switch_links": 12,
         "host_count": len(HOSTS),
         "allowed_vlans": allowed_vlans,
         "networks": {str(key): value for key, value in NETWORKS.items()},
@@ -219,31 +210,20 @@ def configure_ovs_zones(net):
         if result.strip():
             info("[vlan] %s", result)
 
-    # Configure each gateway-facing link as an access port for its zone.
-    # The gateway uses one untagged Linux interface per VLAN, so these OVS
-    # ports must add/remove the VLAN tag at the switch boundary.
-    gateway_zones = (
-        ("gw-eth0", "s3", 10),  # IoT
-        ("gw-eth1", "s2", 20),  # Services
-        ("gw-eth2", "s2", 30),  # DNS
-        ("gw-eth3", "s6", 40),  # IT management
-        ("gw-eth4", "s5", 50),  # Employees
-    )
+    # Configure one Core-to-gateway 802.1Q trunk for all five VLANs.
+    trunk_vlans = ",".join(str(vlan) for vlan in sorted(NETWORKS))
     gateway = net.get("gw")
-    for gateway_intf_name, switch_name, vlan in gateway_zones:
-        switch = net.get(switch_name)
-        switch_intf = _switch_interface_for_node_interface(
-            switch, gateway, gateway_intf_name)
-        result = switch.cmd(
-            f"ovs-vsctl set Port {switch_intf.name} tag={vlan} trunks=[]"
-        )
-        if result.strip():
-            info("[vlan] %s", result)
+    core = net.get("s3")
+    core_intf = _switch_interface_for_node_interface(core, gateway, "gw-eth0")
+    result = core.cmd(
+        f"ovs-vsctl set Port {core_intf.name} tag=[] trunks={trunk_vlans}"
+    )
+    if result.strip():
+        info("[trunk] gateway %s", result)
 
     # Configure every inter-switch link as an 802.1Q trunk. Without this,
     # access VLANs remain local to a switch and same-VLAN hosts on different
     # switches cannot communicate.
-    trunk_vlans = ",".join(str(vlan) for vlan in sorted(NETWORKS))
     for left_name, right_name in INTER_SWITCH_LINKS:
         left = net.get(left_name)
         right = net.get(right_name)
@@ -291,7 +271,8 @@ def start_iot_simulators(net):
 
 def print_inventory():
     info("\n=== SecureIoT 38-host topology ===\n")
-    info("Switches: s1-s6 | inter-switch links: 11\n")
+    info("Switches: s1,s2,s3,s4,s5,s6 | inter-switch links: 12\n")
+    info("Gateway: one 802.1Q trunk to Core s3 carrying VLANs 10,20,30,40,50\n")
     info("VLAN 10 IoT:          10.10.10.0/24\n")
     info("VLAN 20 Services:     10.10.20.0/24\n")
     info("VLAN 30 DNS:          10.10.30.0/24\n")

@@ -144,6 +144,12 @@ from zero_trust.zero_trust_decision import ZeroTrustDecision
 
 from topology_monitor import EventRerouteHost
 
+# Shadow-only API client. It must never enforce a returned verdict.
+try:
+    from shadow_api_client import submit_flow_live
+except ImportError:
+    submit_flow_live = None
+
 
 # =============================================================
 # CONSTANTS
@@ -170,6 +176,7 @@ ACTIVE_RUN_FILE = Path(os.environ.get("SECUREIOT_ACTIVE_RUN_FILE", str(PROJECT_R
 RAW_DATA_ROOT = Path(os.environ.get("SECUREIOT_RAW_DATA_ROOT", str(PROJECT_ROOT / "New_Datasets" / "raw"))).expanduser().resolve()
 PACKET_DATA_DIR = RAW_DATA_ROOT / "packet"
 FLOW_DATA_DIR = RAW_DATA_ROOT / "flow"
+SHADOW_API_DATA_DIR = RAW_DATA_ROOT / "shadow_api"
 DATASET_RUN_LEDGER = RAW_DATA_ROOT / ".dataset_run_ids.jsonl"
 PACKET_HEADER = [
     "run_id", "observation_id", "timestamp", "switch_dpid", "in_port",
@@ -1259,10 +1266,11 @@ class TrafficMonitorMerged(
             if not dst_ip and dst_mac:
                 dst_ip = self.mac_to_ip.get(dst_mac, "")
 
-            protocol = match.get(
-                "ip_proto",
-                ""
-            )
+            protocol = match.get("ip_proto", "")
+            try:
+                protocol_number = int(protocol)
+            except (TypeError, ValueError):
+                protocol_number = -1
 
             src_port = ""
             dst_port = ""
@@ -1271,7 +1279,7 @@ class TrafficMonitorMerged(
             # TCP
             # -------------------------------------------------
 
-            if protocol == 6:
+            if protocol_number == 6:
 
                 src_port = match.get(
                     "tcp_src",
@@ -1287,7 +1295,7 @@ class TrafficMonitorMerged(
             # UDP
             # -------------------------------------------------
 
-            elif protocol == 17:
+            elif protocol_number == 17:
 
                 src_port = match.get(
                     "udp_src",
@@ -1448,7 +1456,7 @@ class TrafficMonitorMerged(
             # Write feature row.
             # -------------------------------------------------
 
-            self._write_flow_feature_locked([
+            flow_row_written = self._write_flow_feature_locked([
                 now,
                 dpid,
                 src_ip,
@@ -1464,9 +1472,43 @@ class TrafficMonitorMerged(
                 duration_sec,
                 byte_count / max(packet_count, 1),
                 0, 0, 0, 0, 0.0, 0.0, 0, 0,
-                float(protocol == 6), float(protocol == 17), float(protocol == 1),
+                float(protocol_number == 6), float(protocol_number == 17), float(protocol_number == 1),
                 "switch_flow_stats", src_mac, dst_mac
             ], run)
+
+            # Shadow API is telemetry-only. Submit only a single valid TCP/UDP
+            # destination port; never select an arbitrary port from an ambiguous flow.
+            if (flow_row_written
+                   and submit_flow_live is not None
+                   and protocol_number in (6, 17)
+                   and src_ip and dst_ip and time_delta > 0 and packet_delta > 0):
+                try:
+                    destination_port = int(dst_port)
+                except (TypeError, ValueError):
+                    destination_port = 0
+                if 1 <= destination_port <= 65535:
+                    try:
+                        queued = submit_flow_live({
+                            "run_id": run["run_id"],
+                            "observation_id": "%s_switch_%d_%s" % (
+                                run["run_id"], dpid, uuid.uuid4().hex),
+                            "src_ip": str(src_ip),
+                            "dst_ip": str(dst_ip),
+                            "dst_port": destination_port,
+                            "protocol": "TCP" if protocol_number == 6 else "UDP",
+                            "ip_proto": protocol_number,
+                            "packet_count": int(packet_delta),
+                            "byte_count": int(byte_delta),
+                            "packet_rate": float(packet_rate),
+                            "byte_rate": float(byte_rate),
+                            "duration_sec": float(max(time_delta, 0.001)),
+                            "switch_dpid": int(dpid),
+                            "priority": int(stat.priority),
+                        })
+                        if not queued:
+                            self.logger.debug("Shadow API did not queue switch-flow observation")
+                    except Exception as exc:
+                        self.logger.warning("Shadow API switch-flow submission failed: %s", exc)
     def _flush_packet_flow_windows_locked(self, run=None):
         """Flush windows while dataset_lock is already held."""
         for key, state in list(self.packet_flow_windows.items()):
@@ -1506,7 +1548,7 @@ class TrafficMonitorMerged(
             if self.flow_rows_since_flush >= CSV_FLUSH_EVERY:
                 self.flow_file.flush()
                 self.flow_rows_since_flush = 0
-        return True
+        return observation_id
     def _get_topology_monitor(self):
 
         if self.topology_monitor is not None:
@@ -2001,6 +2043,7 @@ class TrafficMonitorMerged(
             RAW_DATA_ROOT.mkdir(parents=True, exist_ok=True)
             PACKET_DATA_DIR.mkdir(parents=True, exist_ok=True)
             FLOW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            SHADOW_API_DATA_DIR.mkdir(parents=True, exist_ok=True)
             packet_ids = self._validate_run_files(PACKET_DATA_DIR, PACKET_HEADER)
             flow_ids = self._validate_run_files(FLOW_DATA_DIR, FLOW_HEADER)
             if packet_ids != flow_ids:
@@ -2505,7 +2548,10 @@ class TrafficMonitorMerged(
                 or protocol not in (1, 6, 17)):
             return
         identity = (run["run_id"], run["generation"])
-        key = identity + (dpid, str(src_addr), str(dst_addr), protocol)
+        key = identity + (
+            dpid, str(src_addr), str(dst_addr), protocol,
+            str(src_port or ""), str(dst_port or ""),
+        )
         state = self.packet_flow_windows.get(key)
         if state is None or now - state["start_time"] >= PACKET_FLOW_WINDOW:
             if state is not None:
@@ -2529,7 +2575,7 @@ class TrafficMonitorMerged(
     def _write_packet_flow_window(self, key, state, lock_held=False):
         if not state or state["packet_count"] <= 0:
             return False
-        _, _, dpid, src_ip, dst_ip, protocol = key
+        _, _, dpid, src_ip, dst_ip, protocol, _, _ = key
         run = state["run"]
         if self.dataset_run is not run or run["state"] not in ("active", "draining"):
             return False
@@ -2547,8 +2593,50 @@ class TrafficMonitorMerged(
                max(syn - ack, 0), float(protocol == 6), float(protocol == 17),
                float(protocol == 1), "packetin_window", "", ""]
         if lock_held:
-            return self._write_flow_feature_locked(row, run)
-        return self._write_flow_feature(row, run)
+            written = self._write_flow_feature_locked(row, run)
+        else:
+            written = self._write_flow_feature(row, run)
+        if not written:
+            return False
+
+        # Submit only complete TCP/UDP observations. The API client queues
+        # telemetry asynchronously; its verdict never controls enforcement.
+        if protocol in (6, 17) and submit_flow_live is not None:
+            try:
+                source_port = int(next(iter(state["src_ports"])))
+                destination_port = int(next(iter(state["dst_ports"])))
+            except (StopIteration, TypeError, ValueError):
+                source_port = destination_port = 0
+
+            if (1 <= source_port <= 65535
+                    and 1 <= destination_port <= 65535):
+                try:
+                    queued = submit_flow_live({
+                        "run_id": run["run_id"],
+                        "observation_id": written,
+                        "src_ip": str(src_ip),
+                        "dst_ip": str(dst_ip),
+                        "dst_port": destination_port,
+                        "protocol": "TCP" if protocol == 6 else "UDP",
+                        "ip_proto": int(protocol),
+                        "packet_count": int(packets),
+                        "byte_count": int(byte_count),
+                        "packet_rate": float(packets / duration),
+                        "byte_rate": float(byte_count / duration),
+                        "duration_sec": float(duration),
+                        "switch_dpid": int(dpid),
+                        "priority": 0,
+                    })
+                    if not queued:
+                        self.logger.debug(
+                            "Shadow API did not queue PacketIn observation"
+                        )
+                except Exception as exc:
+                    self.logger.warning(
+                        "Shadow API PacketIn submission failed: %s", exc
+                    )
+
+        return True
     def _flow_stats_loop(self):
         while True:
             try:

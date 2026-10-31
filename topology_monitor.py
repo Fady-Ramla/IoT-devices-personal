@@ -73,7 +73,8 @@ LLDP_STALE_TIMEOUT = 9          # 3 x interval (PortStatus is the fast path)
 LLDP_MAC = "01:80:c2:00:00:0e"
 
 EXPECTED_SWITCHES = int(os.getenv("EXPECTED_SWITCHES", "6"))
-EXPECTED_PHYSICAL_LINKS = int(os.getenv("EXPECTED_PHYSICAL_LINKS", "11"))
+EXPECTED_PHYSICAL_LINKS = int(os.getenv("EXPECTED_PHYSICAL_LINKS", "12"))
+EXPECTED_SWITCH_NAMES = {"s1", "s2", "s3", "s4", "s5", "s6"}
 EXPECTED_VLAN_NETWORKS = {
     10: "10.10.10.0/24",
     20: "10.10.20.0/24",
@@ -300,6 +301,8 @@ class TopologyMonitor(app_manager.RyuApp):
 
                     port_map = {}
                     access_count = trunk_count = endpoint_count = gateway_count = 0
+                    inter_switch_trunk_count = gateway_trunk_count = 0
+                    gateway_trunk_switches = set()
                     endpoint_vlan_counts = {vlan_id: 0 for vlan_id in ALLOWED_VLANS}
                     gateway_vlan_counts = {vlan_id: 0 for vlan_id in ALLOWED_VLANS}
                     switch_names_by_dpid = {}
@@ -307,7 +310,7 @@ class TopologyMonitor(app_manager.RyuApp):
                     for row in payload.get("ports", []):
                         dpid, port_no = int(row["dpid"]), int(row["port_no"])
                         switch_name = str(row.get("switch", ""))
-                        if not re.fullmatch(r"s[1-6]", switch_name):
+                        if switch_name not in EXPECTED_SWITCH_NAMES:
                             raise ValueError("invalid switch identity in VLAN map")
                         if (dpid in switch_names_by_dpid and switch_names_by_dpid[dpid] != switch_name) or (
                             switch_name in dpids_by_switch_name and dpids_by_switch_name[switch_name] != dpid
@@ -342,18 +345,32 @@ class TopologyMonitor(app_manager.RyuApp):
                             allowed = frozenset(int(value) for value in row["allowed_vlans"])
                             if allowed != ALLOWED_VLANS or row.get("vlan_id") is not None:
                                 raise ValueError("trunk VLAN set mismatch")
-                            entry = {"kind": kind, "vlan_id": None, "allowed_vlans": allowed}
+                            role = row.get("role", "endpoint")
+                            if role not in ("endpoint", "gateway"):
+                                raise ValueError("invalid trunk-port role")
+                            entry = {
+                                "kind": kind, "role": role, "vlan_id": None,
+                                "allowed_vlans": allowed,
+                            }
                             trunk_count += 1
+                            if role == "gateway":
+                                gateway_trunk_count += 1
+                                gateway_trunk_switches.add(switch_name)
+                            else:
+                                inter_switch_trunk_count += 1
                         port_map[key] = entry
 
                     dpids = {dpid for dpid, _port in port_map}
-                    if (len(dpids) != EXPECTED_SWITCHES or access_count != 43
-                            or endpoint_count != 38 or gateway_count != 5
-                            or trunk_count != EXPECTED_PHYSICAL_LINKS * 2
-                            or len(port_map) != 65
-                            or set(switch_names_by_dpid.values()) != {"s1", "s2", "s3", "s4", "s5", "s6"}
+                    if (len(dpids) != EXPECTED_SWITCHES or access_count != 38
+                            or endpoint_count != 38 or gateway_count != 0
+                            or gateway_trunk_count != 1
+                            or gateway_trunk_switches != {"s3"}
+                            or inter_switch_trunk_count != EXPECTED_PHYSICAL_LINKS * 2
+                            or trunk_count != EXPECTED_PHYSICAL_LINKS * 2 + 1
+                            or len(port_map) != 38 + EXPECTED_PHYSICAL_LINKS * 2 + 1
+                            or set(switch_names_by_dpid.values()) != EXPECTED_SWITCH_NAMES
                             or endpoint_vlan_counts != EXPECTED_ENDPOINTS_BY_VLAN
-                            or gateway_vlan_counts != {vlan_id: 1 for vlan_id in ALLOWED_VLANS}):
+                            or gateway_vlan_counts != {vlan_id: 0 for vlan_id in ALLOWED_VLANS}):
                         raise ValueError("port-map inventory count mismatch")
 
                     if self.vlan_map_ready:
