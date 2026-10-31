@@ -577,7 +577,7 @@ def build_attack_spec(attack_type, dst_ip, parameters):
         raise ValueError('unknown attack type: ' + attack_type)
     return dict(command=command, dst_port=str(port), src_port='*', protocol='TCP',
                 service_name=service, rate_value=rate, duration_sec=duration,
-                accepted_returncodes=(0, 124), notes=json.dumps(notes, sort_keys=True))
+                accepted_returncodes=((0,) if attack_type == 'port_scan' else (0, 124)), notes=json.dumps(notes, sort_keys=True))
 
 
 class AttackCLI(CLI):
@@ -758,7 +758,10 @@ def run():
             start_demo_services(net)
         if not batch_path and os.getenv("START_IOT_SIMULATORS", "0") == "1":
             if os.getenv("START_DEMO_SERVICES", "0") != "1":
-                info("*** WARNING: IoT simulators need the demo Web/API service; set START_DEMO_SERVICES=1\n")
+                raise RuntimeError(
+                    "START_IOT_SIMULATORS=1 requires START_DEMO_SERVICES=1 "
+                    "because telemetry is sent to the demo Web/API on h2:5000"
+                )
             start_iot_simulators(net)
         print_inventory()
         if batch_path:
