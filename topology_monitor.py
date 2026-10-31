@@ -2462,7 +2462,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 installed = self._install_path(
                     new_path,
                     src_mac,
-                    dst_mac
+                    dst_mac,
+                    flow.get("vlan_id")
                 )
             except Exception:
                 self.logger.exception(
