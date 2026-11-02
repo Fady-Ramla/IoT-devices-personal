@@ -61,7 +61,7 @@ curl -H "Authorization: Bearer $SECUREIOT_API_TOKEN" \
 
 The checked-out `IoT-devices-personal` repository currently contains the network/controller and Mininet components but no discoverable frontend package or dashboard-origin configuration. Therefore, this integration supplies and tests the network-side API contract; a separate dashboard repository or its server-side proxy configuration is still needed to wire the user-facing WebTrack dashboard without exposing the bearer token in the browser bundle. Do not open a public tunnel until authentication is enabled and the tunnel is protected; keep internal controller action and dataset routes private.
 
-The read-only API smoke test is `test_network_api.sh`. It accepts `API_TOKEN` and `BASE_URL`; it derives `EXPECTED_LINKS` from the checked-out topology configuration (12 on `iot-simulator-integration`, 11 on `core-s3-trunk-test`). It does not POST telemetry through a public tunnel. The end-to-end write test is the Mininet `iot_test` command above.
+The read-only API smoke test is `test_network_api.sh`. It accepts `API_TOKEN` and `BASE_URL`; it derives `EXPECTED_LINKS` from the checked-out `mininet/vlan_config_38host.py` file. The active Mininet configuration currently defines 12 inter-switch links on both branches. It does not POST telemetry through a public tunnel. The end-to-end write test is the Mininet `iot_test` command above.
 
 ## Data boundaries and known limitations
 
