@@ -85,3 +85,10 @@ mininet> sh ovs-ofctl -O OpenFlow13 dump-flows s1 | grep priority=50000
 ## حدود يجب معرفتها
 
 سجل الأجهزة المحظورة محفوظ في ذاكرة Ryu؛ يستمر عند تنقّل الجهاز بين السويتشات وعند اتصال سويتش جديد **ما دام Ryu يعمل**، لكنه لا يبقى بعد إعادة تشغيل عملية Ryu. كما أن MAC قابل للانتحال؛ إذا كان مطلوبًا منع مهاجم يغيّر MAC أيضًا، فستحتاجون لاحقًا إلى ربط الهوية بطريقة أقوى مثل NAC/802.1X أو سجل أجهزة موثوق.
+
+
+## Live Mininet IoT telemetry and dashboard API
+
+The interactive 38-host demo can run the real Flask Web/API on `h2:5000`, persist simulator readings in a shared SQLite database, and expose authenticated reads through the Ryu runtime API on loopback port `8080`. It is separate from the dataset batch collector. The Network API requires a bearer token on operational routes and uses exact-origin opt-in CORS; never expose it through a public tunnel without authentication.
+
+See [the end-to-end integration guide](docs/SECUREIOT_NETWORK_API_INTEGRATION_GUIDE.md) for startup steps and security requirements. In the Mininet CLI, run `iot_test` to send a probe from `h5` through `h2` and verify it via Ryu. Run `python3 -m unittest -v tests/test_iot_telemetry_store.py tests/test_iot_simulator_auth.py tests/test_topology_inventory.py` for the storage tests and `API_TOKEN=... BASE_URL=... ./test_network_api.sh` for the read-only API contract checks.

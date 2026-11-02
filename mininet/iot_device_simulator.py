@@ -10,6 +10,7 @@ Ryu/traffic_monitor_merged.py. This program does not generate attack traffic.
 import argparse
 import json
 import logging
+import os
 import random
 import time
 import urllib.error
@@ -88,12 +89,11 @@ def telemetry_for(role, device_id):
 
 def send_telemetry(url, payload):
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={"Content-Type": "application/json", "User-Agent": "SecureIoT-Lab-Simulator/1.0"},
-        method="POST",
-    )
+    headers = {"Content-Type": "application/json", "User-Agent": "SecureIoT-Lab-Simulator/1.0"}
+    token = os.environ.get("IOT_INGEST_TOKEN", "")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     with urllib.request.urlopen(request, timeout=3) as response:
         response.read(4096)
         return response.status
