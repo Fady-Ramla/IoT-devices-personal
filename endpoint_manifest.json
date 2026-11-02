@@ -1,0 +1,65 @@
+{
+  "contract": "SecureIoT Network Dashboard API",
+  "version": "1.2",
+  "dashboard_rules": {
+    "method": "GET",
+    "response": "application/json",
+    "auth_required": true,
+    "auth_scheme": "Bearer",
+    "health_exceptions": ["/health", "/runtime/health"],
+    "cors": "opt-in exact origin configured by SECUREIOT_ALLOWED_ORIGIN",
+    "websocket": false,
+    "sse": false,
+    "version_prefix": false,
+    "public_tunnel_warning": "Do not expose without SECUREIOT_API_TOKEN and a trusted dashboard origin. Keep controller-action endpoints private."
+  },
+  "topology_source": "mininet/vlan_config_38host.py; switch and inter-switch-link counts are derived at runtime",
+  "network_endpoints": [
+    {"path": "/health", "returns": "object", "methods": ["GET"], "auth_required": false, "provider": "runtime-api"},
+    {"path": "/controller/state", "returns": "object", "poll_seconds": 5, "provider": "controller"},
+    {"path": "/controller/clff", "returns": "object", "poll_seconds": 5, "provider": "controller"},
+    {"path": "/controller/resilience", "returns": "object", "poll_seconds": 2, "provider": "events"},
+    {"path": "/topology/switches", "returns": "array", "poll_seconds": 30, "provider": "topology", "inventory_complete": true},
+    {"path": "/topology/links", "returns": "array", "poll_seconds": 30, "provider": "topology"},
+    {"path": "/topology/hosts", "returns": "array", "poll_seconds": 30, "provider": "topology", "inventory_complete": true},
+    {"path": "/topology/paths", "returns": "array", "poll_seconds": 5, "provider": "topology"},
+    {"path": "/topology/hosts/{host_id}/path", "returns": "object", "poll_seconds": 5, "provider": "topology"},
+    {"path": "/stats/desc/{dpid}", "returns": "object", "poll_seconds": 30, "provider": "openflow"},
+    {"path": "/stats/flow/{dpid}", "returns": "object", "poll_seconds": 5, "provider": "openflow"},
+    {"path": "/stats/port/{dpid}", "returns": "object", "poll_seconds": 3, "provider": "openflow"},
+    {"path": "/network/events", "returns": "array", "poll_seconds": 2, "provider": "events"},
+    {"path": "/network/vlans", "returns": "array", "poll_seconds": 30, "provider": "vlan"},
+    {"path": "/network/vlan-ports", "returns": "array", "poll_seconds": 30, "provider": "vlan"},
+    {"path": "/network/load-balancer", "returns": "object", "poll_seconds": 5, "provider": "load_balancer"},
+    {"path": "/network/load-balancer/status", "returns": "object", "poll_seconds": 5, "provider": "load_balancer"},
+    {"path": "/network/load-balancer/backends", "returns": "array", "poll_seconds": 5, "provider": "load_balancer"},
+    {"path": "/network/load-balancer/stats", "returns": "object", "poll_seconds": 5, "provider": "load_balancer"},
+    {"path": "/api/iot/devices", "returns": "array", "poll_seconds": 30, "provider": "shared-sqlite-telemetry-store", "freshness_status": "online when last_seen is within 60 seconds, otherwise stale"},
+    {"path": "/api/iot/sensors", "returns": "array", "poll_seconds": 30, "provider": "shared-sqlite-telemetry-store", "freshness_status": "online when last_seen is within 60 seconds, otherwise stale"},
+    {"path": "/api/iot/telemetry", "returns": "array/object", "methods": ["GET", "POST"], "poll_seconds": 5, "provider": "shared-sqlite-telemetry-store", "post_auth_required": true},
+    {"path": "/firewall/status", "returns": "object", "poll_seconds": 5, "provider": "topology-monitor-and-traffic-monitor"},
+    {"path": "/firewall/rules", "returns": "array", "poll_seconds": 30, "provider": "topology-monitor-and-traffic-monitor"},
+    {"path": "/firewall/events", "returns": "array", "poll_seconds": 5, "provider": "runtime-events"}
+  ],
+  "mininet_ingest": {
+    "path": "/api/iot/telemetry",
+    "host": "h2:5000",
+    "methods": ["POST"],
+    "auth": "Per-launch random bearer token plus source IPv4 10.10.10.5-10.10.10.16; device_id must match source host suffix",
+    "payload": {"device_id": "h5", "device_role": "temperature_sensor", "telemetry": {"temperature_c": 23.4, "timestamp": "ISO-8601 UTC", "sequence": 1001, "simulation": true}},
+    "success_status": 202,
+    "persistence": "SQLite database shared by the Flask receiver and Ryu API via SECUREIOT_IOT_DB"
+  },
+  "ai_track_endpoints": {
+    "status": "Not implemented by this Network API process; connect to the separate AI service when its URL and contract are available",
+    "paths": ["/trust_scores", "/alerts", "/predictions"]
+  },
+  "internal_only_endpoints": [
+    "/network/action",
+    "/security/decision",
+    "/network/link/isolate",
+    "/network/link/restore",
+    "/network/link/metric",
+    "/dataset/run"
+  ]
+}

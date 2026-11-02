@@ -18,8 +18,10 @@ import csv
 import json
 import math
 import re
+import secrets
 import shlex
 import uuid
+import urllib.parse
 import urllib.request
 from types import SimpleNamespace
 from attack_manager import (
@@ -48,6 +50,7 @@ VLAN_PORT_MAP_FILE = os.getenv(
     "SECUREIOT_VLAN_PORT_MAP",
     os.path.join(PROJECT_ROOT, "New_Datasets", "config", "vlan_port_map.json"),
 )
+LIVE_IOT_INGEST_TOKEN = ""
 
 
 class SecureIoT38Topo(Topo):
@@ -259,8 +262,9 @@ def start_iot_simulators(net):
         spec = HOSTS[host_id]
         host = net.get(host_id)
         log_path = f"/tmp/secureiot-{host_id}-iot.log"
+        token_env = ("IOT_INGEST_TOKEN=%s " % shlex.quote(LIVE_IOT_INGEST_TOKEN)) if LIVE_IOT_INGEST_TOKEN else ""
         command = (
-            f"python3 {simulator} --device-id {host_id} --role {spec['role']} "
+            f"{token_env}python3 {simulator} --device-id {host_id} --role {spec['role']} "
             f"--server {target} --port {port} --interval {interval} "
             f"> {log_path} 2>&1 &"
         )
@@ -284,21 +288,49 @@ def print_inventory():
     info("\nUseful checks: pingall, net, links, nodes, gw iptables -L -n -v\n\n")
 
 
-def start_demo_services(net):
-    """Start HTTP backends and TCP load-balancer listeners for local tests."""
+def start_live_iot_web_api(net, ingest_token):
+    """Start the real Flask Web/API on h2 with shared persistent IoT storage."""
+    host = net.get("h2")
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    server = os.path.join(project_dir, "servers", "web_api_server.py")
+    db_path = os.environ.get("SECUREIOT_IOT_DB", "/var/lib/secureiot/iot-telemetry.sqlite3")
+    host.cmd("pkill -f '[w]eb_api_server.py' >/dev/null 2>&1 || true")
+    host.cmd("sleep 0.3")
+    launch = (
+        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s WEB_API_PORT=5000 python3 %s "
+        "> /tmp/web_api_h2_iot_live.log 2>&1 &"
+        % (shlex.quote(db_path), shlex.quote(ingest_token), shlex.quote(server))
+    )
+    host.cmd(launch)
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        response = host.cmd("curl -fsS --max-time 1 http://127.0.0.1:5000/health 2>/dev/null")
+        if '"healthy"' in response:
+            info("*** Live IoT Web/API ready on h2:5000; shared store=%s\n", db_path)
+            return
+        time.sleep(0.5)
+    tail = host.cmd("tail -n 20 /tmp/web_api_h2_iot_live.log 2>/dev/null")
+    raise RuntimeError("live IoT Web/API did not become healthy on h2:5000; " + tail.strip())
+
+
+def start_demo_services(net, live_iot_api=False):
+    """Start local HTTP backends and the TCP load-balancer listener."""
+    global LIVE_IOT_INGEST_TOKEN
     project_dir = os.path.dirname(os.path.abspath(__file__))
     service_stub = os.path.join(project_dir, "service_stub.py")
     load_balancer = os.path.join(project_dir, "load_balancer.py")
-
-    for host_id, port, name in (
-        ("h2", 5000, "primary-web-api"),
-        ("h18", 5000, "backup-web-api"),
-    ):
+    if live_iot_api:
+        LIVE_IOT_INGEST_TOKEN = secrets.token_urlsafe(32)
+        start_live_iot_web_api(net, LIVE_IOT_INGEST_TOKEN)
+        stub_backends = (("h18", 5000, "backup-web-api"),)
+    else:
+        stub_backends = (("h2", 5000, "primary-web-api"),
+                         ("h18", 5000, "backup-web-api"))
+    for host_id, port, name in stub_backends:
         net.get(host_id).cmd(
             f"python3 {service_stub} --host 0.0.0.0 --port {port} --name {name} "
             f"> /tmp/{name}.log 2>&1 &"
         )
-
     lb = net.get("h38")
     lb.cmd(
         f"python3 {load_balancer} --listen-port 5000 "
@@ -614,6 +646,50 @@ class AttackCLI(CLI):
             print('Run failed; no next run was started: %s' % exc)
         return False
 
+    def do_iot_test(self, line):
+        """Send one h5 probe through h2 and verify it via the local Ryu API."""
+        token = os.environ.get("SECUREIOT_API_TOKEN", "")
+        ingest_token = LIVE_IOT_INGEST_TOKEN
+        if len(token) < 32 or len(ingest_token) < 32:
+            print("Start Ryu with SECUREIOT_API_TOKEN and Mininet with START_DEMO_SERVICES=1 START_IOT_SIMULATORS=1 first.")
+            return False
+        sequence = int(time.time() * 1000)
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        payload = {
+            "device_id": "h5",
+            "device_role": "alarm_sensor",
+            "telemetry": {"api_e2e_probe": sequence, "timestamp": timestamp,
+                          "sequence": sequence, "simulation": True},
+        }
+        body = json.dumps(payload, separators=(",", ":"))
+        command = (
+            "curl -4 -sS --connect-timeout 2 --max-time 5 -o /tmp/secureiot-iot-test-response.json "
+            "-w 'HTTP=%{http_code}' -H 'Content-Type: application/json' "
+            "-H %s --data-binary %s http://10.10.20.2:5000/api/iot/telemetry"
+            % (shlex.quote("Authorization: Bearer " + ingest_token), shlex.quote(body))
+        )
+        posted = self.mn.get("h5").cmd(command).strip()
+        if "HTTP=202" not in posted:
+            print("FAIL Mininet h5 -> h2 Web/API POST: %s" % posted)
+            return False
+        query = urllib.parse.urlencode({"device_id": "h5", "sensor_id": "api_e2e_probe", "limit": "10"})
+        request = urllib.request.Request(
+            "http://127.0.0.1:8080/api/iot/telemetry?" + query,
+            headers={"Authorization": "Bearer " + token},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                records = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            print("FAIL h2 store -> Ryu API GET: %s" % exc)
+            return False
+        if not any(row.get("sequence") == sequence and row.get("device_id") == "h5"
+                   for row in records if isinstance(row, dict)):
+            print("FAIL POST accepted but probe was not found in Ryu API response")
+            return False
+        print("PASS h5 -> h2:5000 -> shared SQLite -> Ryu API: sequence=%s" % sequence)
+        return False
+
 
 def run_batch_plan(net, plan_path):
     """Run one command per CSV row through the existing AttackCLI logic."""
@@ -755,7 +831,10 @@ def run():
                 "dataset batch cannot include background IoT simulators"
             )
         if not batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":
-            start_demo_services(net)
+            start_demo_services(
+                net,
+                live_iot_api=(os.getenv("START_IOT_SIMULATORS", "0") == "1"),
+            )
         if not batch_path and os.getenv("START_IOT_SIMULATORS", "0") == "1":
             if os.getenv("START_DEMO_SERVICES", "0") != "1":
                 info("*** WARNING: IoT simulators need the demo Web/API service; set START_DEMO_SERVICES=1\n")
