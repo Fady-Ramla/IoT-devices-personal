@@ -3,14 +3,22 @@ set -Eeuo pipefail
 
 # Read-only runtime API smoke test. Telemetry POST is deliberately not sent
 # through a public tunnel; use `iot_test` in Mininet for the end-to-end write.
-# Usage: API_TOKEN=... BASE_URL=https://... EXPECTED_LINKS=12 ./test_network_api.sh
+# Usage: API_TOKEN=... BASE_URL=https://... ./test_network_api.sh
 BASE_URL="${1:-${BASE_URL:-}}"
 API_TOKEN="${API_TOKEN:-}"
-EXPECTED_LINKS="${EXPECTED_LINKS:-12}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${EXPECTED_LINKS:-}" ]]; then
+  EXPECTED_LINKS="$(python3 - "$SCRIPT_DIR/mininet/vlan_config_38host.py" <<'PY'
+import runpy, sys
+config = runpy.run_path(sys.argv[1])
+print(len(config["INTER_SWITCH_LINKS"]))
+PY
+)"
+fi
 export EXPECTED_LINKS
 CORS_ORIGIN="${CORS_ORIGIN:-${SECUREIOT_ALLOWED_ORIGIN:-}}"
 if [[ -z "$BASE_URL" || ${#API_TOKEN} -lt 32 ]]; then
-  echo "Usage: API_TOKEN=<32+ chars> BASE_URL=https://... EXPECTED_LINKS=12 $0" >&2
+  echo "Usage: API_TOKEN=<32+ chars> BASE_URL=https://... [EXPECTED_LINKS=<branch topology count>] $0" >&2
   exit 2
 fi
 BASE_URL="${BASE_URL%/}"
