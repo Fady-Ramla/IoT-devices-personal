@@ -78,12 +78,16 @@ def main():
     print(f"IOT_SIMULATOR_READY device={args.device_id} role={args.role} endpoint={endpoint} interval={args.interval}s", flush=True)
     while args.max_events == 0 or sequence < args.max_events:
         sequence += 1
+        reading = make_reading(args.role, rng)
         payload = {
             "device_id": args.device_id,
-            "device_role": args.role,
+            "sensor_id": args.role,
+            "value": reading,
+            "unit": "simulated",
+            "status": "online",
+            "source": "mininet",
             "sequence": sequence,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "telemetry": make_reading(args.role, rng),
         }
         try:
             status = post_json(endpoint, payload, args.timeout)

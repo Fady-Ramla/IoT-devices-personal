@@ -1,0 +1,161 @@
+{
+  "model": "random_forest_run_level",
+  "features": [
+    "tcp_syn__mean",
+    "tcp_syn__std",
+    "tcp_syn__min",
+    "tcp_syn__max",
+    "tcp_syn__median",
+    "tcp_ack__mean",
+    "tcp_ack__std",
+    "tcp_ack__min",
+    "tcp_ack__max",
+    "tcp_ack__median",
+    "tcp_rst__mean",
+    "tcp_rst__std",
+    "tcp_rst__min",
+    "tcp_rst__max",
+    "tcp_rst__median",
+    "tcp_fin__mean",
+    "tcp_fin__std",
+    "tcp_fin__min",
+    "tcp_fin__max",
+    "tcp_fin__median",
+    "icmp_type__mean",
+    "icmp_type__std",
+    "icmp_type__min",
+    "icmp_type__max",
+    "icmp_type__median",
+    "arp_operation__mean",
+    "arp_operation__std",
+    "arp_operation__min",
+    "arp_operation__max",
+    "arp_operation__median",
+    "protocol__icmp__fraction",
+    "protocol__other__fraction",
+    "protocol__tcp__fraction"
+  ],
+  "feature_count": 33,
+  "classes": [
+    "Malicious_POST",
+    "Normal",
+    "Port_Scan",
+    "SYN_Flood"
+  ],
+  "train_runs": 208,
+  "validation_runs": 44,
+  "test_runs": 44,
+  "validation": {
+    "accuracy": 0.7727272727272727,
+    "macro_f1": 0.7636507936507937,
+    "classification_report": {
+      "Malicious_POST": {
+        "precision": 0.6153846153846154,
+        "recall": 0.7272727272727273,
+        "f1-score": 0.6666666666666666,
+        "support": 11.0
+      },
+      "Normal": {
+        "precision": 0.7142857142857143,
+        "recall": 0.45454545454545453,
+        "f1-score": 0.5555555555555556,
+        "support": 11.0
+      },
+      "Port_Scan": {
+        "precision": 0.7857142857142857,
+        "recall": 1.0,
+        "f1-score": 0.88,
+        "support": 11.0
+      },
+      "SYN_Flood": {
+        "precision": 1.0,
+        "recall": 0.9090909090909091,
+        "f1-score": 0.9523809523809523,
+        "support": 11.0
+      },
+      "accuracy": 0.7727272727272727,
+      "macro avg": {
+        "precision": 0.7788461538461539,
+        "recall": 0.7727272727272727,
+        "f1-score": 0.7636507936507937,
+        "support": 44.0
+      },
+      "weighted avg": {
+        "precision": 0.778846153846154,
+        "recall": 0.7727272727272727,
+        "f1-score": 0.7636507936507936,
+        "support": 44.0
+      }
+    }
+  },
+  "test": {
+    "accuracy": 0.7045454545454546,
+    "macro_f1": 0.702981993851559,
+    "confusion_matrix": [
+      [
+        7,
+        4,
+        0,
+        0
+      ],
+      [
+        2,
+        6,
+        0,
+        3
+      ],
+      [
+        3,
+        1,
+        7,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        11
+      ]
+    ],
+    "classification_report": {
+      "Malicious_POST": {
+        "precision": 0.5833333333333334,
+        "recall": 0.6363636363636364,
+        "f1-score": 0.6086956521739131,
+        "support": 11.0
+      },
+      "Normal": {
+        "precision": 0.5454545454545454,
+        "recall": 0.5454545454545454,
+        "f1-score": 0.5454545454545454,
+        "support": 11.0
+      },
+      "Port_Scan": {
+        "precision": 1.0,
+        "recall": 0.6363636363636364,
+        "f1-score": 0.7777777777777778,
+        "support": 11.0
+      },
+      "SYN_Flood": {
+        "precision": 0.7857142857142857,
+        "recall": 1.0,
+        "f1-score": 0.88,
+        "support": 11.0
+      },
+      "accuracy": 0.7045454545454546,
+      "macro avg": {
+        "precision": 0.7286255411255411,
+        "recall": 0.7045454545454545,
+        "f1-score": 0.702981993851559,
+        "support": 44.0
+      },
+      "weighted avg": {
+        "precision": 0.7286255411255411,
+        "recall": 0.7045454545454546,
+        "f1-score": 0.702981993851559,
+        "support": 44.0
+      }
+    }
+  },
+  "xgboost": "completed"
+}

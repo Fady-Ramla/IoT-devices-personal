@@ -24,14 +24,27 @@ import hmac
 import json
 import os
 import secrets
+import sys
 import time
 from functools import wraps
 from typing import Any, Callable
 
 from flask import Flask, jsonify, request
 
-app = Flask(__name__)
+# The topology and Ryu API share the VM filesystem even though this Flask
+# process runs inside h2's Mininet network namespace.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+from iot_telemetry_store import IoTTelemetryStore
 
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+iot_telemetry_store = IoTTelemetryStore()
+
+# TrustFlow: request metadata only; never records request bodies.
+from trustflow_app_telemetry import install_trustflow_telemetry
+install_trustflow_telemetry(app)
 JWT_ALG = "HS256"
 JWT_TTL_SECONDS = int(os.getenv("JWT_TTL_SECONDS", "900"))
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
@@ -206,6 +219,37 @@ def admin(**kwargs: Any):
     if action not in SAFE_ADMIN_ACTIONS:
         return jsonify({"status": "failed", "message": "Unsupported administrative action"}), 400
     return jsonify({"status": "success", "action": SAFE_ADMIN_ACTIONS[action], "executed": False, "message": "Demo action acknowledged; no system command is executed"})
+
+
+@app.route("/api/iot/telemetry", methods=["POST"])
+def receive_iot_telemetry():
+    """Persist readings only from their expected IoT-host source address."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"status": "rejected", "message": "JSON object required"}), 400
+    device_id = data.get("device_id")
+    ingest_token = os.environ.get("IOT_INGEST_TOKEN", "")
+    if ingest_token:
+        scheme, _, supplied = request.headers.get("Authorization", "").partition(" ")
+        if scheme.lower() != "bearer" or not hmac.compare_digest(supplied, ingest_token):
+            return jsonify({"status": "rejected", "message": "valid ingest bearer token required"}), 401
+    remote = request.remote_addr or ""
+    # In this lab, h5-h16 are the authorized telemetry producers and their
+    # address suffix matches the Mininet host ID. Reject dashboard/public posts.
+    try:
+        remote_octets = [int(part) for part in remote.split(".")]
+    except (TypeError, ValueError):
+        remote_octets = []
+    if (len(remote_octets) != 4 or remote_octets[:3] != [10, 10, 10]
+            or not 5 <= remote_octets[3] <= 16
+            or device_id != "h%d" % remote_octets[3]):
+        return jsonify({"status": "rejected", "message": "source is not an authorized IoT host"}), 403
+    try:
+        record = iot_telemetry_store.record(data)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"status": "rejected", "message": str(exc)}), 400
+    return jsonify({"status": "accepted", "record_id": record["id"],
+                    "device_id": record["device_id"], "timestamp": record["timestamp"]}), 202
 
 
 @app.route("/health", methods=["GET"])

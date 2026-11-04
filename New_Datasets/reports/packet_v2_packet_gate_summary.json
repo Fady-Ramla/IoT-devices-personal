@@ -1,0 +1,28 @@
+{
+  "manifest": "New_Datasets/reports/packet_v2_manifest_subset.csv",
+  "packet_dir": "New_Datasets/raw/packet",
+  "min_scan_ports": 10,
+  "runs": 296,
+  "decisions": {
+    "accepted": 204,
+    "rejected": 92
+  },
+  "by_label": {
+    "Malicious_POST": {
+      "accepted": 44,
+      "rejected": 30
+    },
+    "Normal": {
+      "accepted": 50,
+      "rejected": 24
+    },
+    "Port_Scan": {
+      "accepted": 36,
+      "rejected": 38
+    },
+    "SYN_Flood": {
+      "accepted": 74
+    }
+  },
+  "report_csv": "New_Datasets/reports/packet_v2_packet_gate_report.csv"
+}

@@ -1,0 +1,1629 @@
+{
+  "created_at_utc": "2026-11-03T18:21:59.020870+00:00",
+  "development_rows": 252,
+  "class_counts": {
+    "Malicious_POST": 63,
+    "Normal": 63,
+    "Port_Scan": 63,
+    "SYN_Flood": 63
+  },
+  "same_run_ids_and_labels_across_feature_sets": true,
+  "features": {
+    "with_ports_99f": {
+      "feature_count": 99,
+      "features": [
+        "observation_count",
+        "src_port__mean",
+        "src_port__std",
+        "src_port__min",
+        "src_port__max",
+        "src_port__median",
+        "dst_port__mean",
+        "dst_port__std",
+        "dst_port__min",
+        "dst_port__max",
+        "dst_port__median",
+        "packet_count__mean",
+        "packet_count__std",
+        "packet_count__min",
+        "packet_count__max",
+        "packet_count__median",
+        "byte_count__mean",
+        "byte_count__std",
+        "byte_count__min",
+        "byte_count__max",
+        "byte_count__median",
+        "packet_rate__mean",
+        "packet_rate__std",
+        "packet_rate__min",
+        "packet_rate__max",
+        "packet_rate__median",
+        "byte_rate__mean",
+        "byte_rate__std",
+        "byte_rate__min",
+        "byte_rate__max",
+        "byte_rate__median",
+        "duration_sec__mean",
+        "duration_sec__std",
+        "duration_sec__min",
+        "duration_sec__max",
+        "duration_sec__median",
+        "avg_packet_size__mean",
+        "avg_packet_size__std",
+        "avg_packet_size__min",
+        "avg_packet_size__max",
+        "avg_packet_size__median",
+        "syn_count__mean",
+        "syn_count__std",
+        "syn_count__min",
+        "syn_count__max",
+        "syn_count__median",
+        "ack_count__mean",
+        "ack_count__std",
+        "ack_count__min",
+        "ack_count__max",
+        "ack_count__median",
+        "rst_count__mean",
+        "rst_count__std",
+        "rst_count__min",
+        "rst_count__max",
+        "rst_count__median",
+        "fin_count__mean",
+        "fin_count__std",
+        "fin_count__min",
+        "fin_count__max",
+        "fin_count__median",
+        "syn_ack_ratio__mean",
+        "syn_ack_ratio__std",
+        "syn_ack_ratio__min",
+        "syn_ack_ratio__max",
+        "syn_ack_ratio__median",
+        "rst_ratio__mean",
+        "rst_ratio__std",
+        "rst_ratio__min",
+        "rst_ratio__max",
+        "rst_ratio__median",
+        "unique_dst_ports__mean",
+        "unique_dst_ports__std",
+        "unique_dst_ports__min",
+        "unique_dst_ports__max",
+        "unique_dst_ports__median",
+        "failed_connection_count__mean",
+        "failed_connection_count__std",
+        "failed_connection_count__min",
+        "failed_connection_count__max",
+        "failed_connection_count__median",
+        "tcp_fraction__mean",
+        "tcp_fraction__std",
+        "tcp_fraction__min",
+        "tcp_fraction__max",
+        "tcp_fraction__median",
+        "udp_fraction__mean",
+        "udp_fraction__std",
+        "udp_fraction__min",
+        "udp_fraction__max",
+        "udp_fraction__median",
+        "icmp_fraction__mean",
+        "icmp_fraction__std",
+        "icmp_fraction__min",
+        "icmp_fraction__max",
+        "icmp_fraction__median",
+        "protocol__icmp__fraction",
+        "protocol__other__fraction",
+        "protocol__tcp__fraction"
+      ],
+      "overall_outer_oof_metrics": {
+        "accuracy": 0.8214285714285714,
+        "balanced_accuracy": 0.8214285714285714,
+        "macro_precision": 0.8182638114703332,
+        "macro_recall": 0.8214285714285714,
+        "macro_f1": 0.8182713434312844,
+        "normal_precision": 0.7692307692307693,
+        "normal_recall": 0.7936507936507936,
+        "normal_f1": 0.78125,
+        "per_class": {
+          "Malicious_POST": {
+            "precision": 0.7592592592592593,
+            "recall": 0.6507936507936508,
+            "f1": 0.7008547008547008,
+            "support": 63
+          },
+          "Normal": {
+            "precision": 0.7692307692307693,
+            "recall": 0.7936507936507936,
+            "f1": 0.78125,
+            "support": 63
+          },
+          "Port_Scan": {
+            "precision": 0.875,
+            "recall": 0.8888888888888888,
+            "f1": 0.8818897637795275,
+            "support": 63
+          },
+          "SYN_Flood": {
+            "precision": 0.8695652173913043,
+            "recall": 0.9523809523809523,
+            "f1": 0.9090909090909091,
+            "support": 63
+          }
+        },
+        "confusion_matrix": [
+          [
+            41,
+            12,
+            5,
+            5
+          ],
+          [
+            11,
+            50,
+            2,
+            0
+          ],
+          [
+            0,
+            3,
+            56,
+            4
+          ],
+          [
+            2,
+            0,
+            1,
+            60
+          ]
+        ]
+      },
+      "outer_folds": [
+        {
+          "fold": 1,
+          "selected_candidate": "ET_leaf2_NormalW1.5",
+          "inner_oof_metrics": {
+            "accuracy": 0.8308457711442786,
+            "balanced_accuracy": 0.8302941176470588,
+            "macro_precision": 0.8251991534177993,
+            "macro_recall": 0.8302941176470588,
+            "macro_f1": 0.8258387221904225,
+            "normal_precision": 0.7843137254901961,
+            "normal_recall": 0.8,
+            "normal_f1": 0.7920792079207921,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.7380952380952381,
+                "recall": 0.62,
+                "f1": 0.6739130434782609,
+                "support": 50
+              },
+              "Normal": {
+                "precision": 0.7843137254901961,
+                "recall": 0.8,
+                "f1": 0.7920792079207921,
+                "support": 50
+              },
+              "Port_Scan": {
+                "precision": 0.9056603773584906,
+                "recall": 0.9411764705882353,
+                "f1": 0.9230769230769231,
+                "support": 51
+              },
+              "SYN_Flood": {
+                "precision": 0.8727272727272727,
+                "recall": 0.96,
+                "f1": 0.9142857142857143,
+                "support": 50
+              }
+            },
+            "confusion_matrix": [
+              [
+                31,
+                11,
+                4,
+                4
+              ],
+              [
+                9,
+                40,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                48,
+                3
+              ],
+              [
+                2,
+                0,
+                0,
+                48
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.8235294117647058,
+            "balanced_accuracy": 0.8269230769230769,
+            "macro_precision": 0.8292540792540792,
+            "macro_recall": 0.8269230769230769,
+            "macro_f1": 0.8252380952380952,
+            "normal_precision": 0.7272727272727273,
+            "normal_recall": 0.6153846153846154,
+            "normal_f1": 0.6666666666666666,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.6666666666666666,
+                "recall": 0.7692307692307693,
+                "f1": 0.7142857142857143,
+                "support": 13
+              },
+              "Normal": {
+                "precision": 0.7272727272727273,
+                "recall": 0.6153846153846154,
+                "f1": 0.6666666666666666,
+                "support": 13
+              },
+              "Port_Scan": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1": 0.96,
+                "support": 12
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.9230769230769231,
+                "f1": 0.96,
+                "support": 13
+              }
+            },
+            "confusion_matrix": [
+              [
+                10,
+                3,
+                0,
+                0
+              ],
+              [
+                5,
+                8,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 2,
+          "selected_candidate": "LogReg_C4_NormalW1.25",
+          "inner_oof_metrics": {
+            "accuracy": 0.8507462686567164,
+            "balanced_accuracy": 0.8504901960784313,
+            "macro_precision": 0.8517923678905525,
+            "macro_recall": 0.8504901960784313,
+            "macro_f1": 0.8507059443808458,
+            "normal_precision": 0.8431372549019608,
+            "normal_recall": 0.86,
+            "normal_f1": 0.8514851485148515,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.7755102040816326,
+                "recall": 0.76,
+                "f1": 0.7676767676767676,
+                "support": 50
+              },
+              "Normal": {
+                "precision": 0.8431372549019608,
+                "recall": 0.86,
+                "f1": 0.8514851485148515,
+                "support": 50
+              },
+              "Port_Scan": {
+                "precision": 0.8301886792452831,
+                "recall": 0.88,
+                "f1": 0.8543689320388349,
+                "support": 50
+              },
+              "SYN_Flood": {
+                "precision": 0.9583333333333334,
+                "recall": 0.9019607843137255,
+                "f1": 0.9292929292929293,
+                "support": 51
+              }
+            },
+            "confusion_matrix": [
+              [
+                38,
+                7,
+                4,
+                1
+              ],
+              [
+                4,
+                43,
+                3,
+                0
+              ],
+              [
+                4,
+                1,
+                44,
+                1
+              ],
+              [
+                3,
+                0,
+                2,
+                46
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.8235294117647058,
+            "balanced_accuracy": 0.826923076923077,
+            "macro_precision": 0.8388888888888889,
+            "macro_recall": 0.826923076923077,
+            "macro_f1": 0.8246753246753247,
+            "normal_precision": 0.7333333333333333,
+            "normal_recall": 0.8461538461538461,
+            "normal_f1": 0.7857142857142857,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6153846153846154,
+                "f1": 0.7272727272727273,
+                "support": 13
+              },
+              "Normal": {
+                "precision": 0.7333333333333333,
+                "recall": 0.8461538461538461,
+                "f1": 0.7857142857142857,
+                "support": 13
+              },
+              "Port_Scan": {
+                "precision": 0.7333333333333333,
+                "recall": 0.8461538461538461,
+                "f1": 0.7857142857142857,
+                "support": 13
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "support": 12
+              }
+            },
+            "confusion_matrix": [
+              [
+                8,
+                2,
+                3,
+                0
+              ],
+              [
+                1,
+                11,
+                1,
+                0
+              ],
+              [
+                0,
+                2,
+                11,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 3,
+          "selected_candidate": "ET_leaf1_NormalW1",
+          "inner_oof_metrics": {
+            "accuracy": 0.8168316831683168,
+            "balanced_accuracy": 0.8170588235294117,
+            "macro_precision": 0.8192855047401414,
+            "macro_recall": 0.8170588235294117,
+            "macro_f1": 0.8177513227251061,
+            "normal_precision": 0.7358490566037735,
+            "normal_recall": 0.78,
+            "normal_f1": 0.7572815533980582,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.68,
+                "recall": 0.6666666666666666,
+                "f1": 0.6732673267326733,
+                "support": 51
+              },
+              "Normal": {
+                "precision": 0.7358490566037735,
+                "recall": 0.78,
+                "f1": 0.7572815533980582,
+                "support": 50
+              },
+              "Port_Scan": {
+                "precision": 0.9574468085106383,
+                "recall": 0.9,
+                "f1": 0.9278350515463918,
+                "support": 50
+              },
+              "SYN_Flood": {
+                "precision": 0.9038461538461539,
+                "recall": 0.9215686274509803,
+                "f1": 0.912621359223301,
+                "support": 51
+              }
+            },
+            "confusion_matrix": [
+              [
+                34,
+                13,
+                1,
+                3
+              ],
+              [
+                11,
+                39,
+                0,
+                0
+              ],
+              [
+                2,
+                1,
+                45,
+                2
+              ],
+              [
+                3,
+                0,
+                1,
+                47
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.82,
+            "balanced_accuracy": 0.8173076923076923,
+            "macro_precision": 0.825,
+            "macro_recall": 0.8173076923076923,
+            "macro_f1": 0.8060428849902533,
+            "normal_precision": 0.7857142857142857,
+            "normal_recall": 0.8461538461538461,
+            "normal_f1": 0.8148148148148148,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8571428571428571,
+                "recall": 0.5,
+                "f1": 0.631578947368421,
+                "support": 12
+              },
+              "Normal": {
+                "precision": 0.7857142857142857,
+                "recall": 0.8461538461538461,
+                "f1": 0.8148148148148148,
+                "support": 13
+              },
+              "Port_Scan": {
+                "precision": 0.8571428571428571,
+                "recall": 0.9230769230769231,
+                "f1": 0.8888888888888888,
+                "support": 13
+              },
+              "SYN_Flood": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1": 0.8888888888888888,
+                "support": 12
+              }
+            },
+            "confusion_matrix": [
+              [
+                6,
+                3,
+                1,
+                2
+              ],
+              [
+                1,
+                11,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 4,
+          "selected_candidate": "ET_leaf1_NormalW1",
+          "inner_oof_metrics": {
+            "accuracy": 0.8613861386138614,
+            "balanced_accuracy": 0.8624509803921568,
+            "macro_precision": 0.8607597350461662,
+            "macro_recall": 0.8624509803921568,
+            "macro_f1": 0.8610620170398257,
+            "normal_precision": 0.8085106382978723,
+            "normal_recall": 0.7450980392156863,
+            "normal_f1": 0.7755102040816326,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.75,
+                "recall": 0.7647058823529411,
+                "f1": 0.7572815533980582,
+                "support": 51
+              },
+              "Normal": {
+                "precision": 0.8085106382978723,
+                "recall": 0.7450980392156863,
+                "f1": 0.7755102040816326,
+                "support": 51
+              },
+              "Port_Scan": {
+                "precision": 0.96,
+                "recall": 0.96,
+                "f1": 0.96,
+                "support": 50
+              },
+              "SYN_Flood": {
+                "precision": 0.9245283018867925,
+                "recall": 0.98,
+                "f1": 0.9514563106796117,
+                "support": 50
+              }
+            },
+            "confusion_matrix": [
+              [
+                39,
+                9,
+                0,
+                3
+              ],
+              [
+                12,
+                38,
+                1,
+                0
+              ],
+              [
+                1,
+                0,
+                48,
+                1
+              ],
+              [
+                0,
+                0,
+                1,
+                49
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.8,
+            "balanced_accuracy": 0.7980769230769231,
+            "macro_precision": 0.7996794871794872,
+            "macro_recall": 0.7980769230769231,
+            "macro_f1": 0.7982051282051282,
+            "normal_precision": 0.7692307692307693,
+            "normal_recall": 0.8333333333333334,
+            "normal_f1": 0.8,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.6666666666666666,
+                "recall": 0.6666666666666666,
+                "f1": 0.6666666666666666,
+                "support": 12
+              },
+              "Normal": {
+                "precision": 0.7692307692307693,
+                "recall": 0.8333333333333334,
+                "f1": 0.8,
+                "support": 12
+              },
+              "Port_Scan": {
+                "precision": 0.9166666666666666,
+                "recall": 0.8461538461538461,
+                "f1": 0.88,
+                "support": 13
+              },
+              "SYN_Flood": {
+                "precision": 0.8461538461538461,
+                "recall": 0.8461538461538461,
+                "f1": 0.8461538461538461,
+                "support": 13
+              }
+            },
+            "confusion_matrix": [
+              [
+                8,
+                2,
+                1,
+                1
+              ],
+              [
+                2,
+                10,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                11,
+                1
+              ],
+              [
+                2,
+                0,
+                0,
+                11
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 5,
+          "selected_candidate": "RF_leaf1_NormalW1.5",
+          "inner_oof_metrics": {
+            "accuracy": 0.8168316831683168,
+            "balanced_accuracy": 0.8168627450980391,
+            "macro_precision": 0.8129254020211466,
+            "macro_recall": 0.8168627450980391,
+            "macro_f1": 0.814302690773279,
+            "normal_precision": 0.7446808510638298,
+            "normal_recall": 0.6862745098039216,
+            "normal_f1": 0.7142857142857143,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.7142857142857143,
+                "recall": 0.7,
+                "f1": 0.7070707070707071,
+                "support": 50
+              },
+              "Normal": {
+                "precision": 0.7446808510638298,
+                "recall": 0.6862745098039216,
+                "f1": 0.7142857142857143,
+                "support": 51
+              },
+              "Port_Scan": {
+                "precision": 0.8888888888888888,
+                "recall": 0.9411764705882353,
+                "f1": 0.9142857142857143,
+                "support": 51
+              },
+              "SYN_Flood": {
+                "precision": 0.9038461538461539,
+                "recall": 0.94,
+                "f1": 0.9215686274509803,
+                "support": 50
+              }
+            },
+            "confusion_matrix": [
+              [
+                35,
+                11,
+                1,
+                3
+              ],
+              [
+                14,
+                35,
+                2,
+                0
+              ],
+              [
+                0,
+                1,
+                48,
+                2
+              ],
+              [
+                0,
+                0,
+                3,
+                47
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.84,
+            "balanced_accuracy": 0.8397435897435898,
+            "macro_precision": 0.8540552584670231,
+            "macro_recall": 0.8397435897435898,
+            "macro_f1": 0.8397727272727273,
+            "normal_precision": 0.8333333333333334,
+            "normal_recall": 0.8333333333333334,
+            "normal_f1": 0.8333333333333334,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8181818181818182,
+                "recall": 0.6923076923076923,
+                "f1": 0.75,
+                "support": 13
+              },
+              "Normal": {
+                "precision": 0.8333333333333334,
+                "recall": 0.8333333333333334,
+                "f1": 0.8333333333333334,
+                "support": 12
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1": 0.9090909090909091,
+                "support": 12
+              },
+              "SYN_Flood": {
+                "precision": 0.7647058823529411,
+                "recall": 1.0,
+                "f1": 0.8666666666666667,
+                "support": 13
+              }
+            },
+            "confusion_matrix": [
+              [
+                9,
+                2,
+                0,
+                2
+              ],
+              [
+                2,
+                10,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                10,
+                2
+              ],
+              [
+                0,
+                0,
+                0,
+                13
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "no_ports_ablation": {
+      "feature_count": 89,
+      "features": [
+        "observation_count",
+        "packet_count__mean",
+        "packet_count__std",
+        "packet_count__min",
+        "packet_count__max",
+        "packet_count__median",
+        "byte_count__mean",
+        "byte_count__std",
+        "byte_count__min",
+        "byte_count__max",
+        "byte_count__median",
+        "packet_rate__mean",
+        "packet_rate__std",
+        "packet_rate__min",
+        "packet_rate__max",
+        "packet_rate__median",
+        "byte_rate__mean",
+        "byte_rate__std",
+        "byte_rate__min",
+        "byte_rate__max",
+        "byte_rate__median",
+        "duration_sec__mean",
+        "duration_sec__std",
+        "duration_sec__min",
+        "duration_sec__max",
+        "duration_sec__median",
+        "avg_packet_size__mean",
+        "avg_packet_size__std",
+        "avg_packet_size__min",
+        "avg_packet_size__max",
+        "avg_packet_size__median",
+        "syn_count__mean",
+        "syn_count__std",
+        "syn_count__min",
+        "syn_count__max",
+        "syn_count__median",
+        "ack_count__mean",
+        "ack_count__std",
+        "ack_count__min",
+        "ack_count__max",
+        "ack_count__median",
+        "rst_count__mean",
+        "rst_count__std",
+        "rst_count__min",
+        "rst_count__max",
+        "rst_count__median",
+        "fin_count__mean",
+        "fin_count__std",
+        "fin_count__min",
+        "fin_count__max",
+        "fin_count__median",
+        "syn_ack_ratio__mean",
+        "syn_ack_ratio__std",
+        "syn_ack_ratio__min",
+        "syn_ack_ratio__max",
+        "syn_ack_ratio__median",
+        "rst_ratio__mean",
+        "rst_ratio__std",
+        "rst_ratio__min",
+        "rst_ratio__max",
+        "rst_ratio__median",
+        "unique_dst_ports__mean",
+        "unique_dst_ports__std",
+        "unique_dst_ports__min",
+        "unique_dst_ports__max",
+        "unique_dst_ports__median",
+        "failed_connection_count__mean",
+        "failed_connection_count__std",
+        "failed_connection_count__min",
+        "failed_connection_count__max",
+        "failed_connection_count__median",
+        "tcp_fraction__mean",
+        "tcp_fraction__std",
+        "tcp_fraction__min",
+        "tcp_fraction__max",
+        "tcp_fraction__median",
+        "udp_fraction__mean",
+        "udp_fraction__std",
+        "udp_fraction__min",
+        "udp_fraction__max",
+        "udp_fraction__median",
+        "icmp_fraction__mean",
+        "icmp_fraction__std",
+        "icmp_fraction__min",
+        "icmp_fraction__max",
+        "icmp_fraction__median",
+        "protocol__icmp__fraction",
+        "protocol__other__fraction",
+        "protocol__tcp__fraction"
+      ],
+      "overall_outer_oof_metrics": {
+        "accuracy": 0.8333333333333334,
+        "balanced_accuracy": 0.8333333333333334,
+        "macro_precision": 0.8303111869747899,
+        "macro_recall": 0.8333333333333334,
+        "macro_f1": 0.8284759060894845,
+        "normal_precision": 0.796875,
+        "normal_recall": 0.8095238095238095,
+        "normal_f1": 0.8031496062992126,
+        "per_class": {
+          "Malicious_POST": {
+            "precision": 0.8,
+            "recall": 0.6349206349206349,
+            "f1": 0.7079646017699115,
+            "support": 63
+          },
+          "Normal": {
+            "precision": 0.796875,
+            "recall": 0.8095238095238095,
+            "f1": 0.8031496062992126,
+            "support": 63
+          },
+          "Port_Scan": {
+            "precision": 0.8529411764705882,
+            "recall": 0.9206349206349206,
+            "f1": 0.8854961832061069,
+            "support": 63
+          },
+          "SYN_Flood": {
+            "precision": 0.8714285714285714,
+            "recall": 0.9682539682539683,
+            "f1": 0.9172932330827067,
+            "support": 63
+          }
+        },
+        "confusion_matrix": [
+          [
+            40,
+            12,
+            6,
+            5
+          ],
+          [
+            10,
+            51,
+            2,
+            0
+          ],
+          [
+            0,
+            1,
+            58,
+            4
+          ],
+          [
+            0,
+            0,
+            2,
+            61
+          ]
+        ]
+      },
+      "outer_folds": [
+        {
+          "fold": 1,
+          "selected_candidate": "ET_leaf2_NormalW1.5",
+          "inner_oof_metrics": {
+            "accuracy": 0.8308457711442786,
+            "balanced_accuracy": 0.830392156862745,
+            "macro_precision": 0.8264502992623509,
+            "macro_recall": 0.830392156862745,
+            "macro_f1": 0.8259965524671407,
+            "normal_precision": 0.7636363636363637,
+            "normal_recall": 0.84,
+            "normal_f1": 0.8,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.7317073170731707,
+                "recall": 0.6,
+                "f1": 0.6593406593406593,
+                "support": 50
+              },
+              "Normal": {
+                "precision": 0.7636363636363637,
+                "recall": 0.84,
+                "f1": 0.8,
+                "support": 50
+              },
+              "Port_Scan": {
+                "precision": 0.9215686274509803,
+                "recall": 0.9215686274509803,
+                "f1": 0.9215686274509803,
+                "support": 51
+              },
+              "SYN_Flood": {
+                "precision": 0.8888888888888888,
+                "recall": 0.96,
+                "f1": 0.9230769230769231,
+                "support": 50
+              }
+            },
+            "confusion_matrix": [
+              [
+                30,
+                12,
+                4,
+                4
+              ],
+              [
+                8,
+                42,
+                0,
+                0
+              ],
+              [
+                1,
+                1,
+                47,
+                2
+              ],
+              [
+                2,
+                0,
+                0,
+                48
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.8235294117647058,
+            "balanced_accuracy": 0.8269230769230769,
+            "macro_precision": 0.8292540792540792,
+            "macro_recall": 0.8269230769230769,
+            "macro_f1": 0.8252380952380952,
+            "normal_precision": 0.7272727272727273,
+            "normal_recall": 0.6153846153846154,
+            "normal_f1": 0.6666666666666666,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.6666666666666666,
+                "recall": 0.7692307692307693,
+                "f1": 0.7142857142857143,
+                "support": 13
+              },
+              "Normal": {
+                "precision": 0.7272727272727273,
+                "recall": 0.6153846153846154,
+                "f1": 0.6666666666666666,
+                "support": 13
+              },
+              "Port_Scan": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1": 0.96,
+                "support": 12
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.9230769230769231,
+                "f1": 0.96,
+                "support": 13
+              }
+            },
+            "confusion_matrix": [
+              [
+                10,
+                3,
+                0,
+                0
+              ],
+              [
+                5,
+                8,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 2,
+          "selected_candidate": "LogReg_C2_NormalW1.75",
+          "inner_oof_metrics": {
+            "accuracy": 0.835820895522388,
+            "balanced_accuracy": 0.8354901960784313,
+            "macro_precision": 0.8395748299319729,
+            "macro_recall": 0.8354901960784313,
+            "macro_f1": 0.8343280632411066,
+            "normal_precision": 0.75,
+            "normal_recall": 0.9,
+            "normal_f1": 0.8181818181818182,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8095238095238095,
+                "recall": 0.68,
+                "f1": 0.7391304347826086,
+                "support": 50
+              },
+              "Normal": {
+                "precision": 0.75,
+                "recall": 0.9,
+                "f1": 0.8181818181818182,
+                "support": 50
+              },
+              "Port_Scan": {
+                "precision": 0.86,
+                "recall": 0.86,
+                "f1": 0.86,
+                "support": 50
+              },
+              "SYN_Flood": {
+                "precision": 0.9387755102040817,
+                "recall": 0.9019607843137255,
+                "f1": 0.92,
+                "support": 51
+              }
+            },
+            "confusion_matrix": [
+              [
+                34,
+                12,
+                3,
+                1
+              ],
+              [
+                3,
+                45,
+                2,
+                0
+              ],
+              [
+                2,
+                3,
+                43,
+                2
+              ],
+              [
+                3,
+                0,
+                2,
+                46
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.8627450980392157,
+            "balanced_accuracy": 0.8653846153846154,
+            "macro_precision": 0.874937154348919,
+            "macro_recall": 0.8653846153846154,
+            "macro_f1": 0.86002331002331,
+            "normal_precision": 0.8461538461538461,
+            "normal_recall": 0.8461538461538461,
+            "normal_f1": 0.8461538461538461,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6153846153846154,
+                "f1": 0.7272727272727273,
+                "support": 13
+              },
+              "Normal": {
+                "precision": 0.8461538461538461,
+                "recall": 0.8461538461538461,
+                "f1": 0.8461538461538461,
+                "support": 13
+              },
+              "Port_Scan": {
+                "precision": 0.7647058823529411,
+                "recall": 1.0,
+                "f1": 0.8666666666666667,
+                "support": 13
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+                "support": 12
+              }
+            },
+            "confusion_matrix": [
+              [
+                8,
+                2,
+                3,
+                0
+              ],
+              [
+                1,
+                11,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                13,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 3,
+          "selected_candidate": "ET_leaf2_NormalW1",
+          "inner_oof_metrics": {
+            "accuracy": 0.8217821782178217,
+            "balanced_accuracy": 0.8219607843137255,
+            "macro_precision": 0.8204594712953376,
+            "macro_recall": 0.8219607843137255,
+            "macro_f1": 0.8206385584536845,
+            "normal_precision": 0.7307692307692307,
+            "normal_recall": 0.76,
+            "normal_f1": 0.7450980392156863,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.723404255319149,
+                "recall": 0.6666666666666666,
+                "f1": 0.6938775510204082,
+                "support": 51
+              },
+              "Normal": {
+                "precision": 0.7307692307692307,
+                "recall": 0.76,
+                "f1": 0.7450980392156863,
+                "support": 50
+              },
+              "Port_Scan": {
+                "precision": 0.9387755102040817,
+                "recall": 0.92,
+                "f1": 0.9292929292929293,
+                "support": 50
+              },
+              "SYN_Flood": {
+                "precision": 0.8888888888888888,
+                "recall": 0.9411764705882353,
+                "f1": 0.9142857142857143,
+                "support": 51
+              }
+            },
+            "confusion_matrix": [
+              [
+                34,
+                13,
+                1,
+                3
+              ],
+              [
+                11,
+                38,
+                1,
+                0
+              ],
+              [
+                0,
+                1,
+                46,
+                3
+              ],
+              [
+                2,
+                0,
+                1,
+                48
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.82,
+            "balanced_accuracy": 0.8157051282051282,
+            "macro_precision": 0.8500000000000001,
+            "macro_recall": 0.8157051282051282,
+            "macro_f1": 0.7978524743230625,
+            "normal_precision": 0.8,
+            "normal_recall": 0.9230769230769231,
+            "normal_f1": 0.8571428571428571,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.4166666666666667,
+                "f1": 0.5882352941176471,
+                "support": 12
+              },
+              "Normal": {
+                "precision": 0.8,
+                "recall": 0.9230769230769231,
+                "f1": 0.8571428571428571,
+                "support": 13
+              },
+              "Port_Scan": {
+                "precision": 0.8,
+                "recall": 0.9230769230769231,
+                "f1": 0.8571428571428571,
+                "support": 13
+              },
+              "SYN_Flood": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1": 0.8888888888888888,
+                "support": 12
+              }
+            },
+            "confusion_matrix": [
+              [
+                5,
+                3,
+                2,
+                2
+              ],
+              [
+                0,
+                12,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 4,
+          "selected_candidate": "RF_leaf1_NormalW1",
+          "inner_oof_metrics": {
+            "accuracy": 0.8564356435643564,
+            "balanced_accuracy": 0.8570588235294118,
+            "macro_precision": 0.8574521338041439,
+            "macro_recall": 0.8570588235294118,
+            "macro_f1": 0.8566250843469984,
+            "normal_precision": 0.851063829787234,
+            "normal_recall": 0.7843137254901961,
+            "normal_f1": 0.8163265306122449,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.7735849056603774,
+                "recall": 0.803921568627451,
+                "f1": 0.7884615384615384,
+                "support": 51
+              },
+              "Normal": {
+                "precision": 0.851063829787234,
+                "recall": 0.7843137254901961,
+                "f1": 0.8163265306122449,
+                "support": 51
+              },
+              "Port_Scan": {
+                "precision": 0.8867924528301887,
+                "recall": 0.94,
+                "f1": 0.912621359223301,
+                "support": 50
+              },
+              "SYN_Flood": {
+                "precision": 0.9183673469387755,
+                "recall": 0.9,
+                "f1": 0.9090909090909091,
+                "support": 50
+              }
+            },
+            "confusion_matrix": [
+              [
+                41,
+                7,
+                0,
+                3
+              ],
+              [
+                9,
+                40,
+                2,
+                0
+              ],
+              [
+                2,
+                0,
+                47,
+                1
+              ],
+              [
+                1,
+                0,
+                4,
+                45
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.82,
+            "balanced_accuracy": 0.8173076923076923,
+            "macro_precision": 0.8181318681318682,
+            "macro_recall": 0.8173076923076923,
+            "macro_f1": 0.8155788655788656,
+            "normal_precision": 0.7692307692307693,
+            "normal_recall": 0.8333333333333334,
+            "normal_f1": 0.8,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8,
+                "recall": 0.6666666666666666,
+                "f1": 0.7272727272727273,
+                "support": 12
+              },
+              "Normal": {
+                "precision": 0.7692307692307693,
+                "recall": 0.8333333333333334,
+                "f1": 0.8,
+                "support": 12
+              },
+              "Port_Scan": {
+                "precision": 0.8461538461538461,
+                "recall": 0.8461538461538461,
+                "f1": 0.8461538461538461,
+                "support": 13
+              },
+              "SYN_Flood": {
+                "precision": 0.8571428571428571,
+                "recall": 0.9230769230769231,
+                "f1": 0.8888888888888888,
+                "support": 13
+              }
+            },
+            "confusion_matrix": [
+              [
+                8,
+                2,
+                1,
+                1
+              ],
+              [
+                2,
+                10,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                11,
+                1
+              ],
+              [
+                0,
+                0,
+                1,
+                12
+              ]
+            ]
+          }
+        },
+        {
+          "fold": 5,
+          "selected_candidate": "RF_leaf1_NormalW1.5",
+          "inner_oof_metrics": {
+            "accuracy": 0.8168316831683168,
+            "balanced_accuracy": 0.816764705882353,
+            "macro_precision": 0.8131334355222496,
+            "macro_recall": 0.816764705882353,
+            "macro_f1": 0.814630775387078,
+            "normal_precision": 0.7346938775510204,
+            "normal_recall": 0.7058823529411765,
+            "normal_f1": 0.72,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.7083333333333334,
+                "recall": 0.68,
+                "f1": 0.6938775510204082,
+                "support": 50
+              },
+              "Normal": {
+                "precision": 0.7346938775510204,
+                "recall": 0.7058823529411765,
+                "f1": 0.72,
+                "support": 51
+              },
+              "Port_Scan": {
+                "precision": 0.9056603773584906,
+                "recall": 0.9411764705882353,
+                "f1": 0.9230769230769231,
+                "support": 51
+              },
+              "SYN_Flood": {
+                "precision": 0.9038461538461539,
+                "recall": 0.94,
+                "f1": 0.9215686274509803,
+                "support": 50
+              }
+            },
+            "confusion_matrix": [
+              [
+                34,
+                12,
+                1,
+                3
+              ],
+              [
+                14,
+                36,
+                1,
+                0
+              ],
+              [
+                0,
+                1,
+                48,
+                2
+              ],
+              [
+                0,
+                0,
+                3,
+                47
+              ]
+            ]
+          },
+          "outer_metrics": {
+            "accuracy": 0.84,
+            "balanced_accuracy": 0.8397435897435898,
+            "macro_precision": 0.8540552584670231,
+            "macro_recall": 0.8397435897435898,
+            "macro_f1": 0.8397727272727273,
+            "normal_precision": 0.8333333333333334,
+            "normal_recall": 0.8333333333333334,
+            "normal_f1": 0.8333333333333334,
+            "per_class": {
+              "Malicious_POST": {
+                "precision": 0.8181818181818182,
+                "recall": 0.6923076923076923,
+                "f1": 0.75,
+                "support": 13
+              },
+              "Normal": {
+                "precision": 0.8333333333333334,
+                "recall": 0.8333333333333334,
+                "f1": 0.8333333333333334,
+                "support": 12
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1": 0.9090909090909091,
+                "support": 12
+              },
+              "SYN_Flood": {
+                "precision": 0.7647058823529411,
+                "recall": 1.0,
+                "f1": 0.8666666666666667,
+                "support": 13
+              }
+            },
+            "confusion_matrix": [
+              [
+                9,
+                2,
+                0,
+                2
+              ],
+              [
+                2,
+                10,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                10,
+                2
+              ],
+              [
+                0,
+                0,
+                0,
+                13
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "no_ports_minus_with_ports_metric_delta": {
+    "accuracy": 0.011904761904761973,
+    "macro_f1": 0.010204562658200134,
+    "normal_recall": 0.015873015873015928,
+    "normal_f1": 0.021899606299212615
+  },
+  "method": "paired 5-fold outer / 3-fold inner nested CV; identical run ordering and folds",
+  "test_split_opened": false,
+  "sealed_160_run_holdout_opened": false,
+  "warning": "Development nested-CV comparison only; not final test accuracy."
+}

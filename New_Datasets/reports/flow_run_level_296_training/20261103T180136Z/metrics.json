@@ -1,0 +1,282 @@
+{
+  "created_at_utc": "2026-11-03T18:01:37.566700+00:00",
+  "dataset": "run_level_296_flow",
+  "protocol": {
+    "candidate_models": [
+      "RandomForest",
+      "ExtraTrees"
+    ],
+    "selection_metric": "validation macro-F1, accuracy as tie-breaker",
+    "final_fit": "train + validation",
+    "test_used_for_selection_or_tuning": false,
+    "test_evaluations": 1,
+    "test_split_role": "final held-out evaluation only",
+    "sealed_160_run_holdout_accessed": false
+  },
+  "split_rows": {
+    "train.csv": 208,
+    "validation.csv": 44,
+    "test.csv": 44
+  },
+  "class_order": [
+    "Malicious_POST",
+    "Normal",
+    "Port_Scan",
+    "SYN_Flood"
+  ],
+  "class_counts": {
+    "train.csv": {
+      "Malicious_POST": 52,
+      "Normal": 52,
+      "Port_Scan": 52,
+      "SYN_Flood": 52
+    },
+    "validation.csv": {
+      "Malicious_POST": 11,
+      "Normal": 11,
+      "Port_Scan": 11,
+      "SYN_Flood": 11
+    },
+    "test.csv": {
+      "Malicious_POST": 11,
+      "Normal": 11,
+      "Port_Scan": 11,
+      "SYN_Flood": 11
+    }
+  },
+  "feature_count": 99,
+  "feature_order_matches_metrics_json": true,
+  "run_id_overlap": {
+    "train_validation": 0,
+    "train_test": 0,
+    "validation_test": 0
+  },
+  "validation_candidate_metrics": {
+    "RandomForest": {
+      "accuracy": 0.8181818181818182,
+      "balanced_accuracy": 0.8181818181818181,
+      "macro_precision": 0.8216575091575091,
+      "macro_recall": 0.8181818181818181,
+      "macro_f1": 0.8088768115942028,
+      "confusion_matrix": [
+        [
+          8,
+          1,
+          0,
+          2
+        ],
+        [
+          4,
+          6,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          11,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          11
+        ]
+      ],
+      "classification_report": {
+        "Malicious_POST": {
+          "precision": 0.6666666666666666,
+          "recall": 0.7272727272727273,
+          "f1-score": 0.6956521739130435,
+          "support": 11.0
+        },
+        "Normal": {
+          "precision": 0.8571428571428571,
+          "recall": 0.5454545454545454,
+          "f1-score": 0.6666666666666666,
+          "support": 11.0
+        },
+        "Port_Scan": {
+          "precision": 0.9166666666666666,
+          "recall": 1.0,
+          "f1-score": 0.9565217391304348,
+          "support": 11.0
+        },
+        "SYN_Flood": {
+          "precision": 0.8461538461538461,
+          "recall": 1.0,
+          "f1-score": 0.9166666666666666,
+          "support": 11.0
+        },
+        "accuracy": 0.8181818181818182,
+        "macro avg": {
+          "precision": 0.8216575091575091,
+          "recall": 0.8181818181818181,
+          "f1-score": 0.8088768115942028,
+          "support": 44.0
+        },
+        "weighted avg": {
+          "precision": 0.8216575091575091,
+          "recall": 0.8181818181818182,
+          "f1-score": 0.8088768115942028,
+          "support": 44.0
+        }
+      }
+    },
+    "ExtraTrees": {
+      "accuracy": 0.8409090909090909,
+      "balanced_accuracy": 0.8409090909090909,
+      "macro_precision": 0.8456959706959706,
+      "macro_recall": 0.8409090909090909,
+      "macro_f1": 0.832427536231884,
+      "confusion_matrix": [
+        [
+          9,
+          1,
+          0,
+          1
+        ],
+        [
+          4,
+          6,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          11,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          11
+        ]
+      ],
+      "classification_report": {
+        "Malicious_POST": {
+          "precision": 0.6923076923076923,
+          "recall": 0.8181818181818182,
+          "f1-score": 0.75,
+          "support": 11.0
+        },
+        "Normal": {
+          "precision": 0.8571428571428571,
+          "recall": 0.5454545454545454,
+          "f1-score": 0.6666666666666666,
+          "support": 11.0
+        },
+        "Port_Scan": {
+          "precision": 0.9166666666666666,
+          "recall": 1.0,
+          "f1-score": 0.9565217391304348,
+          "support": 11.0
+        },
+        "SYN_Flood": {
+          "precision": 0.9166666666666666,
+          "recall": 1.0,
+          "f1-score": 0.9565217391304348,
+          "support": 11.0
+        },
+        "accuracy": 0.8409090909090909,
+        "macro avg": {
+          "precision": 0.8456959706959706,
+          "recall": 0.8409090909090909,
+          "f1-score": 0.832427536231884,
+          "support": 44.0
+        },
+        "weighted avg": {
+          "precision": 0.8456959706959707,
+          "recall": 0.8409090909090909,
+          "f1-score": 0.832427536231884,
+          "support": 44.0
+        }
+      }
+    }
+  },
+  "selected_model": "ExtraTrees",
+  "test_metrics": {
+    "accuracy": 0.8409090909090909,
+    "balanced_accuracy": 0.8409090909090909,
+    "macro_precision": 0.8489010989010989,
+    "macro_recall": 0.8409090909090909,
+    "macro_f1": 0.8333333333333334,
+    "confusion_matrix": [
+      [
+        10,
+        1,
+        0,
+        0
+      ],
+      [
+        2,
+        6,
+        3,
+        0
+      ],
+      [
+        1,
+        0,
+        10,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        11
+      ]
+    ],
+    "classification_report": {
+      "Malicious_POST": {
+        "precision": 0.7692307692307693,
+        "recall": 0.9090909090909091,
+        "f1-score": 0.8333333333333334,
+        "support": 11.0
+      },
+      "Normal": {
+        "precision": 0.8571428571428571,
+        "recall": 0.5454545454545454,
+        "f1-score": 0.6666666666666666,
+        "support": 11.0
+      },
+      "Port_Scan": {
+        "precision": 0.7692307692307693,
+        "recall": 0.9090909090909091,
+        "f1-score": 0.8333333333333334,
+        "support": 11.0
+      },
+      "SYN_Flood": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 11.0
+      },
+      "accuracy": 0.8409090909090909,
+      "macro avg": {
+        "precision": 0.8489010989010989,
+        "recall": 0.8409090909090909,
+        "f1-score": 0.8333333333333334,
+        "support": 44.0
+      },
+      "weighted avg": {
+        "precision": 0.8489010989010989,
+        "recall": 0.8409090909090909,
+        "f1-score": 0.8333333333333335,
+        "support": 44.0
+      }
+    }
+  },
+  "test_metrics_percent": {
+    "accuracy": 84.09,
+    "balanced_accuracy": 84.09,
+    "macro_precision": 84.89,
+    "macro_recall": 84.09,
+    "macro_f1": 83.33
+  },
+  "model_path": "/home/zolikha/Graduation_Project/IoT-devices/New_Datasets/models/flow_run_level_296_trained/20261103T180136Z/model.joblib",
+  "feature_contract_path": "/home/zolikha/Graduation_Project/IoT-devices/New_Datasets/models/flow_run_level_296_trained/20261103T180136Z/feature_contract.json"
+}

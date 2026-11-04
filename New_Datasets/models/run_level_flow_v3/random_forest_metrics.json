@@ -1,0 +1,102 @@
+{
+  "model": "random_forest",
+  "features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction"
+  ],
+  "classes": [
+    "Malicious_POST",
+    "Normal",
+    "Port_Scan",
+    "SYN_Flood"
+  ],
+  "validation": {
+    "accuracy": 0.25
+  },
+  "test": {
+    "accuracy": 0.24444444444444444,
+    "confusion_matrix": [
+      [
+        0,
+        11,
+        0,
+        0
+      ],
+      [
+        0,
+        11,
+        0,
+        0
+      ],
+      [
+        0,
+        12,
+        0,
+        0
+      ],
+      [
+        0,
+        11,
+        0,
+        0
+      ]
+    ],
+    "classification_report": {
+      "Malicious_POST": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 11.0
+      },
+      "Normal": {
+        "precision": 0.24444444444444444,
+        "recall": 1.0,
+        "f1-score": 0.39285714285714285,
+        "support": 11.0
+      },
+      "Port_Scan": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 12.0
+      },
+      "SYN_Flood": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 11.0
+      },
+      "accuracy": 0.24444444444444444,
+      "macro avg": {
+        "precision": 0.06111111111111111,
+        "recall": 0.25,
+        "f1-score": 0.09821428571428571,
+        "support": 45.0
+      },
+      "weighted avg": {
+        "precision": 0.05975308641975308,
+        "recall": 0.24444444444444444,
+        "f1-score": 0.09603174603174602,
+        "support": 45.0
+      }
+    }
+  }
+}

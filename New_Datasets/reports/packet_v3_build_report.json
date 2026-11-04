@@ -1,0 +1,1174 @@
+{
+  "level": "packet",
+  "input_dir": "New_Datasets/raw/packet_v3_balanced",
+  "output": "New_Datasets/processed/v3/packet_dataset_v3.csv",
+  "manifest": "New_Datasets/experiments/packet_v3_balanced_manifest.csv",
+  "files": [
+    {
+      "file": "0447f70f-42da-449c-94df-d7a2a2f1bc43.csv",
+      "run_id_from_filename": "0447f70f-42da-449c-94df-d7a2a2f1bc43",
+      "raw_rows": 200,
+      "status": "accepted",
+      "accepted_rows": 200,
+      "label": "Normal"
+    },
+    {
+      "file": "04a55083-3d04-481b-bbbf-4dfafe92a4cb.csv",
+      "run_id_from_filename": "04a55083-3d04-481b-bbbf-4dfafe92a4cb",
+      "raw_rows": 258,
+      "status": "accepted",
+      "accepted_rows": 258,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "04fa47f0-38db-4d9b-9d5a-7e765eec94d8.csv",
+      "run_id_from_filename": "04fa47f0-38db-4d9b-9d5a-7e765eec94d8",
+      "raw_rows": 26,
+      "status": "accepted",
+      "accepted_rows": 26,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "0961235f-b3cb-4c3d-9e62-5ae88d93f71e.csv",
+      "run_id_from_filename": "0961235f-b3cb-4c3d-9e62-5ae88d93f71e",
+      "raw_rows": 719,
+      "status": "accepted",
+      "accepted_rows": 719,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "0ba4765d-e24a-4385-b2ba-448ce3341b49.csv",
+      "run_id_from_filename": "0ba4765d-e24a-4385-b2ba-448ce3341b49",
+      "raw_rows": 401,
+      "status": "accepted",
+      "accepted_rows": 401,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "0c68d77c-946f-4456-bb76-dd0f1d7ba661.csv",
+      "run_id_from_filename": "0c68d77c-946f-4456-bb76-dd0f1d7ba661",
+      "raw_rows": 392,
+      "status": "accepted",
+      "accepted_rows": 392,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "0fad5774-5f8c-4b5d-9495-e6f5eda9e784.csv",
+      "run_id_from_filename": "0fad5774-5f8c-4b5d-9495-e6f5eda9e784",
+      "raw_rows": 103,
+      "status": "accepted",
+      "accepted_rows": 103,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "1144d9ad-b55c-473d-a9ca-820f54024fad.csv",
+      "run_id_from_filename": "1144d9ad-b55c-473d-a9ca-820f54024fad",
+      "raw_rows": 271,
+      "status": "accepted",
+      "accepted_rows": 271,
+      "label": "Normal"
+    },
+    {
+      "file": "15074715-d02f-44a7-bc5e-c4a06a0c04b1.csv",
+      "run_id_from_filename": "15074715-d02f-44a7-bc5e-c4a06a0c04b1",
+      "raw_rows": 502,
+      "status": "accepted",
+      "accepted_rows": 502,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "1a2d87ed-6392-4e63-bda0-102427efe165.csv",
+      "run_id_from_filename": "1a2d87ed-6392-4e63-bda0-102427efe165",
+      "raw_rows": 416,
+      "status": "accepted",
+      "accepted_rows": 416,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "1c8c04a1-6944-417d-b888-96223c6d7fd7.csv",
+      "run_id_from_filename": "1c8c04a1-6944-417d-b888-96223c6d7fd7",
+      "raw_rows": 201,
+      "status": "accepted",
+      "accepted_rows": 201,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "1dc497b4-1f30-4a3f-a021-9e1f5eb2fa3d.csv",
+      "run_id_from_filename": "1dc497b4-1f30-4a3f-a021-9e1f5eb2fa3d",
+      "raw_rows": 2099,
+      "status": "accepted",
+      "accepted_rows": 2099,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "1ec077f1-33a9-4e54-9ce2-2029cec2a561.csv",
+      "run_id_from_filename": "1ec077f1-33a9-4e54-9ce2-2029cec2a561",
+      "raw_rows": 1827,
+      "status": "accepted",
+      "accepted_rows": 1827,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "1fc529d2-d40e-4668-88ea-ef4adaa65bea.csv",
+      "run_id_from_filename": "1fc529d2-d40e-4668-88ea-ef4adaa65bea",
+      "raw_rows": 459,
+      "status": "accepted",
+      "accepted_rows": 459,
+      "label": "Normal"
+    },
+    {
+      "file": "27c63b85-3c65-42db-94d2-952820812a02.csv",
+      "run_id_from_filename": "27c63b85-3c65-42db-94d2-952820812a02",
+      "raw_rows": 605,
+      "status": "accepted",
+      "accepted_rows": 605,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "2946a140-9982-44f7-a1b9-1cfc1d87826b.csv",
+      "run_id_from_filename": "2946a140-9982-44f7-a1b9-1cfc1d87826b",
+      "raw_rows": 105,
+      "status": "accepted",
+      "accepted_rows": 105,
+      "label": "Normal"
+    },
+    {
+      "file": "298cd187-31e6-4377-a1a3-67f65fa28388.csv",
+      "run_id_from_filename": "298cd187-31e6-4377-a1a3-67f65fa28388",
+      "raw_rows": 794,
+      "status": "accepted",
+      "accepted_rows": 794,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "2a6acca5-1afa-431c-a4e0-4572997f2d11.csv",
+      "run_id_from_filename": "2a6acca5-1afa-431c-a4e0-4572997f2d11",
+      "raw_rows": 485,
+      "status": "accepted",
+      "accepted_rows": 485,
+      "label": "Normal"
+    },
+    {
+      "file": "2baeb63a-bc1b-4226-8c6e-0027f4272236.csv",
+      "run_id_from_filename": "2baeb63a-bc1b-4226-8c6e-0027f4272236",
+      "raw_rows": 514,
+      "status": "accepted",
+      "accepted_rows": 514,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "307a894b-baed-4031-9979-d65ec724a025.csv",
+      "run_id_from_filename": "307a894b-baed-4031-9979-d65ec724a025",
+      "raw_rows": 345,
+      "status": "accepted",
+      "accepted_rows": 345,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "31f64612-4af2-4f4e-abd3-7f4568449df8.csv",
+      "run_id_from_filename": "31f64612-4af2-4f4e-abd3-7f4568449df8",
+      "raw_rows": 1099,
+      "status": "accepted",
+      "accepted_rows": 1099,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "342f6b20-d35a-4e14-8d47-c8d40c428105.csv",
+      "run_id_from_filename": "342f6b20-d35a-4e14-8d47-c8d40c428105",
+      "raw_rows": 410,
+      "status": "accepted",
+      "accepted_rows": 410,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "354a1b83-febe-4752-aad0-577507c2d651.csv",
+      "run_id_from_filename": "354a1b83-febe-4752-aad0-577507c2d651",
+      "raw_rows": 669,
+      "status": "accepted",
+      "accepted_rows": 669,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "378b0f30-ce5d-4f19-9d87-ab9918af7d55.csv",
+      "run_id_from_filename": "378b0f30-ce5d-4f19-9d87-ab9918af7d55",
+      "raw_rows": 507,
+      "status": "accepted",
+      "accepted_rows": 507,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "3cc9a092-b2a6-4b6a-a59c-d1e5435cf55d.csv",
+      "run_id_from_filename": "3cc9a092-b2a6-4b6a-a59c-d1e5435cf55d",
+      "raw_rows": 988,
+      "status": "accepted",
+      "accepted_rows": 988,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "3e4de456-a404-4594-9f78-e0f2651c1af1.csv",
+      "run_id_from_filename": "3e4de456-a404-4594-9f78-e0f2651c1af1",
+      "raw_rows": 755,
+      "status": "accepted",
+      "accepted_rows": 755,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "3ef8a648-3925-4742-b2ed-798a8b20176a.csv",
+      "run_id_from_filename": "3ef8a648-3925-4742-b2ed-798a8b20176a",
+      "raw_rows": 26,
+      "status": "accepted",
+      "accepted_rows": 26,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "3fbd60be-fc14-49e2-96a3-be2f6b8213ca.csv",
+      "run_id_from_filename": "3fbd60be-fc14-49e2-96a3-be2f6b8213ca",
+      "raw_rows": 858,
+      "status": "accepted",
+      "accepted_rows": 858,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "417063ba-4556-48f4-bc57-75bb7536a25e.csv",
+      "run_id_from_filename": "417063ba-4556-48f4-bc57-75bb7536a25e",
+      "raw_rows": 1147,
+      "status": "accepted",
+      "accepted_rows": 1147,
+      "label": "Normal"
+    },
+    {
+      "file": "42a12658-f1ab-4d4a-823a-cc8f7f50514c.csv",
+      "run_id_from_filename": "42a12658-f1ab-4d4a-823a-cc8f7f50514c",
+      "raw_rows": 251,
+      "status": "accepted",
+      "accepted_rows": 251,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "450c761a-879e-4167-8403-b3fd45049778.csv",
+      "run_id_from_filename": "450c761a-879e-4167-8403-b3fd45049778",
+      "raw_rows": 26,
+      "status": "accepted",
+      "accepted_rows": 26,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "4518f840-f3b4-427f-90ea-5a42bdc69bbb.csv",
+      "run_id_from_filename": "4518f840-f3b4-427f-90ea-5a42bdc69bbb",
+      "raw_rows": 897,
+      "status": "accepted",
+      "accepted_rows": 897,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "46699a72-49d0-4f75-be33-df5fa31cf38b.csv",
+      "run_id_from_filename": "46699a72-49d0-4f75-be33-df5fa31cf38b",
+      "raw_rows": 1874,
+      "status": "accepted",
+      "accepted_rows": 1874,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "4716212b-6ca2-43a6-9506-bdd0d761830b.csv",
+      "run_id_from_filename": "4716212b-6ca2-43a6-9506-bdd0d761830b",
+      "raw_rows": 261,
+      "status": "accepted",
+      "accepted_rows": 261,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "47946bb2-760f-4237-b774-facf775f1112.csv",
+      "run_id_from_filename": "47946bb2-760f-4237-b774-facf775f1112",
+      "raw_rows": 583,
+      "status": "accepted",
+      "accepted_rows": 583,
+      "label": "Normal"
+    },
+    {
+      "file": "4a73c2d0-0d81-4630-b78c-0ab4f5025c66.csv",
+      "run_id_from_filename": "4a73c2d0-0d81-4630-b78c-0ab4f5025c66",
+      "raw_rows": 4680,
+      "status": "accepted",
+      "accepted_rows": 4680,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "4a741612-7914-4dd0-98ae-31ed245f81da.csv",
+      "run_id_from_filename": "4a741612-7914-4dd0-98ae-31ed245f81da",
+      "raw_rows": 234,
+      "status": "accepted",
+      "accepted_rows": 234,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "4ab04fec-8f26-4867-b2fc-42d5af4a368e.csv",
+      "run_id_from_filename": "4ab04fec-8f26-4867-b2fc-42d5af4a368e",
+      "raw_rows": 591,
+      "status": "accepted",
+      "accepted_rows": 591,
+      "label": "Normal"
+    },
+    {
+      "file": "4b88f786-0379-4140-9688-cc85c7600c83.csv",
+      "run_id_from_filename": "4b88f786-0379-4140-9688-cc85c7600c83",
+      "raw_rows": 483,
+      "status": "accepted",
+      "accepted_rows": 483,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "4c1bef14-efe6-48f4-b806-82c7bad715c3.csv",
+      "run_id_from_filename": "4c1bef14-efe6-48f4-b806-82c7bad715c3",
+      "raw_rows": 2145,
+      "status": "accepted",
+      "accepted_rows": 2145,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "4ccf3d79-b2cd-4b19-b9ce-e35be5595172.csv",
+      "run_id_from_filename": "4ccf3d79-b2cd-4b19-b9ce-e35be5595172",
+      "raw_rows": 240,
+      "status": "accepted",
+      "accepted_rows": 240,
+      "label": "Normal"
+    },
+    {
+      "file": "5010f840-6483-45c4-8ee8-092415dc6841.csv",
+      "run_id_from_filename": "5010f840-6483-45c4-8ee8-092415dc6841",
+      "raw_rows": 488,
+      "status": "accepted",
+      "accepted_rows": 488,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "53fde75a-fd58-47da-9234-5c4bc1f59630.csv",
+      "run_id_from_filename": "53fde75a-fd58-47da-9234-5c4bc1f59630",
+      "raw_rows": 2245,
+      "status": "accepted",
+      "accepted_rows": 2245,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "554e99ac-bcf3-4b22-b93b-99bf63d542ff.csv",
+      "run_id_from_filename": "554e99ac-bcf3-4b22-b93b-99bf63d542ff",
+      "raw_rows": 416,
+      "status": "accepted",
+      "accepted_rows": 416,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "57426b6a-1ee9-438d-8b7d-b09ab2805bee.csv",
+      "run_id_from_filename": "57426b6a-1ee9-438d-8b7d-b09ab2805bee",
+      "raw_rows": 26,
+      "status": "accepted",
+      "accepted_rows": 26,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "5766c151-f2f0-4e5e-b3ce-86ab646014cb.csv",
+      "run_id_from_filename": "5766c151-f2f0-4e5e-b3ce-86ab646014cb",
+      "raw_rows": 185,
+      "status": "accepted",
+      "accepted_rows": 185,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "594ca593-2355-413f-ab17-a9d060706ac2.csv",
+      "run_id_from_filename": "594ca593-2355-413f-ab17-a9d060706ac2",
+      "raw_rows": 18,
+      "status": "accepted",
+      "accepted_rows": 18,
+      "label": "Normal"
+    },
+    {
+      "file": "597bb502-883c-4979-be6d-abddce67dafb.csv",
+      "run_id_from_filename": "597bb502-883c-4979-be6d-abddce67dafb",
+      "raw_rows": 269,
+      "status": "accepted",
+      "accepted_rows": 269,
+      "label": "Normal"
+    },
+    {
+      "file": "59e3b490-46f5-4bac-b301-53b4ce893a28.csv",
+      "run_id_from_filename": "59e3b490-46f5-4bac-b301-53b4ce893a28",
+      "raw_rows": 404,
+      "status": "accepted",
+      "accepted_rows": 404,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "5bcbb9f3-1031-4fe7-b1cf-e6b92328bc52.csv",
+      "run_id_from_filename": "5bcbb9f3-1031-4fe7-b1cf-e6b92328bc52",
+      "raw_rows": 501,
+      "status": "accepted",
+      "accepted_rows": 501,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "5be6de58-d577-4925-b5c0-cd5a5b529484.csv",
+      "run_id_from_filename": "5be6de58-d577-4925-b5c0-cd5a5b529484",
+      "raw_rows": 422,
+      "status": "accepted",
+      "accepted_rows": 420,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "5ca09203-2647-4155-a771-ddbb69c02810.csv",
+      "run_id_from_filename": "5ca09203-2647-4155-a771-ddbb69c02810",
+      "raw_rows": 18,
+      "status": "accepted",
+      "accepted_rows": 18,
+      "label": "Normal"
+    },
+    {
+      "file": "60151575-aa42-4417-be9f-22d04124e0ea.csv",
+      "run_id_from_filename": "60151575-aa42-4417-be9f-22d04124e0ea",
+      "raw_rows": 665,
+      "status": "accepted",
+      "accepted_rows": 665,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "60a81966-f125-4c3b-a63d-667f0d349657.csv",
+      "run_id_from_filename": "60a81966-f125-4c3b-a63d-667f0d349657",
+      "raw_rows": 366,
+      "status": "accepted",
+      "accepted_rows": 366,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "612b9a4e-f024-42e8-971b-20b27075c560.csv",
+      "run_id_from_filename": "612b9a4e-f024-42e8-971b-20b27075c560",
+      "raw_rows": 641,
+      "status": "accepted",
+      "accepted_rows": 641,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "645482d8-d5fe-4ab8-974c-58ff98340a6c.csv",
+      "run_id_from_filename": "645482d8-d5fe-4ab8-974c-58ff98340a6c",
+      "raw_rows": 623,
+      "status": "accepted",
+      "accepted_rows": 623,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "656a30fc-7683-4c4f-a184-0f8223df6a7e.csv",
+      "run_id_from_filename": "656a30fc-7683-4c4f-a184-0f8223df6a7e",
+      "raw_rows": 673,
+      "status": "accepted",
+      "accepted_rows": 673,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "6713d680-ceda-47a1-b0bb-6239c073dffd.csv",
+      "run_id_from_filename": "6713d680-ceda-47a1-b0bb-6239c073dffd",
+      "raw_rows": 562,
+      "status": "accepted",
+      "accepted_rows": 562,
+      "label": "Normal"
+    },
+    {
+      "file": "682246ba-6a90-4972-91ad-6eebc10b1969.csv",
+      "run_id_from_filename": "682246ba-6a90-4972-91ad-6eebc10b1969",
+      "raw_rows": 583,
+      "status": "accepted",
+      "accepted_rows": 583,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "68fff6cd-2cf2-48b6-9309-9e801eebc7df.csv",
+      "run_id_from_filename": "68fff6cd-2cf2-48b6-9309-9e801eebc7df",
+      "raw_rows": 1955,
+      "status": "accepted",
+      "accepted_rows": 1955,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "6a3e408b-426f-4b0d-b7f0-454499c5ed5f.csv",
+      "run_id_from_filename": "6a3e408b-426f-4b0d-b7f0-454499c5ed5f",
+      "raw_rows": 1941,
+      "status": "accepted",
+      "accepted_rows": 1941,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "6efe56e5-23c7-4c5b-bd06-5454a310ea9e.csv",
+      "run_id_from_filename": "6efe56e5-23c7-4c5b-bd06-5454a310ea9e",
+      "raw_rows": 568,
+      "status": "accepted",
+      "accepted_rows": 568,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "6fb19286-ac38-492d-92a9-30f31980b88a.csv",
+      "run_id_from_filename": "6fb19286-ac38-492d-92a9-30f31980b88a",
+      "raw_rows": 26,
+      "status": "accepted",
+      "accepted_rows": 26,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "72a267bd-0304-4bcb-a980-27186f17de8e.csv",
+      "run_id_from_filename": "72a267bd-0304-4bcb-a980-27186f17de8e",
+      "raw_rows": 17,
+      "status": "accepted",
+      "accepted_rows": 17,
+      "label": "Normal"
+    },
+    {
+      "file": "7387af2b-3e5a-4e1a-9370-f665dcbc6bbd.csv",
+      "run_id_from_filename": "7387af2b-3e5a-4e1a-9370-f665dcbc6bbd",
+      "raw_rows": 1207,
+      "status": "accepted",
+      "accepted_rows": 1207,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "7538d116-b33f-4f4e-95b7-d3790778444f.csv",
+      "run_id_from_filename": "7538d116-b33f-4f4e-95b7-d3790778444f",
+      "raw_rows": 185,
+      "status": "accepted",
+      "accepted_rows": 185,
+      "label": "Normal"
+    },
+    {
+      "file": "757d3ea3-0adb-4b94-ab98-c9f36418c59c.csv",
+      "run_id_from_filename": "757d3ea3-0adb-4b94-ab98-c9f36418c59c",
+      "raw_rows": 3449,
+      "status": "accepted",
+      "accepted_rows": 3449,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "76fa764d-e58b-4213-b120-8dea654d4bd8.csv",
+      "run_id_from_filename": "76fa764d-e58b-4213-b120-8dea654d4bd8",
+      "raw_rows": 584,
+      "status": "accepted",
+      "accepted_rows": 584,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "783e37a2-d305-4d80-9305-63d457b16ba2.csv",
+      "run_id_from_filename": "783e37a2-d305-4d80-9305-63d457b16ba2",
+      "raw_rows": 1022,
+      "status": "accepted",
+      "accepted_rows": 1022,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "7883bbed-6818-43c7-9de9-e26f6ec90712.csv",
+      "run_id_from_filename": "7883bbed-6818-43c7-9de9-e26f6ec90712",
+      "raw_rows": 1446,
+      "status": "accepted",
+      "accepted_rows": 1446,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "7955eea9-f6db-4bd0-b821-5edc1f967178.csv",
+      "run_id_from_filename": "7955eea9-f6db-4bd0-b821-5edc1f967178",
+      "raw_rows": 28,
+      "status": "accepted",
+      "accepted_rows": 28,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "798934f9-4f6f-4d64-97e9-07b7f30a7eb5.csv",
+      "run_id_from_filename": "798934f9-4f6f-4d64-97e9-07b7f30a7eb5",
+      "raw_rows": 19,
+      "status": "accepted",
+      "accepted_rows": 19,
+      "label": "Normal"
+    },
+    {
+      "file": "7993eae2-cb7a-4bae-8970-ab0a548b3cde.csv",
+      "run_id_from_filename": "7993eae2-cb7a-4bae-8970-ab0a548b3cde",
+      "raw_rows": 394,
+      "status": "accepted",
+      "accepted_rows": 394,
+      "label": "Normal"
+    },
+    {
+      "file": "7b703045-0a63-4aab-8f22-db0ca763bb47.csv",
+      "run_id_from_filename": "7b703045-0a63-4aab-8f22-db0ca763bb47",
+      "raw_rows": 381,
+      "status": "accepted",
+      "accepted_rows": 381,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "7d44d9ea-8788-454f-9cb5-c8295440d818.csv",
+      "run_id_from_filename": "7d44d9ea-8788-454f-9cb5-c8295440d818",
+      "raw_rows": 485,
+      "status": "accepted",
+      "accepted_rows": 485,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "7f2b190b-ef64-46f7-b43e-873ff2e721c2.csv",
+      "run_id_from_filename": "7f2b190b-ef64-46f7-b43e-873ff2e721c2",
+      "raw_rows": 80,
+      "status": "accepted",
+      "accepted_rows": 80,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "7fb487ef-dd1b-4a78-b4f7-5df40ef1d00f.csv",
+      "run_id_from_filename": "7fb487ef-dd1b-4a78-b4f7-5df40ef1d00f",
+      "raw_rows": 104,
+      "status": "accepted",
+      "accepted_rows": 104,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "80f8650d-14c9-49d5-a33f-0826536d55ad.csv",
+      "run_id_from_filename": "80f8650d-14c9-49d5-a33f-0826536d55ad",
+      "raw_rows": 1320,
+      "status": "accepted",
+      "accepted_rows": 1320,
+      "label": "Normal"
+    },
+    {
+      "file": "87ca360a-69ba-4256-8226-c77267134e64.csv",
+      "run_id_from_filename": "87ca360a-69ba-4256-8226-c77267134e64",
+      "raw_rows": 230,
+      "status": "accepted",
+      "accepted_rows": 230,
+      "label": "Normal"
+    },
+    {
+      "file": "8851cbb1-97cb-47aa-ac01-18a43d8cda6b.csv",
+      "run_id_from_filename": "8851cbb1-97cb-47aa-ac01-18a43d8cda6b",
+      "raw_rows": 614,
+      "status": "accepted",
+      "accepted_rows": 614,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "8854a533-ef17-46b2-b342-e8d7ec161739.csv",
+      "run_id_from_filename": "8854a533-ef17-46b2-b342-e8d7ec161739",
+      "raw_rows": 245,
+      "status": "accepted",
+      "accepted_rows": 245,
+      "label": "Normal"
+    },
+    {
+      "file": "8a03ab31-effc-4bc1-9c28-10d7b346a639.csv",
+      "run_id_from_filename": "8a03ab31-effc-4bc1-9c28-10d7b346a639",
+      "raw_rows": 281,
+      "status": "accepted",
+      "accepted_rows": 281,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "8bec6241-875e-4e4b-aea9-d45d05469620.csv",
+      "run_id_from_filename": "8bec6241-875e-4e4b-aea9-d45d05469620",
+      "raw_rows": 18,
+      "status": "accepted",
+      "accepted_rows": 18,
+      "label": "Normal"
+    },
+    {
+      "file": "8d4a17ac-e5ab-4a78-8120-48317ad92662.csv",
+      "run_id_from_filename": "8d4a17ac-e5ab-4a78-8120-48317ad92662",
+      "raw_rows": 447,
+      "status": "accepted",
+      "accepted_rows": 447,
+      "label": "Normal"
+    },
+    {
+      "file": "8f91ce04-a6d7-433d-bd0d-72392cdb58a2.csv",
+      "run_id_from_filename": "8f91ce04-a6d7-433d-bd0d-72392cdb58a2",
+      "raw_rows": 899,
+      "status": "accepted",
+      "accepted_rows": 899,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "91eafe38-5704-4213-ac95-2d70ed37471a.csv",
+      "run_id_from_filename": "91eafe38-5704-4213-ac95-2d70ed37471a",
+      "raw_rows": 1281,
+      "status": "accepted",
+      "accepted_rows": 1281,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "926f94fd-a724-4a24-8bb2-7d204c45c12d.csv",
+      "run_id_from_filename": "926f94fd-a724-4a24-8bb2-7d204c45c12d",
+      "raw_rows": 527,
+      "status": "accepted",
+      "accepted_rows": 527,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "94f9bddd-ac24-47c8-a374-d2ea1df5dbf5.csv",
+      "run_id_from_filename": "94f9bddd-ac24-47c8-a374-d2ea1df5dbf5",
+      "raw_rows": 1331,
+      "status": "accepted",
+      "accepted_rows": 1331,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "99c40d55-d24c-4c9f-84ea-33d36be48911.csv",
+      "run_id_from_filename": "99c40d55-d24c-4c9f-84ea-33d36be48911",
+      "raw_rows": 27,
+      "status": "accepted",
+      "accepted_rows": 27,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "9cd0d367-0899-4e0f-a569-1e18bd3e17e0.csv",
+      "run_id_from_filename": "9cd0d367-0899-4e0f-a569-1e18bd3e17e0",
+      "raw_rows": 43,
+      "status": "accepted",
+      "accepted_rows": 43,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "9e52f9b2-0ec4-47cf-94ac-43b3883230e8.csv",
+      "run_id_from_filename": "9e52f9b2-0ec4-47cf-94ac-43b3883230e8",
+      "raw_rows": 544,
+      "status": "accepted",
+      "accepted_rows": 544,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "9ee6e978-c680-4702-aad9-38a888bc8f31.csv",
+      "run_id_from_filename": "9ee6e978-c680-4702-aad9-38a888bc8f31",
+      "raw_rows": 306,
+      "status": "accepted",
+      "accepted_rows": 306,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "a0f92c10-6d07-494f-a203-5118dcf77ca5.csv",
+      "run_id_from_filename": "a0f92c10-6d07-494f-a203-5118dcf77ca5",
+      "raw_rows": 166,
+      "status": "accepted",
+      "accepted_rows": 166,
+      "label": "Normal"
+    },
+    {
+      "file": "a2f186c7-1af8-423e-b9eb-c2677446cad0.csv",
+      "run_id_from_filename": "a2f186c7-1af8-423e-b9eb-c2677446cad0",
+      "raw_rows": 97,
+      "status": "accepted",
+      "accepted_rows": 97,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "a4b57a23-91ec-49c4-910f-ca2769550949.csv",
+      "run_id_from_filename": "a4b57a23-91ec-49c4-910f-ca2769550949",
+      "raw_rows": 17,
+      "status": "accepted",
+      "accepted_rows": 17,
+      "label": "Normal"
+    },
+    {
+      "file": "a6385990-d19a-4a54-970e-3d015d4ce2a5.csv",
+      "run_id_from_filename": "a6385990-d19a-4a54-970e-3d015d4ce2a5",
+      "raw_rows": 1580,
+      "status": "accepted",
+      "accepted_rows": 1580,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "a7e0d6f5-3fe0-4705-9bb2-2b7fbed642ee.csv",
+      "run_id_from_filename": "a7e0d6f5-3fe0-4705-9bb2-2b7fbed642ee",
+      "raw_rows": 781,
+      "status": "accepted",
+      "accepted_rows": 781,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "a932706a-3b4a-4087-8ee5-0a737fac970f.csv",
+      "run_id_from_filename": "a932706a-3b4a-4087-8ee5-0a737fac970f",
+      "raw_rows": 199,
+      "status": "accepted",
+      "accepted_rows": 199,
+      "label": "Normal"
+    },
+    {
+      "file": "a949b4ad-3544-4105-a567-865b2785fda1.csv",
+      "run_id_from_filename": "a949b4ad-3544-4105-a567-865b2785fda1",
+      "raw_rows": 402,
+      "status": "accepted",
+      "accepted_rows": 402,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "a99d2f54-1295-43f4-96ee-d13bb3d1c2c4.csv",
+      "run_id_from_filename": "a99d2f54-1295-43f4-96ee-d13bb3d1c2c4",
+      "raw_rows": 175,
+      "status": "accepted",
+      "accepted_rows": 175,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "ae626e02-d8a2-4d85-a2f5-4190530e535b.csv",
+      "run_id_from_filename": "ae626e02-d8a2-4d85-a2f5-4190530e535b",
+      "raw_rows": 361,
+      "status": "accepted",
+      "accepted_rows": 361,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "aff44fe3-a4b2-4d73-acab-a1f90061c77d.csv",
+      "run_id_from_filename": "aff44fe3-a4b2-4d73-acab-a1f90061c77d",
+      "raw_rows": 17,
+      "status": "accepted",
+      "accepted_rows": 17,
+      "label": "Normal"
+    },
+    {
+      "file": "b37a1058-9c15-4183-bcdd-fa58ec0e126e.csv",
+      "run_id_from_filename": "b37a1058-9c15-4183-bcdd-fa58ec0e126e",
+      "raw_rows": 1184,
+      "status": "accepted",
+      "accepted_rows": 1184,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "b3a8df16-badb-4c76-8414-f7b82d16a4c2.csv",
+      "run_id_from_filename": "b3a8df16-badb-4c76-8414-f7b82d16a4c2",
+      "raw_rows": 1342,
+      "status": "accepted",
+      "accepted_rows": 1342,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "b7931b8b-5357-46fc-b265-1f06972c1110.csv",
+      "run_id_from_filename": "b7931b8b-5357-46fc-b265-1f06972c1110",
+      "raw_rows": 144,
+      "status": "accepted",
+      "accepted_rows": 144,
+      "label": "Normal"
+    },
+    {
+      "file": "b7a26ad4-e23b-4e47-88f6-c48d3536e428.csv",
+      "run_id_from_filename": "b7a26ad4-e23b-4e47-88f6-c48d3536e428",
+      "raw_rows": 467,
+      "status": "accepted",
+      "accepted_rows": 467,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "b886e5f7-e16f-48a8-a754-522981c21dcb.csv",
+      "run_id_from_filename": "b886e5f7-e16f-48a8-a754-522981c21dcb",
+      "raw_rows": 1161,
+      "status": "accepted",
+      "accepted_rows": 1161,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "b94a3ffb-5344-4718-8b62-4abf32c5f6b5.csv",
+      "run_id_from_filename": "b94a3ffb-5344-4718-8b62-4abf32c5f6b5",
+      "raw_rows": 1813,
+      "status": "accepted",
+      "accepted_rows": 1813,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "bb66f90c-fcbb-4427-b1a0-907302ec839a.csv",
+      "run_id_from_filename": "bb66f90c-fcbb-4427-b1a0-907302ec839a",
+      "raw_rows": 1645,
+      "status": "accepted",
+      "accepted_rows": 1645,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "bd5b5fee-0a9a-4096-a658-bf1f2aa1c7db.csv",
+      "run_id_from_filename": "bd5b5fee-0a9a-4096-a658-bf1f2aa1c7db",
+      "raw_rows": 1952,
+      "status": "accepted",
+      "accepted_rows": 1952,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "bdacf8d8-50b6-46d6-81eb-855c79690649.csv",
+      "run_id_from_filename": "bdacf8d8-50b6-46d6-81eb-855c79690649",
+      "raw_rows": 788,
+      "status": "accepted",
+      "accepted_rows": 788,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "be290464-d7e2-4a97-bb41-580d7db40e1d.csv",
+      "run_id_from_filename": "be290464-d7e2-4a97-bb41-580d7db40e1d",
+      "raw_rows": 241,
+      "status": "accepted",
+      "accepted_rows": 241,
+      "label": "Normal"
+    },
+    {
+      "file": "c0d921d2-36a5-4370-803e-a10f82e249b4.csv",
+      "run_id_from_filename": "c0d921d2-36a5-4370-803e-a10f82e249b4",
+      "raw_rows": 665,
+      "status": "accepted",
+      "accepted_rows": 665,
+      "label": "Normal"
+    },
+    {
+      "file": "c179b0cb-689e-4b5c-b038-cc6597e4bd8b.csv",
+      "run_id_from_filename": "c179b0cb-689e-4b5c-b038-cc6597e4bd8b",
+      "raw_rows": 37,
+      "status": "accepted",
+      "accepted_rows": 37,
+      "label": "Normal"
+    },
+    {
+      "file": "c35d4b96-ecbf-45ef-9941-d6f58d60a995.csv",
+      "run_id_from_filename": "c35d4b96-ecbf-45ef-9941-d6f58d60a995",
+      "raw_rows": 387,
+      "status": "accepted",
+      "accepted_rows": 387,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "c526f64a-a9bb-4589-a040-74e236df0e70.csv",
+      "run_id_from_filename": "c526f64a-a9bb-4589-a040-74e236df0e70",
+      "raw_rows": 350,
+      "status": "accepted",
+      "accepted_rows": 350,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "c5fee34f-3ea4-4a5c-8ef7-02d2513d29f8.csv",
+      "run_id_from_filename": "c5fee34f-3ea4-4a5c-8ef7-02d2513d29f8",
+      "raw_rows": 2390,
+      "status": "accepted",
+      "accepted_rows": 2390,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "c64dc9a3-ab22-4ec7-8fc8-032f8432c44d.csv",
+      "run_id_from_filename": "c64dc9a3-ab22-4ec7-8fc8-032f8432c44d",
+      "raw_rows": 617,
+      "status": "accepted",
+      "accepted_rows": 617,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "c7b7df41-340c-4e57-b954-01e848fc7c73.csv",
+      "run_id_from_filename": "c7b7df41-340c-4e57-b954-01e848fc7c73",
+      "raw_rows": 289,
+      "status": "accepted",
+      "accepted_rows": 289,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "cbe068e7-5d14-4301-983e-b9daf954c11b.csv",
+      "run_id_from_filename": "cbe068e7-5d14-4301-983e-b9daf954c11b",
+      "raw_rows": 5801,
+      "status": "accepted",
+      "accepted_rows": 5801,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "cbe7105a-9521-44b6-812f-2df59a5eeb0a.csv",
+      "run_id_from_filename": "cbe7105a-9521-44b6-812f-2df59a5eeb0a",
+      "raw_rows": 16,
+      "status": "accepted",
+      "accepted_rows": 16,
+      "label": "Normal"
+    },
+    {
+      "file": "ccd279ef-a3c1-4dbb-9ac1-081402163570.csv",
+      "run_id_from_filename": "ccd279ef-a3c1-4dbb-9ac1-081402163570",
+      "raw_rows": 263,
+      "status": "accepted",
+      "accepted_rows": 263,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "cfcc36a3-951a-4356-82f3-bb2b40fb8cb0.csv",
+      "run_id_from_filename": "cfcc36a3-951a-4356-82f3-bb2b40fb8cb0",
+      "raw_rows": 35,
+      "status": "accepted",
+      "accepted_rows": 35,
+      "label": "Normal"
+    },
+    {
+      "file": "d0d92806-3d6c-4a2a-b938-d2e9735debf7.csv",
+      "run_id_from_filename": "d0d92806-3d6c-4a2a-b938-d2e9735debf7",
+      "raw_rows": 722,
+      "status": "accepted",
+      "accepted_rows": 722,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "d3304cc5-e44d-4bf1-a9e8-242c575de57b.csv",
+      "run_id_from_filename": "d3304cc5-e44d-4bf1-a9e8-242c575de57b",
+      "raw_rows": 2465,
+      "status": "accepted",
+      "accepted_rows": 2465,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "d3a50d4c-b0ff-407c-b117-01942334afe7.csv",
+      "run_id_from_filename": "d3a50d4c-b0ff-407c-b117-01942334afe7",
+      "raw_rows": 1381,
+      "status": "accepted",
+      "accepted_rows": 1381,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "d6c0706c-42f5-4653-8b27-9eeeed5d455d.csv",
+      "run_id_from_filename": "d6c0706c-42f5-4653-8b27-9eeeed5d455d",
+      "raw_rows": 3423,
+      "status": "accepted",
+      "accepted_rows": 3423,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "dd48708d-9dce-4b17-890c-8eea7b139102.csv",
+      "run_id_from_filename": "dd48708d-9dce-4b17-890c-8eea7b139102",
+      "raw_rows": 522,
+      "status": "accepted",
+      "accepted_rows": 522,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "dda504af-2be3-46ee-9c5a-9e88560a4275.csv",
+      "run_id_from_filename": "dda504af-2be3-46ee-9c5a-9e88560a4275",
+      "raw_rows": 656,
+      "status": "accepted",
+      "accepted_rows": 656,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "de3a4901-ede0-4114-875c-f53237aed209.csv",
+      "run_id_from_filename": "de3a4901-ede0-4114-875c-f53237aed209",
+      "raw_rows": 860,
+      "status": "accepted",
+      "accepted_rows": 860,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "df1ab04b-896b-44a2-8817-41d4349fc765.csv",
+      "run_id_from_filename": "df1ab04b-896b-44a2-8817-41d4349fc765",
+      "raw_rows": 388,
+      "status": "accepted",
+      "accepted_rows": 388,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "e1109d3c-4af6-42da-9851-75eb8c5b9d43.csv",
+      "run_id_from_filename": "e1109d3c-4af6-42da-9851-75eb8c5b9d43",
+      "raw_rows": 330,
+      "status": "accepted",
+      "accepted_rows": 330,
+      "label": "Port_Scan"
+    },
+    {
+      "file": "e4cfaa85-aaaf-410c-bac6-d622d7244865.csv",
+      "run_id_from_filename": "e4cfaa85-aaaf-410c-bac6-d622d7244865",
+      "raw_rows": 681,
+      "status": "accepted",
+      "accepted_rows": 681,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "ebc37efa-6525-487b-b353-4ee4634d35f5.csv",
+      "run_id_from_filename": "ebc37efa-6525-487b-b353-4ee4634d35f5",
+      "raw_rows": 862,
+      "status": "accepted",
+      "accepted_rows": 862,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "ebfe2b86-f665-4092-9a26-821e444c78fc.csv",
+      "run_id_from_filename": "ebfe2b86-f665-4092-9a26-821e444c78fc",
+      "raw_rows": 240,
+      "status": "accepted",
+      "accepted_rows": 240,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "ee7c8c14-feab-4777-aa0c-55bc16550e19.csv",
+      "run_id_from_filename": "ee7c8c14-feab-4777-aa0c-55bc16550e19",
+      "raw_rows": 15,
+      "status": "accepted",
+      "accepted_rows": 15,
+      "label": "Normal"
+    },
+    {
+      "file": "efbf7f04-bf3f-482a-ae21-38f8b88d9e51.csv",
+      "run_id_from_filename": "efbf7f04-bf3f-482a-ae21-38f8b88d9e51",
+      "raw_rows": 402,
+      "status": "accepted",
+      "accepted_rows": 402,
+      "label": "Normal"
+    },
+    {
+      "file": "efcedf4e-3983-4bf7-90bc-d9a91764bb34.csv",
+      "run_id_from_filename": "efcedf4e-3983-4bf7-90bc-d9a91764bb34",
+      "raw_rows": 361,
+      "status": "accepted",
+      "accepted_rows": 361,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "f049b860-3e24-4ffc-ab1e-1b654e0dab85.csv",
+      "run_id_from_filename": "f049b860-3e24-4ffc-ab1e-1b654e0dab85",
+      "raw_rows": 501,
+      "status": "accepted",
+      "accepted_rows": 501,
+      "label": "Normal"
+    },
+    {
+      "file": "f3e931f9-7825-40ba-8d24-b575e44ef84e.csv",
+      "run_id_from_filename": "f3e931f9-7825-40ba-8d24-b575e44ef84e",
+      "raw_rows": 1277,
+      "status": "accepted",
+      "accepted_rows": 1277,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "f79165ac-89f4-4d01-afaa-c60602fc166e.csv",
+      "run_id_from_filename": "f79165ac-89f4-4d01-afaa-c60602fc166e",
+      "raw_rows": 16,
+      "status": "accepted",
+      "accepted_rows": 16,
+      "label": "Normal"
+    },
+    {
+      "file": "f95fdecc-248f-4e1f-bf97-5f4f9e5a8b33.csv",
+      "run_id_from_filename": "f95fdecc-248f-4e1f-bf97-5f4f9e5a8b33",
+      "raw_rows": 1124,
+      "status": "accepted",
+      "accepted_rows": 1124,
+      "label": "Malicious_POST"
+    },
+    {
+      "file": "fb2c9493-f947-45dc-abb1-06dab5ea1f1d.csv",
+      "run_id_from_filename": "fb2c9493-f947-45dc-abb1-06dab5ea1f1d",
+      "raw_rows": 2044,
+      "status": "accepted",
+      "accepted_rows": 2044,
+      "label": "SYN_Flood"
+    },
+    {
+      "file": "fb8a866b-e65d-4e6f-9d66-bc0edea82775.csv",
+      "run_id_from_filename": "fb8a866b-e65d-4e6f-9d66-bc0edea82775",
+      "raw_rows": 299,
+      "status": "accepted",
+      "accepted_rows": 299,
+      "label": "Port_Scan"
+    }
+  ],
+  "missing_files": [],
+  "summary": {
+    "accepted_files": 144,
+    "rejected_files": 0,
+    "empty_files": 0,
+    "accepted_rows": 104504,
+    "rejected_rows": 0,
+    "output_rows": 104504,
+    "output_run_count": 144,
+    "status": "completed"
+  },
+  "input_directory_status": "present",
+  "discovered_csv_files": 144,
+  "output_status": "written"
+}

@@ -1,0 +1,31 @@
+h2 python3 /home/zolikha/Graduation_Project/IoT-devices/mininet/servers/web_api_server.py >/home/zolikha/h2-web.log 2>&1 &
+h1 python3 -m http.server 5353 --bind 10.10.30.2 >/home/zolikha/h1-dns-sim.log 2>&1 &
+h18 python3 -m http.server 5000 --bind 10.10.20.8 >/home/zolikha/h18-http.log 2>&1 &
+h38 python3 /home/zolikha/Graduation_Project/IoT-devices/mininet/load_balancer.py --listen-host 10.10.20.100 --listen-port 5000 --backends 10.10.20.2:5000,10.10.20.8:5000 >/home/zolikha/h38-lb.log 2>&1 &
+h5 python3 /home/zolikha/Graduation_Project/IoT-devices/mininet/iot_device_simulator.py --device-id h5 --role temperature --server 10.10.20.2 --port 5000 --interval 5 >/home/zolikha/h5-iot.log 2>&1 &
+sh sleep 3
+h2 ss -ltnp | grep 5000
+h38 ss -ltnp | grep 5000
+h5 curl -fsS --connect-timeout 3 --max-time 5 http://10.10.20.2:5000/
+h5 curl -fsS --connect-timeout 3 --max-time 5 http://10.10.20.100:5000/
+h6 curl -fsS --connect-timeout 3 --max-time 5 http://10.10.30.2:5353/ >/dev/null && sh echo DNS_SIMULATION_PASS
+h1 sh -c 'for i in $(seq 1 10); do curl -s --connect-timeout 2 --max-time 4 http://10.10.30.2:5353/ >/dev/null; done' &
+h6 sh -c 'for i in $(seq 1 10); do curl -s --connect-timeout 2 --max-time 4 http://10.10.30.2:5353/ >/dev/null; done' &
+h21 sh -c 'for i in $(seq 1 15); do curl -s --connect-timeout 2 --max-time 4 http://10.10.20.100:5000/ >/dev/null; sleep 0.2; done' &
+h22 sh -c 'for i in $(seq 1 15); do curl -s --connect-timeout 2 --max-time 4 http://10.10.20.100:5000/ >/dev/null; sleep 0.2; done' &
+h5 sh -c 'for i in $(seq 1 15); do curl -s --connect-timeout 2 --max-time 4 http://10.10.20.100:5000/ >/dev/null; sleep 0.2; done' &
+h5 sleep 12
+h5 tail -5 /home/zolikha/h5-iot.log
+sh curl -fsS http://127.0.0.1:8080/runtime/health
+sh curl -fsS http://127.0.0.1:8080/topology/switches
+sh curl -fsS http://127.0.0.1:8080/topology/hosts
+sh curl -fsS http://127.0.0.1:8080/topology/links
+sh curl -fsS 'http://127.0.0.1:8080/topology/paths?source=h5&destination=h38'
+sh curl -fsS http://127.0.0.1:8080/stats/port/4
+sh curl -fsS http://127.0.0.1:8080/stats/flow/4
+sh curl -fsS http://127.0.0.1:8080/network/load-balancer/stats
+sh curl -sS -i http://127.0.0.1:8080/firewall/status
+sh curl -sS -i http://127.0.0.1:8080/firewall/rules
+sh curl -sS -i http://127.0.0.1:8080/firewall/events
+h2 sh -c 'if command -v ngrok >/dev/null 2>&1; then ngrok http 10.10.20.2:5000 --log /home/zolikha/h2-ngrok.log >/home/zolikha/h2-ngrok.out 2>&1 & sh sleep 3; curl -sS http://127.0.0.1:4040/api/tunnels || true; else sh echo NGROK_NOT_INSTALLED; fi'
+sh echo DEMO_COMPLETE

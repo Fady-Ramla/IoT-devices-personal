@@ -1,0 +1,375 @@
+READ-ONLY PARTIAL CAMPAIGN AUDIT
+Base development package checksum: PASS
+Campaign plan: 300 rows; generations 716-1015
+Campaign manifest generations present: 299 of 300
+Manifest status counts:
+  ('Malicious_POST', 'completed'): 75
+  ('Normal', 'completed'): 74
+  ('Port_Scan', 'completed'): 75
+  ('SYN_Flood', 'completed'): 74
+  ('SYN_Flood', 'failed'): 1
+QC-candidate valid counts by class/split:
+  Malicious_POST/train: 22
+  Malicious_POST/validation: 6
+  Normal/train: 59
+  Normal/validation: 15
+  Port_Scan/train: 60
+  Port_Scan/validation: 15
+  SYN_Flood/train: 59
+  SYN_Flood/validation: 15
+Runs with one-row QC candidate pass: 251 of 300
+Issues: 49
+  REVIEW: generation 728 (D26MP062): verified POST/auth/401 events 0/36
+  REVIEW: generation 729 (D26MP041): verified POST/auth/401 events 13/41
+  REVIEW: generation 732 (D26MP048): verified POST/auth/401 events 43/75
+  REVIEW: generation 733 (D26MP054): verified POST/auth/401 events 66/80
+  REVIEW: generation 734 (D26MP029): verified POST/auth/401 events 18/24
+  REVIEW: generation 750 (D26MP014): verified POST/auth/401 events 55/76
+  REVIEW: generation 755 (D26MP018): verified POST/auth/401 events 0/13
+  REVIEW: generation 769 (D26MP050): verified POST/auth/401 events 31/68
+  REVIEW: generation 772 (D26MP035): verified POST/auth/401 events 18/30
+  REVIEW: generation 777 (D26MP028): verified POST/auth/401 events 18/19
+  REVIEW: generation 781 (D26MP016): verified POST/auth/401 events 25/43
+  REVIEW: generation 786 (D26MP004): verified POST/auth/401 events 18/20
+  REVIEW: generation 792 (D26MP066): verified POST/auth/401 events 21/31
+  REVIEW: generation 797 (D26MP047): verified POST/auth/401 events 17/18
+  REVIEW: generation 798 (D26MP073): verified POST/auth/401 events 19/35
+  REVIEW: generation 803 (D26MP026): verified POST/auth/401 events 26/70
+  REVIEW: generation 807 (D26MP058): verified POST/auth/401 events 0/17
+  REVIEW: generation 810 (D26MP025): verified POST/auth/401 events 0/35
+  REVIEW: generation 814 (D26MP011): verified POST/auth/401 events 0/8
+  REVIEW: generation 822 (D26MP013): verified POST/auth/401 events 3/12
+  REVIEW: generation 833 (D26MP015): verified POST/auth/401 events 19/28
+  REVIEW: generation 836 (D26MP063): verified POST/auth/401 events 24/25
+  REVIEW: generation 839 (D26MP059): verified POST/auth/401 events 0/28
+  REVIEW: generation 841 (D26MP045): verified POST/auth/401 events 0/15
+  REVIEW: generation 843 (D26MP023): verified POST/auth/401 events 39/40
+  REVIEW: generation 868 (D26MP034): verified POST/auth/401 events 0/16
+  REVIEW: generation 872 (D26MP033): verified POST/auth/401 events 44/55
+  REVIEW: generation 874 (D26MP021): verified POST/auth/401 events 0/24
+  REVIEW: generation 876 (D26MP009): verified POST/auth/401 events 0/32
+  REVIEW: generation 885 (D26MP046): verified POST/auth/401 events 0/7
+  REVIEW: generation 886 (D26MP043): verified POST/auth/401 events 15/23
+  REVIEW: generation 889 (D26MP064): verified POST/auth/401 events 0/15
+  REVIEW: generation 900 (D26MP060): verified POST/auth/401 events 13/51
+  REVIEW: generation 913 (D26MP067): verified POST/auth/401 events 0/12
+  REVIEW: generation 918 (D26MP031): verified POST/auth/401 events 0/6
+  REVIEW: generation 923 (D26MP061): verified POST/auth/401 events 0/18
+  REVIEW: generation 929 (D26MP038): verified POST/auth/401 events 0/38
+  REVIEW: generation 953 (D26MP003): verified POST/auth/401 events 0/9
+  REVIEW: generation 957 (D26MP006): verified POST/auth/401 events 44/45
+  REVIEW: generation 973 (D26MP056): verified POST/auth/401 events 0/8
+  REVIEW: generation 977 (D26MP071): verified POST/auth/401 events 0/39
+  REVIEW: generation 987 (D26MP027): verified POST/auth/401 events 17/19
+  REVIEW: generation 993 (D26MP036): verified POST/auth/401 events 19/72
+  REVIEW: generation 995 (D26MP074): verified POST/auth/401 events 25/26
+  REVIEW: generation 996 (D26MP001): verified POST/auth/401 events 33/40
+  REVIEW: generation 1008 (D26MP010): verified POST/auth/401 events 48/61
+  REVIEW: generation 1013 (D26MP020): verified POST/auth/401 events 45/56
+  REVIEW: generation 1014 (D26SYN025): status is failed, not completed
+  REVIEW: generation 1015: expected one manifest row, found 0
+
+Per-generation summary (generation, plan_index, profile_id, label, split, status, run_id, packet_rows, flow_rows, POST401 count, result):
+  716 | 1 | D26N022 | Normal | train | completed | c179b0cb-689e-4b5c-b038-cc6597e4bd8b | 37 | 16 | n/a | QC_CANDIDATE_PASS
+  717 | 2 | D26N025 | Normal | train | completed | a0f92c10-6d07-494f-a203-5118dcf77ca5 | 166 | 46 | n/a | QC_CANDIDATE_PASS
+  718 | 3 | D26N075 | Normal | validation | completed | b7931b8b-5357-46fc-b265-1f06972c1110 | 144 | 42 | n/a | QC_CANDIDATE_PASS
+  719 | 4 | D26SYN042 | SYN_Flood | train | completed | dd48708d-9dce-4b17-890c-8eea7b139102 | 522 | 54 | n/a | QC_CANDIDATE_PASS
+  720 | 5 | D26SYN070 | SYN_Flood | validation | completed | 401c1ac3-2ed1-4491-bf5e-6f564afd8d83 | 1902 | 51 | n/a | QC_CANDIDATE_PASS
+  721 | 6 | D26N033 | Normal | train | completed | 854963c0-8582-4002-86a5-57408ba8d1ac | 153 | 10 | n/a | QC_CANDIDATE_PASS
+  722 | 7 | D26PS048 | Port_Scan | train | completed | 682246ba-6a90-4972-91ad-6eebc10b1969 | 583 | 57 | n/a | QC_CANDIDATE_PASS
+  723 | 8 | D26SYN073 | SYN_Flood | validation | completed | a4aa52cd-9a58-4d3b-bd38-df4206ec9c97 | 1431 | 100 | n/a | QC_CANDIDATE_PASS
+  724 | 9 | D26PS024 | Port_Scan | train | completed | 6efe56e5-23c7-4c5b-bd06-5454a310ea9e | 568 | 14 | n/a | QC_CANDIDATE_PASS
+  725 | 10 | D26PS064 | Port_Scan | validation | completed | 8783dce6-ff95-40e7-8209-dd93bdb5273f | 580 | 12 | n/a | QC_CANDIDATE_PASS
+  726 | 11 | D26PS007 | Port_Scan | train | completed | 10824ca3-4037-489e-a5b5-ba11ae5356d4 | 19 | 17 | n/a | QC_CANDIDATE_PASS
+  727 | 12 | D26SYN018 | SYN_Flood | train | completed | b180d138-91e9-473a-8754-697ecaefd816 | 1634 | 51 | n/a | QC_CANDIDATE_PASS
+  728 | 13 | D26MP062 | Malicious_POST | validation | completed | 622bd8cb-b6e8-4be6-af9e-315bfaf4dbe7 | 816 | 44 | 0/36 | verified POST/auth/401 events 0/36
+  729 | 14 | D26MP041 | Malicious_POST | train | completed | 4c73d232-4206-4735-9869-ed413941a28e | 1707 | 78 | 13/41 | verified POST/auth/401 events 13/41
+  730 | 15 | D26MP039 | Malicious_POST | train | completed | ebfe2b86-f665-4092-9a26-821e444c78fc | 240 | 52 | 12/12 | QC_CANDIDATE_PASS
+  731 | 16 | D26PS073 | Port_Scan | validation | completed | 4e91b41d-d84d-442b-8865-c1cd03a15ca9 | 16 | 23 | n/a | QC_CANDIDATE_PASS
+  732 | 17 | D26MP048 | Malicious_POST | train | completed | 3fbd60be-fc14-49e2-96a3-be2f6b8213ca | 858 | 92 | 43/75 | verified POST/auth/401 events 43/75
+  733 | 18 | D26MP054 | Malicious_POST | train | completed | b3a8df16-badb-4c76-8414-f7b82d16a4c2 | 1342 | 83 | 66/80 | verified POST/auth/401 events 66/80
+  734 | 19 | D26MP029 | Malicious_POST | train | completed | c526f64a-a9bb-4589-a040-74e236df0e70 | 350 | 40 | 18/24 | verified POST/auth/401 events 18/24
+  735 | 20 | D26MP030 | Malicious_POST | train | completed | 9cd0d367-0899-4e0f-a569-1e18bd3e17e0 | 43 | 25 | 2/2 | QC_CANDIDATE_PASS
+  736 | 21 | D26N003 | Normal | train | completed | 594ca593-2355-413f-ab17-a9d060706ac2 | 18 | 4 | n/a | QC_CANDIDATE_PASS
+  737 | 22 | D26SYN008 | SYN_Flood | train | completed | 4c1bef14-efe6-48f4-b806-82c7bad715c3 | 2145 | 122 | n/a | QC_CANDIDATE_PASS
+  738 | 23 | D26N047 | Normal | train | completed | f34d1b1c-8569-49c1-a6a9-8df6d57d5ae9 | 223 | 5 | n/a | QC_CANDIDATE_PASS
+  739 | 24 | D26PS008 | Port_Scan | train | completed | 0c68d77c-946f-4456-bb76-dd0f1d7ba661 | 392 | 19 | n/a | QC_CANDIDATE_PASS
+  740 | 25 | D26N041 | Normal | train | completed | 47946bb2-760f-4237-b774-facf775f1112 | 583 | 154 | n/a | QC_CANDIDATE_PASS
+  741 | 26 | D26SYN006 | SYN_Flood | train | completed | 91eafe38-5704-4213-ac95-2d70ed37471a | 1281 | 43 | n/a | QC_CANDIDATE_PASS
+  742 | 27 | D26PS069 | Port_Scan | validation | completed | e1109d3c-4af6-42da-9851-75eb8c5b9d43 | 330 | 33 | n/a | QC_CANDIDATE_PASS
+  743 | 28 | D26SYN055 | SYN_Flood | train | completed | cb780745-8d55-4d79-9aad-dbe2d4704dce | 424 | 30 | n/a | QC_CANDIDATE_PASS
+  744 | 29 | D26PS015 | Port_Scan | train | completed | b7a26ad4-e23b-4e47-88f6-c48d3536e428 | 467 | 36 | n/a | QC_CANDIDATE_PASS
+  745 | 30 | D26SYN026 | SYN_Flood | train | completed | c5fee34f-3ea4-4a5c-8ef7-02d2513d29f8 | 2390 | 48 | n/a | QC_CANDIDATE_PASS
+  746 | 31 | D26SYN030 | SYN_Flood | train | completed | 028d43c5-223f-4b43-96df-04817d860068 | 2190 | 63 | n/a | QC_CANDIDATE_PASS
+  747 | 32 | D26N053 | Normal | train | completed | 2a56c1a8-3ab6-42d7-a2d3-74b80e207fdc | 141 | 11 | n/a | QC_CANDIDATE_PASS
+  748 | 33 | D26N007 | Normal | train | completed | d16fef68-817e-46b4-8ce3-f3519106793a | 238 | 15 | n/a | QC_CANDIDATE_PASS
+  749 | 34 | D26N034 | Normal | train | completed | ca6fd6cb-61bf-42cf-9907-a679394ae7b0 | 210 | 3 | n/a | QC_CANDIDATE_PASS
+  750 | 35 | D26MP014 | Malicious_POST | train | completed | f95fdecc-248f-4e1f-bf97-5f4f9e5a8b33 | 1124 | 148 | 55/76 | verified POST/auth/401 events 55/76
+  751 | 36 | D26PS013 | Port_Scan | train | completed | 3ef0e0a9-f5b4-4771-a6d0-b9eb260183fd | 17 | 25 | n/a | QC_CANDIDATE_PASS
+  752 | 37 | D26SYN007 | SYN_Flood | train | completed | b886e5f7-e16f-48a8-a754-522981c21dcb | 1161 | 42 | n/a | QC_CANDIDATE_PASS
+  753 | 38 | D26SYN074 | SYN_Flood | validation | completed | 1ec077f1-33a9-4e54-9ce2-2029cec2a561 | 1827 | 43 | n/a | QC_CANDIDATE_PASS
+  754 | 39 | D26SYN072 | SYN_Flood | validation | completed | 74ad1e7c-e1c2-454b-bab0-3f619ca2efa2 | 1664 | 37 | n/a | QC_CANDIDATE_PASS
+  755 | 40 | D26MP018 | Malicious_POST | train | completed | 602e0953-6e55-4844-ad28-8a7b7f766b1f | 1567 | 69 | 0/13 | verified POST/auth/401 events 0/13
+  756 | 41 | D26N071 | Normal | validation | completed | d305871d-3018-41f6-8073-a70a00e4f296 | 194 | 16 | n/a | QC_CANDIDATE_PASS
+  757 | 42 | D26N066 | Normal | validation | completed | cfcc36a3-951a-4356-82f3-bb2b40fb8cb0 | 35 | 20 | n/a | QC_CANDIDATE_PASS
+  758 | 43 | D26SYN027 | SYN_Flood | train | completed | 15074715-d02f-44a7-bc5e-c4a06a0c04b1 | 502 | 33 | n/a | QC_CANDIDATE_PASS
+  759 | 44 | D26PS021 | Port_Scan | train | completed | 59e3b490-46f5-4bac-b301-53b4ce893a28 | 404 | 26 | n/a | QC_CANDIDATE_PASS
+  760 | 45 | D26SYN016 | SYN_Flood | train | completed | d6c0706c-42f5-4653-8b27-9eeeed5d455d | 3423 | 94 | n/a | QC_CANDIDATE_PASS
+  761 | 46 | D26PS002 | Port_Scan | train | completed | 1f58f571-7150-434a-adf4-4c6b27ab5af8 | 17 | 19 | n/a | QC_CANDIDATE_PASS
+  762 | 47 | D26PS011 | Port_Scan | train | completed | 602fc184-1e84-494b-8268-14d85fdeb6bf | 17 | 26 | n/a | QC_CANDIDATE_PASS
+  763 | 48 | D26N051 | Normal | train | completed | 2946a140-9982-44f7-a1b9-1cfc1d87826b | 105 | 40 | n/a | QC_CANDIDATE_PASS
+  764 | 49 | D26MP042 | Malicious_POST | train | completed | 4716212b-6ca2-43a6-9506-bdd0d761830b | 261 | 64 | 13/13 | QC_CANDIDATE_PASS
+  765 | 50 | D26N069 | Normal | validation | completed | 9fdf3c3a-44f4-422e-a107-6e466ad60ec9 | 1668 | 117 | n/a | QC_CANDIDATE_PASS
+  766 | 51 | D26SYN075 | SYN_Flood | validation | completed | 5f9263d8-e62b-4e60-bceb-ed407e628468 | 6029 | 65 | n/a | QC_CANDIDATE_PASS
+  767 | 52 | D26SYN028 | SYN_Flood | train | completed | 7cf23bbd-7a65-4c53-9096-f6fb3181fe83 | 3254 | 127 | n/a | QC_CANDIDATE_PASS
+  768 | 53 | D26PS034 | Port_Scan | train | completed | 342f6b20-d35a-4e14-8d47-c8d40c428105 | 410 | 14 | n/a | QC_CANDIDATE_PASS
+  769 | 54 | D26MP050 | Malicious_POST | train | completed | 110770c6-de9c-49d0-986b-bb997ad7d681 | 1868 | 63 | 31/68 | verified POST/auth/401 events 31/68
+  770 | 55 | D26SYN004 | SYN_Flood | train | completed | 656a30fc-7683-4c4f-a184-0f8223df6a7e | 673 | 29 | n/a | QC_CANDIDATE_PASS
+  771 | 56 | D26N056 | Normal | train | completed | 40dc4cef-be32-4895-8755-3b253fc4df55 | 175 | 16 | n/a | QC_CANDIDATE_PASS
+  772 | 57 | D26MP035 | Malicious_POST | train | completed | 97b27e28-8746-4074-a80b-515fa6bba790 | 1252 | 113 | 18/30 | verified POST/auth/401 events 18/30
+  773 | 58 | D26N046 | Normal | train | completed | 798934f9-4f6f-4d64-97e9-07b7f30a7eb5 | 19 | 4 | n/a | QC_CANDIDATE_PASS
+  774 | 59 | D26SYN064 | SYN_Flood | validation | completed | 8d7013df-a0b4-4748-9a01-c732b9ccb6d8 | 587 | 42 | n/a | QC_CANDIDATE_PASS
+  775 | 60 | D26PS059 | Port_Scan | train | completed | 2baeb63a-bc1b-4226-8c6e-0027f4272236 | 514 | 15 | n/a | QC_CANDIDATE_PASS
+  776 | 61 | D26PS006 | Port_Scan | train | completed | 0961235f-b3cb-4c3d-9e62-5ae88d93f71e | 719 | 19 | n/a | QC_CANDIDATE_PASS
+  777 | 62 | D26MP028 | Malicious_POST | train | completed | cb83630f-cb98-4f1d-89cc-359dcf97455e | 380 | 63 | 18/19 | verified POST/auth/401 events 18/19
+  778 | 63 | D26N031 | Normal | train | completed | 7ba9a299-4d12-4694-9614-7c2dc26ea650 | 458 | 104 | n/a | QC_CANDIDATE_PASS
+  779 | 64 | D26N024 | Normal | train | completed | aff44fe3-a4b2-4d73-acab-a1f90061c77d | 17 | 19 | n/a | QC_CANDIDATE_PASS
+  780 | 65 | D26MP068 | Malicious_POST | validation | completed | 42a12658-f1ab-4d4a-823a-cc8f7f50514c | 251 | 82 | 12/12 | QC_CANDIDATE_PASS
+  781 | 66 | D26MP016 | Malicious_POST | train | completed | 378b0f30-ce5d-4f19-9d87-ab9918af7d55 | 507 | 93 | 25/43 | verified POST/auth/401 events 25/43
+  782 | 67 | D26MP019 | Malicious_POST | train | completed | 5766c151-f2f0-4e5e-b3ce-86ab646014cb | 185 | 28 | 9/9 | QC_CANDIDATE_PASS
+  783 | 68 | D26N012 | Normal | train | completed | 34bc4053-1dce-42d8-a201-beaed72fb5b2 | 226 | 56 | n/a | QC_CANDIDATE_PASS
+  784 | 69 | D26N072 | Normal | validation | completed | a4b57a23-91ec-49c4-910f-ca2769550949 | 17 | 18 | n/a | QC_CANDIDATE_PASS
+  785 | 70 | D26N015 | Normal | train | completed | 8bec6241-875e-4e4b-aea9-d45d05469620 | 18 | 5 | n/a | QC_CANDIDATE_PASS
+  786 | 71 | D26MP004 | Malicious_POST | train | completed | 60a81966-f125-4c3b-a63d-667f0d349657 | 366 | 73 | 18/20 | verified POST/auth/401 events 18/20
+  787 | 72 | D26SYN029 | SYN_Flood | train | completed | ebc37efa-6525-487b-b353-4ee4634d35f5 | 862 | 58 | n/a | QC_CANDIDATE_PASS
+  788 | 73 | D26N064 | Normal | validation | completed | 79284e5f-9ae0-4886-abe4-207f2c20f57e | 130 | 5 | n/a | QC_CANDIDATE_PASS
+  789 | 74 | D26N067 | Normal | validation | completed | 5adb012e-c081-4a28-a133-773f66625775 | 136 | 13 | n/a | QC_CANDIDATE_PASS
+  790 | 75 | D26SYN048 | SYN_Flood | train | completed | a6385990-d19a-4a54-970e-3d015d4ce2a5 | 1580 | 70 | n/a | QC_CANDIDATE_PASS
+  791 | 76 | D26N068 | Normal | validation | completed | df9df976-e8da-4496-977e-489e10ff97c3 | 55 | 41 | n/a | QC_CANDIDATE_PASS
+  792 | 77 | D26MP066 | Malicious_POST | validation | completed | 289acdb4-ca78-4a44-a4e4-8c5dd5a1b04c | 721 | 67 | 21/31 | verified POST/auth/401 events 21/31
+  793 | 78 | D26N043 | Normal | train | completed | 0447f70f-42da-449c-94df-d7a2a2f1bc43 | 200 | 71 | n/a | QC_CANDIDATE_PASS
+  794 | 79 | D26N013 | Normal | train | completed | f7519a7d-95e2-4705-99a8-fa2adcd92882 | 692 | 91 | n/a | QC_CANDIDATE_PASS
+  795 | 80 | D26N004 | Normal | train | completed | 6713d680-ceda-47a1-b0bb-6239c073dffd | 562 | 60 | n/a | QC_CANDIDATE_PASS
+  796 | 81 | D26PS060 | Port_Scan | train | completed | 79c79ff4-feab-40f3-85d3-4e9574c0f38f | 16 | 17 | n/a | QC_CANDIDATE_PASS
+  797 | 82 | D26MP047 | Malicious_POST | train | completed | efcedf4e-3983-4bf7-90bc-d9a91764bb34 | 361 | 57 | 17/18 | verified POST/auth/401 events 17/18
+  798 | 83 | D26MP073 | Malicious_POST | validation | completed | df1ab04b-896b-44a2-8817-41d4349fc765 | 388 | 46 | 19/35 | verified POST/auth/401 events 19/35
+  799 | 84 | D26PS027 | Port_Scan | train | completed | f5888622-06da-404c-8ea8-16986d83c98c | 16 | 31 | n/a | QC_CANDIDATE_PASS
+  800 | 85 | D26SYN001 | SYN_Flood | train | completed | b17dfb7b-c459-4a4a-92b0-c7b65a09326d | 2239 | 76 | n/a | QC_CANDIDATE_PASS
+  801 | 86 | D26N050 | Normal | train | completed | c5d1b8ce-e67a-44ae-b642-7e8dd96d1cc1 | 181 | 4 | n/a | QC_CANDIDATE_PASS
+  802 | 87 | D26SYN020 | SYN_Flood | train | completed | a7ab4472-25d2-4823-9adb-d4a7c3c771f0 | 1346 | 42 | n/a | QC_CANDIDATE_PASS
+  803 | 88 | D26MP026 | Malicious_POST | train | completed | ebdaec9d-9624-483b-ab5e-16beed07b648 | 518 | 123 | 26/70 | verified POST/auth/401 events 26/70
+  804 | 89 | D26SYN065 | SYN_Flood | validation | completed | d3304cc5-e44d-4bf1-a9e8-242c575de57b | 2465 | 20 | n/a | QC_CANDIDATE_PASS
+  805 | 90 | D26MP070 | Malicious_POST | validation | completed | 354a1b83-febe-4752-aad0-577507c2d651 | 669 | 78 | 32/32 | QC_CANDIDATE_PASS
+  806 | 91 | D26SYN043 | SYN_Flood | train | completed | fff9d449-02ba-4e31-89f3-e3f655ec4ddf | 2296 | 64 | n/a | QC_CANDIDATE_PASS
+  807 | 92 | D26MP058 | Malicious_POST | train | completed | 13a4ef57-c390-4f84-bf1b-45287ee21800 | 1320 | 46 | 0/17 | verified POST/auth/401 events 0/17
+  808 | 93 | D26PS055 | Port_Scan | train | completed | 5be6de58-d577-4925-b5c0-cd5a5b529484 | 422 | 29 | n/a | QC_CANDIDATE_PASS
+  809 | 94 | D26SYN060 | SYN_Flood | train | completed | a2a4d2c2-56f6-4ae3-b92a-9e338b3f04dd | 1468 | 56 | n/a | QC_CANDIDATE_PASS
+  810 | 95 | D26MP025 | Malicious_POST | train | completed | 38450c4a-dee2-4f11-95f2-71060402bd48 | 1262 | 31 | 0/35 | verified POST/auth/401 events 0/35
+  811 | 96 | D26N037 | Normal | train | completed | fcad215c-24f7-4b12-bcc7-25db24fdfe2f | 136 | 10 | n/a | QC_CANDIDATE_PASS
+  812 | 97 | D26SYN035 | SYN_Flood | train | completed | 94f9bddd-ac24-47c8-a374-d2ea1df5dbf5 | 1331 | 69 | n/a | QC_CANDIDATE_PASS
+  813 | 98 | D26PS009 | Port_Scan | train | completed | c7b7df41-340c-4e57-b954-01e848fc7c73 | 289 | 25 | n/a | QC_CANDIDATE_PASS
+  814 | 99 | D26MP011 | Malicious_POST | train | completed | 253c837c-385d-4a13-b84c-a3e1b472c3a0 | 847 | 51 | 0/8 | verified POST/auth/401 events 0/8
+  815 | 100 | D26N010 | Normal | train | completed | 80f8650d-14c9-49d5-a33f-0826536d55ad | 1320 | 122 | n/a | QC_CANDIDATE_PASS
+  816 | 101 | D26N063 | Normal | validation | completed | 2a6acca5-1afa-431c-a4e0-4572997f2d11 | 485 | 110 | n/a | QC_CANDIDATE_PASS
+  817 | 102 | D26N054 | Normal | train | completed | 675e0222-0c51-4c12-9feb-9664d2d1bf14 | 346 | 76 | n/a | QC_CANDIDATE_PASS
+  818 | 103 | D26PS028 | Port_Scan | train | completed | 6fb19286-ac38-492d-92a9-30f31980b88a | 26 | 28 | n/a | QC_CANDIDATE_PASS
+  819 | 104 | D26PS005 | Port_Scan | train | completed | ece6c88e-c1c8-475c-9623-1f80a7ec1a7a | 17 | 30 | n/a | QC_CANDIDATE_PASS
+  820 | 105 | D26SYN058 | SYN_Flood | train | completed | faae6f57-48b3-46db-8f28-21082ba588a7 | 355 | 33 | n/a | QC_CANDIDATE_PASS
+  821 | 106 | D26PS050 | Port_Scan | train | completed | fb8a866b-e65d-4e6f-9d66-bc0edea82775 | 299 | 29 | n/a | QC_CANDIDATE_PASS
+  822 | 107 | D26MP013 | Malicious_POST | train | completed | b3fc606c-e39e-4d55-ae3c-334d4a7a6763 | 238 | 67 | 3/12 | verified POST/auth/401 events 3/12
+  823 | 108 | D26N030 | Normal | train | completed | f79165ac-89f4-4d01-afaa-c60602fc166e | 16 | 7 | n/a | QC_CANDIDATE_PASS
+  824 | 109 | D26PS033 | Port_Scan | train | completed | 1ec426d2-68b0-47dd-bfd5-aa4346fe99c9 | 17 | 37 | n/a | QC_CANDIDATE_PASS
+  825 | 110 | D26N028 | Normal | train | completed | 7f56ce08-94e0-45f9-a49e-63f62930d06e | 14 | 25 | n/a | QC_CANDIDATE_PASS
+  826 | 111 | D26PS058 | Port_Scan | train | completed | 7955eea9-f6db-4bd0-b821-5edc1f967178 | 28 | 40 | n/a | QC_CANDIDATE_PASS
+  827 | 112 | D26N065 | Normal | validation | completed | a57894e1-733f-41bf-8ac9-b94c3ac53de2 | 487 | 77 | n/a | QC_CANDIDATE_PASS
+  828 | 113 | D26N044 | Normal | train | completed | 417063ba-4556-48f4-bc57-75bb7536a25e | 1147 | 70 | n/a | QC_CANDIDATE_PASS
+  829 | 114 | D26PS032 | Port_Scan | train | completed | f55e89f8-6f6f-4119-a79a-ddd3a9eca2b5 | 17 | 20 | n/a | QC_CANDIDATE_PASS
+  830 | 115 | D26N038 | Normal | train | completed | 97c49b0d-2611-4c56-883d-55d77fe152b9 | 160 | 46 | n/a | QC_CANDIDATE_PASS
+  831 | 116 | D26PS047 | Port_Scan | train | completed | db026d8a-973d-4730-bc53-c0e21a5f6cbc | 16 | 33 | n/a | QC_CANDIDATE_PASS
+  832 | 117 | D26SYN044 | SYN_Flood | train | completed | 248f475b-9930-4f56-ac03-3d5c7d54e02d | 2101 | 61 | n/a | QC_CANDIDATE_PASS
+  833 | 118 | D26MP015 | Malicious_POST | train | completed | b38bf535-f0c5-43db-b8e1-4207b06eb391 | 635 | 71 | 19/28 | verified POST/auth/401 events 19/28
+  834 | 119 | D26N017 | Normal | train | completed | 0018c0e5-cd17-42e9-bad4-18a39e2a36be | 15 | 4 | n/a | QC_CANDIDATE_PASS
+  835 | 120 | D26MP040 | Malicious_POST | train | completed | ccd279ef-a3c1-4dbb-9ac1-081402163570 | 263 | 32 | 13/13 | QC_CANDIDATE_PASS
+  836 | 121 | D26MP063 | Malicious_POST | validation | completed | 7d44d9ea-8788-454f-9cb5-c8295440d818 | 485 | 76 | 24/25 | verified POST/auth/401 events 24/25
+  837 | 122 | D26SYN024 | SYN_Flood | train | completed | d3a50d4c-b0ff-407c-b117-01942334afe7 | 1381 | 59 | n/a | QC_CANDIDATE_PASS
+  838 | 123 | D26SYN038 | SYN_Flood | train | completed | f2025f89-089e-4f73-903c-de20491c4736 | 1629 | 28 | n/a | QC_CANDIDATE_PASS
+  839 | 124 | D26MP059 | Malicious_POST | train | completed | 2663f1f2-2295-463e-b582-4ad8357561d3 | 1988 | 39 | 0/28 | verified POST/auth/401 events 0/28
+  840 | 125 | D26SYN032 | SYN_Flood | train | completed | de3a4901-ede0-4114-875c-f53237aed209 | 860 | 24 | n/a | QC_CANDIDATE_PASS
+  841 | 126 | D26MP045 | Malicious_POST | train | completed | 882ad15f-4df9-4aeb-9947-8669fc31c608 | 761 | 50 | 0/15 | verified POST/auth/401 events 0/15
+  842 | 127 | D26MP012 | Malicious_POST | train | completed | 9127f6ef-de5e-4af8-a9ca-c7b739f43931 | 320 | 37 | 16/16 | QC_CANDIDATE_PASS
+  843 | 128 | D26MP023 | Malicious_POST | train | completed | 298cd187-31e6-4377-a1a3-67f65fa28388 | 794 | 140 | 39/40 | verified POST/auth/401 events 39/40
+  844 | 129 | D26PS061 | Port_Scan | validation | completed | 57426b6a-1ee9-438d-8b7d-b09ab2805bee | 26 | 20 | n/a | QC_CANDIDATE_PASS
+  845 | 130 | D26MP005 | Malicious_POST | train | completed | 62b9e9e3-e73d-45cb-9e5a-4fd1e91bc0fc | 183 | 56 | 9/9 | QC_CANDIDATE_PASS
+  846 | 131 | D26SYN031 | SYN_Flood | train | completed | 1dc497b4-1f30-4a3f-a021-9e1f5eb2fa3d | 2099 | 89 | n/a | QC_CANDIDATE_PASS
+  847 | 132 | D26SYN010 | SYN_Flood | train | completed | 4d10569c-7e5b-4fff-82b7-1b16ded655a9 | 717 | 28 | n/a | QC_CANDIDATE_PASS
+  848 | 133 | D26PS049 | Port_Scan | train | completed | 9e52f9b2-0ec4-47cf-94ac-43b3883230e8 | 544 | 38 | n/a | QC_CANDIDATE_PASS
+  849 | 134 | D26PS075 | Port_Scan | validation | completed | a99d2f54-1295-43f4-96ee-d13bb3d1c2c4 | 175 | 20 | n/a | QC_CANDIDATE_PASS
+  850 | 135 | D26SYN054 | SYN_Flood | train | completed | 68fff6cd-2cf2-48b6-9309-9e801eebc7df | 1955 | 50 | n/a | QC_CANDIDATE_PASS
+  851 | 136 | D26N001 | Normal | train | completed | a932706a-3b4a-4087-8ee5-0a737fac970f | 199 | 135 | n/a | QC_CANDIDATE_PASS
+  852 | 137 | D26MP002 | Malicious_POST | train | completed | a949b4ad-3544-4105-a567-865b2785fda1 | 402 | 22 | 20/20 | QC_CANDIDATE_PASS
+  853 | 138 | D26PS040 | Port_Scan | train | completed | 99c40d55-d24c-4c9f-84ea-33d36be48911 | 27 | 17 | n/a | QC_CANDIDATE_PASS
+  854 | 139 | D26PS066 | Port_Scan | validation | completed | f6fd8b92-387c-49fd-bf49-32e13f5a2fcf | 17 | 16 | n/a | QC_CANDIDATE_PASS
+  855 | 140 | D26PS070 | Port_Scan | validation | completed | 0874d386-f1d9-452b-8733-ff770b42365a | 16 | 25 | n/a | QC_CANDIDATE_PASS
+  856 | 141 | D26N005 | Normal | train | completed | 5ca09203-2647-4155-a771-ddbb69c02810 | 18 | 21 | n/a | QC_CANDIDATE_PASS
+  857 | 142 | D26PS016 | Port_Scan | train | completed | d34b9cc0-191e-49e4-b100-1716acbe936f | 19 | 43 | n/a | QC_CANDIDATE_PASS
+  858 | 143 | D26N070 | Normal | validation | completed | 597bb502-883c-4979-be6d-abddce67dafb | 269 | 65 | n/a | QC_CANDIDATE_PASS
+  859 | 144 | D26SYN012 | SYN_Flood | train | completed | dda504af-2be3-46ee-9c5a-9e88560a4275 | 656 | 63 | n/a | QC_CANDIDATE_PASS
+  860 | 145 | D26PS065 | Port_Scan | validation | completed | 76fa764d-e58b-4213-b120-8dea654d4bd8 | 584 | 25 | n/a | QC_CANDIDATE_PASS
+  861 | 146 | D26PS026 | Port_Scan | train | completed | 514f5707-25cf-45f3-9d06-77779b62964b | 16 | 16 | n/a | QC_CANDIDATE_PASS
+  862 | 147 | D26PS039 | Port_Scan | train | completed | 2d696ccb-f24f-4ad2-b273-17f6918a38b3 | 16 | 15 | n/a | QC_CANDIDATE_PASS
+  863 | 148 | D26SYN061 | SYN_Flood | validation | completed | 757d3ea3-0adb-4b94-ab98-c9f36418c59c | 3449 | 74 | n/a | QC_CANDIDATE_PASS
+  864 | 149 | D26N026 | Normal | train | completed | cbe7105a-9521-44b6-812f-2df59a5eeb0a | 16 | 4 | n/a | QC_CANDIDATE_PASS
+  865 | 150 | D26PS051 | Port_Scan | train | completed | 0ce37a45-085c-4064-93c1-a6a14a1d0300 | 19 | 34 | n/a | QC_CANDIDATE_PASS
+  866 | 151 | D26PS057 | Port_Scan | train | completed | 4a79c391-1e98-4dca-8528-3286c391043e | 16 | 27 | n/a | QC_CANDIDATE_PASS
+  867 | 152 | D26SYN066 | SYN_Flood | validation | completed | 365eab4f-f276-4807-a5a5-bcedb82b0a8c | 3434 | 85 | n/a | QC_CANDIDATE_PASS
+  868 | 153 | D26MP034 | Malicious_POST | train | completed | eb96bc84-f16e-4d9f-9bd3-864758a1cec7 | 2626 | 27 | 0/16 | verified POST/auth/401 events 0/16
+  869 | 154 | D26N058 | Normal | train | completed | 17a20a5d-b8e2-4aa8-a8e7-74c0e9a3904a | 145 | 8 | n/a | QC_CANDIDATE_PASS
+  870 | 155 | D26N029 | Normal | train | completed | c0d921d2-36a5-4370-803e-a10f82e249b4 | 665 | 77 | n/a | QC_CANDIDATE_PASS
+  871 | 156 | D26PS042 | Port_Scan | train | completed | 7537f7d8-c158-4ed2-9eaf-afc43c25b216 | 16 | 19 | n/a | QC_CANDIDATE_PASS
+  872 | 157 | D26MP033 | Malicious_POST | train | completed | 1257fac0-fece-4ec1-b4de-fab314af71f5 | 902 | 74 | 44/55 | verified POST/auth/401 events 44/55
+  873 | 158 | D26SYN034 | SYN_Flood | train | completed | 47e34796-b591-46f0-bd9a-6945d47fd3c9 | 2063 | 53 | n/a | QC_CANDIDATE_PASS
+  874 | 159 | D26MP021 | Malicious_POST | train | completed | 831e304b-f078-4d11-9e23-857e92ec1f3e | 1358 | 45 | 0/24 | verified POST/auth/401 events 0/24
+  875 | 160 | D26SYN046 | SYN_Flood | train | completed | 745cacdc-c5e3-49dd-8c9c-9a0f43b073f6 | 1913 | 98 | n/a | QC_CANDIDATE_PASS
+  876 | 161 | D26MP009 | Malicious_POST | train | completed | bcef52af-5f65-4635-bc66-bc1073236cc6 | 814 | 88 | 0/32 | verified POST/auth/401 events 0/32
+  877 | 162 | D26N021 | Normal | train | completed | 8f12215d-937f-4648-b82f-ce0416078cbc | 127 | 12 | n/a | QC_CANDIDATE_PASS
+  878 | 163 | D26PS036 | Port_Scan | train | completed | a2f186c7-1af8-423e-b9eb-c2677446cad0 | 97 | 53 | n/a | QC_CANDIDATE_PASS
+  879 | 164 | D26SYN037 | SYN_Flood | train | completed | bd5b5fee-0a9a-4096-a658-bf1f2aa1c7db | 1952 | 84 | n/a | QC_CANDIDATE_PASS
+  880 | 165 | D26PS053 | Port_Scan | train | completed | 5010f840-6483-45c4-8ee8-092415dc6841 | 488 | 15 | n/a | QC_CANDIDATE_PASS
+  881 | 166 | D26SYN022 | SYN_Flood | train | completed | a7e0d6f5-3fe0-4705-9bb2-2b7fbed642ee | 781 | 34 | n/a | QC_CANDIDATE_PASS
+  882 | 167 | D26PS022 | Port_Scan | train | completed | 5bcbb9f3-1031-4fe7-b1cf-e6b92328bc52 | 501 | 87 | n/a | QC_CANDIDATE_PASS
+  883 | 168 | D26MP024 | Malicious_POST | train | completed | 3cc9a092-b2a6-4b6a-a59c-d1e5435cf55d | 988 | 231 | 49/49 | QC_CANDIDATE_PASS
+  884 | 169 | D26SYN002 | SYN_Flood | train | completed | 02e2f031-cf44-4f9c-8473-6962ffd5f92f | 1153 | 98 | n/a | QC_CANDIDATE_PASS
+  885 | 170 | D26MP046 | Malicious_POST | train | completed | 7b7edc9f-38cd-43f4-acd5-ead58777faf7 | 679 | 55 | 0/7 | verified POST/auth/401 events 0/7
+  886 | 171 | D26MP043 | Malicious_POST | train | completed | 1c034938-8b52-4fe4-8182-6a38345d0179 | 1091 | 112 | 15/23 | verified POST/auth/401 events 15/23
+  887 | 172 | D26MP055 | Malicious_POST | train | completed | 0fad5774-5f8c-4b5d-9495-e6f5eda9e784 | 103 | 25 | 5/5 | QC_CANDIDATE_PASS
+  888 | 173 | D26SYN068 | SYN_Flood | validation | completed | fb2c9493-f947-45dc-abb1-06dab5ea1f1d | 2044 | 70 | n/a | QC_CANDIDATE_PASS
+  889 | 174 | D26MP064 | Malicious_POST | validation | completed | 4bb26e9c-51dc-4cd6-b531-91e7b867b1e8 | 2687 | 40 | 0/15 | verified POST/auth/401 events 0/15
+  890 | 175 | D26SYN017 | SYN_Flood | train | completed | 3e076444-1526-4a32-896e-35b94a0e7646 | 1481 | 51 | n/a | QC_CANDIDATE_PASS
+  891 | 176 | D26SYN036 | SYN_Flood | train | completed | 31f64612-4af2-4f4e-abd3-7f4568449df8 | 1099 | 40 | n/a | QC_CANDIDATE_PASS
+  892 | 177 | D26SYN053 | SYN_Flood | train | completed | 53fde75a-fd58-47da-9234-5c4bc1f59630 | 2245 | 198 | n/a | QC_CANDIDATE_PASS
+  893 | 178 | D26SYN023 | SYN_Flood | train | completed | 2eabac70-1fd1-41f8-8a5e-d3e4616348fc | 3777 | 372 | n/a | QC_CANDIDATE_PASS
+  894 | 179 | D26PS025 | Port_Scan | train | completed | aef27a77-11b6-400c-b89b-03b3b9b1ff8f | 17 | 30 | n/a | QC_CANDIDATE_PASS
+  895 | 180 | D26PS052 | Port_Scan | train | completed | e868d52e-fa5a-4979-80f0-fafaf497c1b6 | 16 | 30 | n/a | QC_CANDIDATE_PASS
+  896 | 181 | D26MP007 | Malicious_POST | train | completed | 307a894b-baed-4031-9979-d65ec724a025 | 345 | 70 | 17/17 | QC_CANDIDATE_PASS
+  897 | 182 | D26MP069 | Malicious_POST | validation | completed | ae626e02-d8a2-4d85-a2f5-4190530e535b | 361 | 58 | 18/18 | QC_CANDIDATE_PASS
+  898 | 183 | D26SYN050 | SYN_Flood | train | completed | 7387af2b-3e5a-4e1a-9370-f665dcbc6bbd | 1207 | 32 | n/a | QC_CANDIDATE_PASS
+  899 | 184 | D26N052 | Normal | train | completed | d2ff5177-c904-4cf9-808d-4db05880ceae | 140 | 11 | n/a | QC_CANDIDATE_PASS
+  900 | 185 | D26MP060 | Malicious_POST | train | completed | 8b2f5387-c63c-4794-ac0b-88d88f25589b | 2035 | 71 | 13/51 | verified POST/auth/401 events 13/51
+  901 | 186 | D26PS045 | Port_Scan | train | completed | 08b1d3a7-fb38-4a2d-9b58-2a0fd1194a3c | 16 | 27 | n/a | QC_CANDIDATE_PASS
+  902 | 187 | D26SYN045 | SYN_Flood | train | completed | b7f161c5-396c-4d30-af21-b83eb79d3d4a | 2028 | 63 | n/a | QC_CANDIDATE_PASS
+  903 | 188 | D26N062 | Normal | validation | completed | 1a89de4a-d9a4-40df-9687-3f45bd120e84 | 51 | 19 | n/a | QC_CANDIDATE_PASS
+  904 | 189 | D26PS067 | Port_Scan | validation | completed | 803af3a7-27b8-4f14-9267-913f479882d6 | 266 | 26 | n/a | QC_CANDIDATE_PASS
+  905 | 190 | D26MP072 | Malicious_POST | validation | completed | 7fb487ef-dd1b-4a78-b4f7-5df40ef1d00f | 104 | 49 | 5/5 | QC_CANDIDATE_PASS
+  906 | 191 | D26N023 | Normal | train | completed | 1144d9ad-b55c-473d-a9ca-820f54024fad | 271 | 54 | n/a | QC_CANDIDATE_PASS
+  907 | 192 | D26SYN047 | SYN_Flood | train | completed | 4a73c2d0-0d81-4630-b78c-0ab4f5025c66 | 4680 | 132 | n/a | QC_CANDIDATE_PASS
+  908 | 193 | D26N048 | Normal | train | completed | 7993eae2-cb7a-4bae-8970-ab0a548b3cde | 394 | 46 | n/a | QC_CANDIDATE_PASS
+  909 | 194 | D26N016 | Normal | train | completed | 72a267bd-0304-4bcb-a980-27186f17de8e | 17 | 5 | n/a | QC_CANDIDATE_PASS
+  910 | 195 | D26N055 | Normal | train | completed | 4ab04fec-8f26-4867-b2fc-42d5af4a368e | 591 | 92 | n/a | QC_CANDIDATE_PASS
+  911 | 196 | D26SYN040 | SYN_Flood | train | completed | 8f91ce04-a6d7-433d-bd0d-72392cdb58a2 | 899 | 42 | n/a | QC_CANDIDATE_PASS
+  912 | 197 | D26PS037 | Port_Scan | train | completed | 1a2d87ed-6392-4e63-bda0-102427efe165 | 416 | 37 | n/a | QC_CANDIDATE_PASS
+  913 | 198 | D26MP067 | Malicious_POST | validation | completed | 210351c6-dcf9-4732-afed-71cd3a729b3c | 549 | 50 | 0/12 | verified POST/auth/401 events 0/12
+  914 | 199 | D26PS010 | Port_Scan | train | completed | b119ddc5-c211-47be-b9a3-fb3b9f713db2 | 17 | 24 | n/a | QC_CANDIDATE_PASS
+  915 | 200 | D26PS071 | Port_Scan | validation | completed | 04fa47f0-38db-4d9b-9d5a-7e765eec94d8 | 26 | 20 | n/a | QC_CANDIDATE_PASS
+  916 | 201 | D26N027 | Normal | train | completed | efbf7f04-bf3f-482a-ae21-38f8b88d9e51 | 402 | 109 | n/a | QC_CANDIDATE_PASS
+  917 | 202 | D26SYN015 | SYN_Flood | train | completed | 3feeadc9-0b6c-438b-b169-e5711f75f829 | 785 | 24 | n/a | QC_CANDIDATE_PASS
+  918 | 203 | D26MP031 | Malicious_POST | train | completed | 205267bb-c933-422d-abf5-cb9fd9dbdeaf | 1023 | 29 | 0/6 | verified POST/auth/401 events 0/6
+  919 | 204 | D26SYN021 | SYN_Flood | train | completed | b8d33d24-1887-444b-8be4-cb323d229ec9 | 721 | 36 | n/a | QC_CANDIDATE_PASS
+  920 | 205 | D26PS023 | Port_Scan | train | completed | 4a741612-7914-4dd0-98ae-31ed245f81da | 234 | 29 | n/a | QC_CANDIDATE_PASS
+  921 | 206 | D26N039 | Normal | train | completed | 606eaa15-33db-4eff-a076-db13ee5e65bd | 348 | 107 | n/a | QC_CANDIDATE_PASS
+  922 | 207 | D26SYN057 | SYN_Flood | train | completed | dd039daa-7314-4a12-b85d-1eb9980086db | 1178 | 77 | n/a | QC_CANDIDATE_PASS
+  923 | 208 | D26MP061 | Malicious_POST | validation | completed | 6efb213b-ce17-40ba-a198-43996f7d01b7 | 1664 | 53 | 0/18 | verified POST/auth/401 events 0/18
+  924 | 209 | D26N057 | Normal | train | completed | 7d896ea6-4f23-4646-9a49-60791e1e0f95 | 118 | 16 | n/a | QC_CANDIDATE_PASS
+  925 | 210 | D26PS046 | Port_Scan | train | completed | 48dc65ab-59d2-47c8-8be1-dd1d81ef7955 | 17 | 14 | n/a | QC_CANDIDATE_PASS
+  926 | 211 | D26PS035 | Port_Scan | train | completed | c97f511d-3236-410f-b80b-c08c1729bc9a | 17 | 36 | n/a | QC_CANDIDATE_PASS
+  927 | 212 | D26PS072 | Port_Scan | validation | completed | 11a295d4-c31d-40e8-a85e-dc75aca5dafc | 16 | 35 | n/a | QC_CANDIDATE_PASS
+  928 | 213 | D26SYN052 | SYN_Flood | train | completed | 8f42b381-cf95-4b8a-93d1-733558360826 | 1898 | 85 | n/a | QC_CANDIDATE_PASS
+  929 | 214 | D26MP038 | Malicious_POST | train | completed | aa9eea01-ef4a-49f4-9b6c-d7531b573274 | 2261 | 64 | 0/38 | verified POST/auth/401 events 0/38
+  930 | 215 | D26N006 | Normal | train | completed | 1fc529d2-d40e-4668-88ea-ef4adaa65bea | 459 | 76 | n/a | QC_CANDIDATE_PASS
+  931 | 216 | D26MP051 | Malicious_POST | train | completed | 2557cc61-e065-45d8-84fa-3042f77d5739 | 321 | 41 | 16/16 | QC_CANDIDATE_PASS
+  932 | 217 | D26SYN003 | SYN_Flood | train | completed | b94a3ffb-5344-4718-8b62-4abf32c5f6b5 | 1813 | 85 | n/a | QC_CANDIDATE_PASS
+  933 | 218 | D26PS068 | Port_Scan | validation | completed | 612b9a4e-f024-42e8-971b-20b27075c560 | 641 | 18 | n/a | QC_CANDIDATE_PASS
+  934 | 219 | D26N014 | Normal | train | completed | dc1b57fb-92ea-4c79-80ed-b304a62c170c | 138 | 11 | n/a | QC_CANDIDATE_PASS
+  935 | 220 | D26MP065 | Malicious_POST | validation | completed | 8851cbb1-97cb-47aa-ac01-18a43d8cda6b | 614 | 57 | 30/30 | QC_CANDIDATE_PASS
+  936 | 221 | D26MP032 | Malicious_POST | train | completed | 3e4de456-a404-4594-9f78-e0f2651c1af1 | 755 | 128 | 37/37 | QC_CANDIDATE_PASS
+  937 | 222 | D26SYN051 | SYN_Flood | train | completed | f3e931f9-7825-40ba-8d24-b575e44ef84e | 1277 | 30 | n/a | QC_CANDIDATE_PASS
+  938 | 223 | D26SYN009 | SYN_Flood | train | completed | 645482d8-d5fe-4ab8-974c-58ff98340a6c | 623 | 116 | n/a | QC_CANDIDATE_PASS
+  939 | 224 | D26N061 | Normal | validation | completed | 342e9676-4029-40bb-8729-12985bd3f8ff | 199 | 6 | n/a | QC_CANDIDATE_PASS
+  940 | 225 | D26N074 | Normal | validation | completed | 87ca360a-69ba-4256-8226-c77267134e64 | 230 | 29 | n/a | QC_CANDIDATE_PASS
+  941 | 226 | D26PS038 | Port_Scan | train | completed | 1ba8fe34-8496-40e4-82a4-752f9bc6651d | 16 | 26 | n/a | QC_CANDIDATE_PASS
+  942 | 227 | D26SYN059 | SYN_Flood | train | completed | bb9adbe9-92d3-4400-954f-e6f7af108445 | 1219 | 82 | n/a | QC_CANDIDATE_PASS
+  943 | 228 | D26PS054 | Port_Scan | train | completed | 04a55083-3d04-481b-bbbf-4dfafe92a4cb | 258 | 25 | n/a | QC_CANDIDATE_PASS
+  944 | 229 | D26SYN005 | SYN_Flood | train | completed | 46699a72-49d0-4f75-be33-df5fa31cf38b | 1874 | 97 | n/a | QC_CANDIDATE_PASS
+  945 | 230 | D26PS003 | Port_Scan | train | completed | 0ba4765d-e24a-4385-b2ba-448ce3341b49 | 401 | 17 | n/a | QC_CANDIDATE_PASS
+  946 | 231 | D26SYN071 | SYN_Flood | validation | completed | 393aa6c8-bcf1-478a-9c9f-4de624472b1a | 3710 | 109 | n/a | QC_CANDIDATE_PASS
+  947 | 232 | D26PS012 | Port_Scan | train | completed | 554e99ac-bcf3-4b22-b93b-99bf63d542ff | 416 | 19 | n/a | QC_CANDIDATE_PASS
+  948 | 233 | D26SYN011 | SYN_Flood | train | completed | 783e37a2-d305-4d80-9305-63d457b16ba2 | 1022 | 40 | n/a | QC_CANDIDATE_PASS
+  949 | 234 | D26SYN067 | SYN_Flood | validation | completed | 76335640-d13b-4a71-9da0-8d9d28cca676 | 1053 | 24 | n/a | QC_CANDIDATE_PASS
+  950 | 235 | D26PS014 | Port_Scan | train | completed | bdacf8d8-50b6-46d6-81eb-855c79690649 | 788 | 18 | n/a | QC_CANDIDATE_PASS
+  951 | 236 | D26SYN056 | SYN_Flood | train | completed | bb66f90c-fcbb-4427-b1a0-907302ec839a | 1645 | 66 | n/a | QC_CANDIDATE_PASS
+  952 | 237 | D26SYN039 | SYN_Flood | train | completed | f883305d-b0f8-4360-944a-5ba86d461f7f | 2446 | 87 | n/a | QC_CANDIDATE_PASS
+  953 | 238 | D26MP003 | Malicious_POST | train | completed | 97bd308f-9a82-4fd0-8694-ef926be7e28c | 1257 | 23 | 0/9 | verified POST/auth/401 events 0/9
+  954 | 239 | D26N042 | Normal | train | completed | 250d3e87-9969-40d4-a79b-1cecada1f5d1 | 249 | 42 | n/a | QC_CANDIDATE_PASS
+  955 | 240 | D26MP017 | Malicious_POST | train | completed | c35d4b96-ecbf-45ef-9941-d6f58d60a995 | 387 | 167 | 19/19 | QC_CANDIDATE_PASS
+  956 | 241 | D26PS029 | Port_Scan | train | completed | 5d6010d3-006d-406f-9b60-3bf8de91ccf2 | 16 | 23 | n/a | QC_CANDIDATE_PASS
+  957 | 242 | D26MP006 | Malicious_POST | train | completed | 4518f840-f3b4-427f-90ea-5a42bdc69bbb | 897 | 89 | 44/45 | verified POST/auth/401 events 44/45
+  958 | 243 | D26N008 | Normal | train | completed | 8d4a17ac-e5ab-4a78-8120-48317ad92662 | 447 | 81 | n/a | QC_CANDIDATE_PASS
+  959 | 244 | D26MP037 | Malicious_POST | train | completed | 7f2b190b-ef64-46f7-b43e-873ff2e721c2 | 80 | 24 | 4/4 | QC_CANDIDATE_PASS
+  960 | 245 | D26N040 | Normal | train | completed | 80c3489a-d3be-4dcd-89d8-b4572ac9b6b1 | 551 | 119 | n/a | QC_CANDIDATE_PASS
+  961 | 246 | D26N020 | Normal | train | completed | ee7c8c14-feab-4777-aa0c-55bc16550e19 | 15 | 4 | n/a | QC_CANDIDATE_PASS
+  962 | 247 | D26PS062 | Port_Scan | validation | completed | 0ae5935c-a97b-47f2-8734-73637138061e | 17 | 17 | n/a | QC_CANDIDATE_PASS
+  963 | 248 | D26N049 | Normal | train | completed | f809e87a-f71c-4233-a08b-3921a55a5578 | 657 | 99 | n/a | QC_CANDIDATE_PASS
+  964 | 249 | D26MP053 | Malicious_POST | train | completed | 7b703045-0a63-4aab-8f22-db0ca763bb47 | 381 | 57 | 19/19 | QC_CANDIDATE_PASS
+  965 | 250 | D26N059 | Normal | train | completed | cf06ce23-c455-45ba-9f82-5aaf1e3b0708 | 16 | 14 | n/a | QC_CANDIDATE_PASS
+  966 | 251 | D26MP052 | Malicious_POST | train | completed | 1c8c04a1-6944-417d-b888-96223c6d7fd7 | 201 | 38 | 10/10 | QC_CANDIDATE_PASS
+  967 | 252 | D26PS004 | Port_Scan | train | completed | 450c761a-879e-4167-8403-b3fd45049778 | 26 | 18 | n/a | QC_CANDIDATE_PASS
+  968 | 253 | D26MP049 | Malicious_POST | train | completed | 8a03ab31-effc-4bc1-9c28-10d7b346a639 | 281 | 37 | 14/14 | QC_CANDIDATE_PASS
+  969 | 254 | D26N045 | Normal | train | completed | 8854a533-ef17-46b2-b342-e8d7ec161739 | 245 | 48 | n/a | QC_CANDIDATE_PASS
+  970 | 255 | D26PS020 | Port_Scan | train | completed | b9b6dc7b-6112-4d0d-b2c7-8f5bd52f5e90 | 16 | 37 | n/a | QC_CANDIDATE_PASS
+  971 | 256 | D26SYN062 | SYN_Flood | validation | completed | cbe068e7-5d14-4301-983e-b9daf954c11b | 5801 | 178 | n/a | QC_CANDIDATE_PASS
+  972 | 257 | D26SYN033 | SYN_Flood | train | completed | 30f0a75b-38fe-44e5-b6a5-85641a7f81d7 | 1356 | 34 | n/a | QC_CANDIDATE_PASS
+  973 | 258 | D26MP056 | Malicious_POST | train | completed | 6aa0659f-0074-4c82-bd77-b44d5d44c7b8 | 1487 | 37 | 0/8 | verified POST/auth/401 events 0/8
+  974 | 259 | D26N032 | Normal | train | completed | be290464-d7e2-4a97-bb41-580d7db40e1d | 241 | 43 | n/a | QC_CANDIDATE_PASS
+  975 | 260 | D26PS041 | Port_Scan | train | completed | 54b7adb2-e89d-4149-ae62-7f40895e45b4 | 20 | 37 | n/a | QC_CANDIDATE_PASS
+  976 | 261 | D26SYN013 | SYN_Flood | train | completed | f087f142-2664-45a2-8826-bb683e971c15 | 1972 | 116 | n/a | QC_CANDIDATE_PASS
+  977 | 262 | D26MP071 | Malicious_POST | validation | completed | 7bf1b947-b187-4b83-a4de-1532221c4736 | 1153 | 36 | 0/39 | verified POST/auth/401 events 0/39
+  978 | 263 | D26N060 | Normal | train | completed | 46173196-b78a-4b42-95ad-682d7cbc8e7c | 94 | 13 | n/a | QC_CANDIDATE_PASS
+  979 | 264 | D26MP075 | Malicious_POST | validation | completed | d0d92806-3d6c-4a2a-b938-d2e9735debf7 | 722 | 60 | 36/36 | QC_CANDIDATE_PASS
+  980 | 265 | D26PS019 | Port_Scan | train | completed | 200f7e96-8227-4939-a613-64a9d29b0d1e | 17 | 34 | n/a | QC_CANDIDATE_PASS
+  981 | 266 | D26N018 | Normal | train | completed | f049b860-3e24-4ffc-ab1e-1b654e0dab85 | 501 | 93 | n/a | QC_CANDIDATE_PASS
+  982 | 267 | D26N011 | Normal | train | completed | 4ccf3d79-b2cd-4b19-b9ce-e35be5595172 | 240 | 28 | n/a | QC_CANDIDATE_PASS
+  983 | 268 | D26SYN041 | SYN_Flood | train | completed | fda7ffaa-45a1-40ba-a11a-88be926ddf36 | 1329 | 45 | n/a | QC_CANDIDATE_PASS
+  984 | 269 | D26PS030 | Port_Scan | train | completed | c64dc9a3-ab22-4ec7-8fc8-032f8432c44d | 617 | 23 | n/a | QC_CANDIDATE_PASS
+  985 | 270 | D26N009 | Normal | train | completed | 71796f5c-900e-494f-af44-692e79ad5855 | 209 | 5 | n/a | QC_CANDIDATE_PASS
+  986 | 271 | D26SYN063 | SYN_Flood | validation | completed | 980c52c0-6ec6-49a6-a7d8-9a501fff45c3 | 855 | 52 | n/a | QC_CANDIDATE_PASS
+  987 | 272 | D26MP027 | Malicious_POST | train | completed | 374ea78f-bee3-4e92-9fd2-f9640ac3020e | 354 | 104 | 17/19 | verified POST/auth/401 events 17/19
+  988 | 273 | D26PS001 | Port_Scan | train | completed | 3ef8a648-3925-4742-b2ed-798a8b20176a | 26 | 40 | n/a | QC_CANDIDATE_PASS
+  989 | 274 | D26PS018 | Port_Scan | train | completed | 77024107-8ebc-4ed5-9eb5-0d09b3b7876d | 16 | 23 | n/a | QC_CANDIDATE_PASS
+  990 | 275 | D26MP022 | Malicious_POST | train | completed | 5790521c-4c89-46d9-9c12-615b26486ccd | 923 | 97 | 45/45 | QC_CANDIDATE_PASS
+  991 | 276 | D26SYN069 | SYN_Flood | validation | completed | 7883bbed-6818-43c7-9de9-e26f6ec90712 | 1446 | 38 | n/a | QC_CANDIDATE_PASS
+  992 | 277 | D26PS043 | Port_Scan | train | completed | 27c63b85-3c65-42db-94d2-952820812a02 | 605 | 19 | n/a | QC_CANDIDATE_PASS
+  993 | 278 | D26MP036 | Malicious_POST | train | completed | 6ae8ad78-1bea-4e31-ac1c-529d6c7e4c48 | 1711 | 79 | 19/72 | verified POST/auth/401 events 19/72
+  994 | 279 | D26N036 | Normal | train | completed | 7538d116-b33f-4f4e-95b7-d3790778444f | 185 | 46 | n/a | QC_CANDIDATE_PASS
+  995 | 280 | D26MP074 | Malicious_POST | validation | completed | 926f94fd-a724-4a24-8bb2-7d204c45c12d | 527 | 96 | 25/26 | verified POST/auth/401 events 25/26
+  996 | 281 | D26MP001 | Malicious_POST | train | completed | e4cfaa85-aaaf-410c-bac6-d622d7244865 | 681 | 59 | 33/40 | verified POST/auth/401 events 33/40
+  997 | 282 | D26MP008 | Malicious_POST | train | completed | 9ee6e978-c680-4702-aad9-38a888bc8f31 | 306 | 33 | 15/15 | QC_CANDIDATE_PASS
+  998 | 283 | D26MP044 | Malicious_POST | train | completed | 60151575-aa42-4417-be9f-22d04124e0ea | 665 | 105 | 33/33 | QC_CANDIDATE_PASS
+  999 | 284 | D26PS017 | Port_Scan | train | completed | 6778587a-379c-44e8-80e7-a7e658c03a1e | 17 | 36 | n/a | QC_CANDIDATE_PASS
+  1000 | 285 | D26SYN049 | SYN_Flood | train | completed | fd569732-597b-4dbd-bfca-4058a32a8deb | 5063 | 69 | n/a | QC_CANDIDATE_PASS
+  1001 | 286 | D26PS056 | Port_Scan | train | completed | b37a1058-9c15-4183-bcdd-fa58ec0e126e | 1184 | 15 | n/a | QC_CANDIDATE_PASS
+  1002 | 287 | D26SYN019 | SYN_Flood | train | completed | 18085fb4-3cc5-4ee8-8da3-e842692ec49c | 1087 | 24 | n/a | QC_CANDIDATE_PASS
+  1003 | 288 | D26PS074 | Port_Scan | validation | completed | 4b88f786-0379-4140-9688-cc85c7600c83 | 483 | 28 | n/a | QC_CANDIDATE_PASS
+  1004 | 289 | D26PS031 | Port_Scan | train | completed | d3a1c338-cb97-40cf-984a-b8bd019c12e2 | 18 | 24 | n/a | QC_CANDIDATE_PASS
+  1005 | 290 | D26SYN014 | SYN_Flood | train | completed | 6a3e408b-426f-4b0d-b7f0-454499c5ed5f | 1941 | 93 | n/a | QC_CANDIDATE_PASS
+  1006 | 291 | D26N019 | Normal | train | completed | 12bea9ea-e304-4d7f-aa20-c4cc660d334c | 181 | 16 | n/a | QC_CANDIDATE_PASS
+  1007 | 292 | D26N073 | Normal | validation | completed | 1264c5df-c36f-4e35-8da1-9832e6a4644b | 222 | 16 | n/a | QC_CANDIDATE_PASS
+  1008 | 293 | D26MP010 | Malicious_POST | train | completed | 7e79a3cb-71a9-45ad-8f08-b0555b38e28b | 1234 | 94 | 48/61 | verified POST/auth/401 events 48/61
+  1009 | 294 | D26PS044 | Port_Scan | train | completed | c9db4221-b237-404a-ac09-ce30358285f4 | 16 | 16 | n/a | QC_CANDIDATE_PASS
+  1010 | 295 | D26MP057 | Malicious_POST | train | completed | 22226ffc-4d31-4078-8c84-49e918e47612 | 290 | 73 | 14/14 | QC_CANDIDATE_PASS
+  1011 | 296 | D26PS063 | Port_Scan | validation | completed | 2c51b282-6e23-44dc-afa3-ec87cb858640 | 16 | 17 | n/a | QC_CANDIDATE_PASS
+  1012 | 297 | D26N035 | Normal | train | completed | 416b404b-fbdb-476f-84f5-484a59980c21 | 574 | 85 | n/a | QC_CANDIDATE_PASS
+  1013 | 298 | D26MP020 | Malicious_POST | train | completed | e2184d54-1d96-4800-bdc2-6354ec300c7d | 901 | 74 | 45/56 | verified POST/auth/401 events 45/56
+  1014 | 299 | D26SYN025 | SYN_Flood | train | failed | 704034a8-fdd5-4ea4-98c5-4b3a2c642f77 | 2434 | 118 | n/a | status is failed, not completed
+  1015 | 300 | D26N002 | Normal | train | missing_or_duplicate_manifest |  |  |  |  | generation 1015: expected one manifest row, found 0
+
+Audit does not alter files, read final-test labels/features/predictions, or train/score models.
+QC_CANDIDATE_PASS is preliminary only; review reported issues and collector/Ryu logs before recovery.
