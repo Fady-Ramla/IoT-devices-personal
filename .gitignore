@@ -1,0 +1,22 @@
+# Never publish runtime credentials or environments
+.env
+.env.*
+!.env.example
+*token*
+*secret*
+*credential*
+ryu_env/
+dataset_env/
+__pycache__/
+*.py[cod]
+
+# Dataset, capture, and model artifacts remain outside the source snapshot
+*.csv
+*.pcap
+*.pcapng
+*.joblib
+*.pkl
+*.pickle
+New_Datasets/raw/
+New_Datasets/processed/
+New_Datasets/models/
