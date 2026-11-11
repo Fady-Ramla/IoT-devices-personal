@@ -170,12 +170,7 @@ def api():
 @app.route("/api/devices", methods=["GET"])
 @require_auth()
 def devices(**_: Any):
-    return jsonify({
-        "devices": [
-            {"id": 1, "ip": "10.10.10.5", "status": "normal"},
-            {"id": 2, "ip": "10.10.10.6", "status": "normal"},
-        ]
-    })
+    return jsonify({"devices": iot_telemetry_store.devices()})
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -250,6 +245,28 @@ def receive_iot_telemetry():
         return jsonify({"status": "rejected", "message": str(exc)}), 400
     return jsonify({"status": "accepted", "record_id": record["id"],
                     "device_id": record["device_id"], "timestamp": record["timestamp"]}), 202
+
+
+@app.route("/api/iot/devices", methods=["GET"])
+@require_auth()
+def iot_devices():
+    return jsonify(iot_telemetry_store.devices())
+
+
+@app.route("/api/iot/sensors", methods=["GET"])
+@require_auth()
+def iot_sensors():
+    return jsonify(iot_telemetry_store.sensors())
+
+
+@app.route("/api/iot/telemetry", methods=["GET"])
+@require_auth()
+def iot_telemetry():
+    return jsonify(iot_telemetry_store.telemetry(
+        request.args.get("device_id"),
+        request.args.get("sensor_id"),
+        request.args.get("limit", 100),
+    ))
 
 
 @app.route("/health", methods=["GET"])

@@ -251,7 +251,9 @@ class RuntimeNetworkController(ControllerBase):
         self.stats = getattr(data.get(RUNTIME_API_INSTANCE_NAME), "stats", StatsCache())
         self.paths = getattr(data.get(RUNTIME_API_INSTANCE_NAME), "paths", OrderedDict())
         self.network_event_store = getattr(data.get(RUNTIME_API_INSTANCE_NAME), "network_events", [])
-        self.iot_store = getattr(runtime_app, "iot_store", IoTTelemetryStore())
+        # Avoid eagerly constructing a fallback store: getattr defaults are
+        # evaluated even when runtime_app already owns the shared store.
+        self.iot_store = getattr(runtime_app, "iot_store", None) or IoTTelemetryStore()
         self._traffic_counter_snapshot = getattr(runtime_app, "traffic_counter_snapshot", {})
 
     @staticmethod
