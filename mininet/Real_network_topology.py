@@ -257,6 +257,10 @@ def start_iot_simulators(net):
     interval = float(os.getenv("IOT_TELEMETRY_INTERVAL", "10"))
     target = os.getenv("IOT_TELEMETRY_SERVER", "10.10.20.2")
     port = int(os.getenv("IOT_TELEMETRY_PORT", "5000"))
+    endpoint = os.getenv(
+        "IOT_TELEMETRY_ENDPOINT",
+        "https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry",
+    ).strip()
 
     for host_id in (f"h{i}" for i in range(5, 17)):
         spec = HOSTS[host_id]
@@ -265,11 +269,12 @@ def start_iot_simulators(net):
         token_env = ("IOT_INGEST_TOKEN=%s " % shlex.quote(LIVE_IOT_INGEST_TOKEN)) if LIVE_IOT_INGEST_TOKEN else ""
         command = (
             f"{token_env}python3 {simulator} --device-id {host_id} --role {spec['role']} "
-            f"--server {target} --port {port} --interval {interval} "
+            f"--server {target} --port {port} --endpoint {shlex.quote(endpoint)} "
+            f"--interval {interval} "
             f"> {log_path} 2>&1 &"
         )
         host.cmd(command)
-    info("*** IoT simulators started for h5-h16; target=%s:%s interval=%ss\n", target, port, interval)
+    info("*** IoT simulators started for h5-h16; endpoint=%s interval=%ss\n", endpoint, interval)
     info("*** Per-device logs: /tmp/secureiot-h5-iot.log through /tmp/secureiot-h16-iot.log\n")
 
 

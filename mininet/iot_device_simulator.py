@@ -2,7 +2,8 @@
 """Lightweight, safe IoT telemetry simulator for SecureIoT Mininet hosts.
 
 Each Mininet IoT host runs one instance. It periodically POSTs role-specific,
-synthetic sensor readings to the approved Web/API service over TCP/5000.
+synthetic sensor readings to the configured Web/API endpoint. The endpoint can
+be the internal service or a public ngrok URL.
 This is a simulator, not a physical sensor driver.
 """
 
@@ -71,6 +72,11 @@ def main():
     parser.add_argument("--role", required=True)
     parser.add_argument("--server", default="10.10.20.2")
     parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument(
+        "--endpoint",
+        default=os.environ.get("IOT_TELEMETRY_ENDPOINT", "").strip(),
+        help="Full telemetry POST URL; overrides --server/--port when set",
+    )
     parser.add_argument("--interval", type=float, default=10.0)
     parser.add_argument("--timeout", type=float, default=2.0)
     parser.add_argument("--max-events", type=int, default=0, help="0 means run until stopped")
@@ -81,7 +87,9 @@ def main():
         parser.error("--max-events cannot be negative")
 
     rng = random.Random(f"{args.device_id}-{time.time_ns()}")
-    endpoint = f"http://{args.server}:{args.port}/api/iot/telemetry"
+    endpoint = args.endpoint or f"http://{args.server}:{args.port}/api/iot/telemetry"
+    if not endpoint.startswith(("http://", "https://")):
+        parser.error("--endpoint must start with http:// or https://")
     sequence = 0
     print(f"IOT_SIMULATOR_READY device={args.device_id} role={args.role} endpoint={endpoint} interval={args.interval}s", flush=True)
     while args.max_events == 0 or sequence < args.max_events:
