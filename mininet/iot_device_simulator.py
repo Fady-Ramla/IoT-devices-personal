@@ -1,117 +1,98 @@
 #!/usr/bin/env python3
-"""Lightweight, safe IoT telemetry simulator for SecureIoT Mininet hosts.
+"""Lightweight IoT sensor simulator for SecureIoT Mininet hosts.
 
-Each Mininet IoT host runs one instance. It periodically POSTs role-specific,
-synthetic sensor readings to the configured Web/API endpoint. The endpoint can
-be the internal service or a public ngrok URL.
-This is a simulator, not a physical sensor driver.
+In server-polling mode each host exposes GET /sensor/readings and GET /health.
+The Web/API server polls those private endpoints; the device never calls ngrok
+and never pushes telemetry directly to the dashboard API.
 """
-
 import argparse
 import json
-import os
 import random
+import threading
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 def make_reading(role, rng):
-    """Return plausible synthetic readings for a device role."""
-    if role == "fire_alarm_controller":
+    if role in {"fire_alarm_controller", "smoke_fire_alarm", "alarm_sensor"}:
         return {"smoke_level": round(rng.uniform(0.0, 0.12), 3), "alarm": False}
-    if role == "smoke_heat_gateway":
+    if role in {"smoke_heat_gateway", "environment_sensor"}:
         return {"smoke_level": round(rng.uniform(0.0, 0.15), 3), "temperature_c": round(rng.uniform(19, 27), 2)}
     if role == "hvac_controller":
         return {"room_temperature_c": round(rng.uniform(20, 25), 2), "target_temperature_c": 22.0, "mode": "auto"}
-    if role == "temperature_humidity":
+    if role in {"temperature_humidity", "temperature_sensor", "humidity_sensor"}:
         return {"temperature_c": round(rng.uniform(18, 29), 2), "humidity_pct": round(rng.uniform(30, 65), 2)}
     if role == "ip_camera":
         return {"camera_status": "online", "fps": rng.choice([15, 20, 24, 25]), "motion_detected": rng.random() < 0.08}
-    if role == "smart_door_access":
+    if role in {"smart_door_access", "smart_door_lock"}:
         return {"door_state": "closed", "lock_state": "locked", "access_events_last_minute": rng.randint(0, 2)}
-    if role == "smart_lighting":
+    if role in {"smart_lighting", "smart_light_bulb"}:
         return {"brightness_pct": rng.randint(25, 85), "occupancy_detected": rng.random() < 0.35}
-    if role == "smart_energy_meter":
-        return {"power_w": round(rng.uniform(80, 850), 2), "voltage_v": round(rng.uniform(218, 242), 2), "energy_kwh": round(rng.uniform(0.1, 80), 3)}
-    if role == "ups_monitor":
-        return {"battery_pct": round(rng.uniform(88, 100), 2), "load_pct": round(rng.uniform(15, 65), 2), "on_battery": False}
-    if role == "server_room_temperature":
-        return {"temperature_c": round(rng.uniform(18, 27), 2), "humidity_pct": round(rng.uniform(25, 55), 2)}
-    if role == "water_leak_detector":
-        return {"water_detected": False, "sensor_status": "normal"}
+    if role in {"smart_energy_meter", "smart_printer", "voip_phone"}:
+        return {"power_w": round(rng.uniform(80, 850), 2), "status": "online"}
     if role == "vibration_sensor":
         return {"vibration_mm_s": round(rng.uniform(0.1, 2.5), 3), "machine_status": "normal"}
     return {"status": "online", "value": round(rng.random(), 4)}
 
 
-def post_json(url, payload, timeout):
-    data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "SecureIoT-Simulator/1.0",
-    }
-    ingest_token = os.environ.get("IOT_INGEST_TOKEN", "").strip()
-    if ingest_token:
-        headers["Authorization"] = "Bearer " + ingest_token
-    request = urllib.request.Request(
-        url,
-        data=data,
-        headers=headers,
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        response.read()
-        return response.status
+def serve_sensor(device_id, role, listen_host, listen_port):
+    rng = random.Random(f"{device_id}-{time.time_ns()}")
+    sequence = 0
+    lock = threading.Lock()
+
+    class SensorHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            nonlocal sequence
+            if self.path == "/health":
+                body = {"status": "healthy", "device_id": device_id, "service": "iot-sensor"}
+            elif self.path == "/sensor/readings":
+                with lock:
+                    sequence += 1
+                    body = {
+                        "device_id": device_id,
+                        "device_role": role,
+                        "readings": make_reading(role, rng),
+                        "sequence": sequence,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "status": "online",
+                        "simulation": True,
+                        "source": "mininet",
+                    }
+            else:
+                self.send_error(404)
+                return
+            encoded = json.dumps(body, separators=(",", ":")).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer((listen_host, listen_port), SensorHandler)
+    print(f"IOT_SENSOR_READY device={device_id} role={role} address={listen_host}:{listen_port}", flush=True)
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device-id", required=True)
     parser.add_argument("--role", required=True)
-    parser.add_argument("--server", default="10.10.20.2")
-    parser.add_argument("--port", type=int, default=5000)
-    parser.add_argument(
-        "--endpoint",
-        default=os.environ.get("IOT_TELEMETRY_ENDPOINT", "").strip(),
-        help="Full telemetry POST URL; overrides --server/--port when set",
-    )
-    parser.add_argument("--interval", type=float, default=10.0)
-    parser.add_argument("--timeout", type=float, default=2.0)
-    parser.add_argument("--max-events", type=int, default=0, help="0 means run until stopped")
+    parser.add_argument("--serve", action="store_true", help="serve private sensor HTTP endpoints")
+    parser.add_argument("--listen-host", default="0.0.0.0")
+    parser.add_argument("--listen-port", type=int, default=8081)
     args = parser.parse_args()
-    if args.interval < 1:
-        parser.error("--interval must be at least 1 second")
-    if args.max_events < 0:
-        parser.error("--max-events cannot be negative")
-
-    rng = random.Random(f"{args.device_id}-{time.time_ns()}")
-    endpoint = args.endpoint or f"http://{args.server}:{args.port}/api/iot/telemetry"
-    if not endpoint.startswith(("http://", "https://")):
-        parser.error("--endpoint must start with http:// or https://")
-    sequence = 0
-    print(f"IOT_SIMULATOR_READY device={args.device_id} role={args.role} endpoint={endpoint} interval={args.interval}s", flush=True)
-    while args.max_events == 0 or sequence < args.max_events:
-        sequence += 1
-        reading = make_reading(args.role, rng)
-        payload = {
-            "device_id": args.device_id,
-            "sensor_id": args.role,
-            "value": reading,
-            "unit": "simulated",
-            "status": "online",
-            "source": "mininet",
-            "sequence": sequence,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        try:
-            status = post_json(endpoint, payload, args.timeout)
-            print(f"IOT_TELEMETRY_SENT device={args.device_id} sequence={sequence} http_status={status}", flush=True)
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            print(f"IOT_TELEMETRY_FAILED device={args.device_id} sequence={sequence} error={exc}", flush=True)
-        if args.max_events == 0 or sequence < args.max_events:
-            time.sleep(args.interval)
+    if not args.serve:
+        parser.error("--serve is required; IoT devices expose readings for the server poller")
+    if not 1 <= args.listen_port <= 65535:
+        parser.error("--listen-port must be between 1 and 65535")
+    serve_sensor(args.device_id, args.role, args.listen_host, args.listen_port)
 
 
 if __name__ == "__main__":

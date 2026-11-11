@@ -43,7 +43,10 @@ FORWARD_RULES = (
     # IT admins to approved service and management ports.
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -p tcp -m multiport --dports 22,443,5000 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.10 -p tcp --dport 5000 -j ACCEPT",
-    # Services-to-IoT and all other unlisted forwarding are denied by policy.
+    # Server-side IoT polling: only the sensor HTTP port is allowed from
+    # Services to IoT. Devices still cannot initiate telemetry pushes.
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.10 -p tcp --dport 8081 -j ACCEPT",
+    # All other Services-to-IoT and unlisted forwarding remain denied.
 )
 
 _RC_MARKER = "__SECUREIOT_GATEWAY_RC__"

@@ -251,30 +251,20 @@ def configure_ovs_zones(net):
 
 
 def start_iot_simulators(net):
-    """Start one synthetic telemetry process on each IoT host h5-h16."""
+    """Start one private HTTP sensor endpoint on each IoT host h5-h16."""
     project_dir = os.path.dirname(os.path.abspath(__file__))
     simulator = os.path.join(project_dir, "iot_device_simulator.py")
-    interval = float(os.getenv("IOT_TELEMETRY_INTERVAL", "10"))
-    target = os.getenv("IOT_TELEMETRY_SERVER", "10.10.20.2")
-    port = int(os.getenv("IOT_TELEMETRY_PORT", "5000"))
-    endpoint = os.getenv(
-        "IOT_TELEMETRY_ENDPOINT",
-        "https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry",
-    ).strip()
-
+    port = int(os.getenv("IOT_SENSOR_PORT", "8081"))
     for host_id in (f"h{i}" for i in range(5, 17)):
         spec = HOSTS[host_id]
         host = net.get(host_id)
         log_path = f"/tmp/secureiot-{host_id}-iot.log"
-        token_env = ("IOT_INGEST_TOKEN=%s " % shlex.quote(LIVE_IOT_INGEST_TOKEN)) if LIVE_IOT_INGEST_TOKEN else ""
         command = (
-            f"{token_env}python3 {simulator} --device-id {host_id} --role {spec['role']} "
-            f"--server {target} --port {port} --endpoint {shlex.quote(endpoint)} "
-            f"--interval {interval} "
-            f"> {log_path} 2>&1 &"
+            f"python3 {simulator} --device-id {host_id} --role {spec['role']} "
+            f"--serve --listen-port {port} > {log_path} 2>&1 &"
         )
         host.cmd(command)
-    info("*** IoT simulators started for h5-h16; endpoint=%s interval=%ss\n", endpoint, interval)
+    info("*** IoT sensor endpoints started for h5-h16 on private TCP/%s\n", port)
     info("*** Per-device logs: /tmp/secureiot-h5-iot.log through /tmp/secureiot-h16-iot.log\n")
 
 
@@ -299,12 +289,16 @@ def start_live_iot_web_api(net, ingest_token):
     project_dir = os.path.dirname(os.path.abspath(__file__))
     server = os.path.join(project_dir, "servers", "web_api_server.py")
     db_path = os.environ.get("SECUREIOT_IOT_DB", "/var/lib/secureiot/iot-telemetry.sqlite3")
+    poll_interval = os.environ.get("IOT_POLL_INTERVAL", "5")
+    sensor_port = os.environ.get("IOT_SENSOR_PORT", "8081")
     host.cmd("pkill -f '[w]eb_api_server.py' >/dev/null 2>&1 || true")
     host.cmd("sleep 0.3")
     launch = (
-        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s WEB_API_PORT=5000 python3 %s "
+        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s IOT_POLLING_ENABLED=1 "
+        "IOT_POLL_INTERVAL=%s IOT_SENSOR_PORT=%s WEB_API_PORT=5000 python3 %s "
         "> /tmp/web_api_h2_iot_live.log 2>&1 &"
-        % (shlex.quote(db_path), shlex.quote(ingest_token), shlex.quote(server))
+        % (shlex.quote(db_path), shlex.quote(ingest_token),
+           shlex.quote(poll_interval), shlex.quote(sensor_port), shlex.quote(server))
     )
     host.cmd(launch)
     deadline = time.monotonic() + 20

@@ -37,10 +37,12 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 from iot_telemetry_store import IoTTelemetryStore
+from iot_poller import IoTPoller
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 iot_telemetry_store = IoTTelemetryStore()
+IOT_POLLER = IoTPoller(store=iot_telemetry_store)
 
 # TrustFlow: request metadata only; never records request bodies.
 from trustflow_app_telemetry import install_trustflow_telemetry
@@ -275,4 +277,5 @@ def health():
 
 
 if __name__ == "__main__":
+    IOT_POLLER.start()
     app.run(host="0.0.0.0", port=int(os.getenv("WEB_API_PORT", "5000")), debug=False)
