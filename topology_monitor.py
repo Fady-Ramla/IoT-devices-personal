@@ -107,6 +107,7 @@ ETH_TYPE_ARP = 0x0806
 
 CLFF_PACKET_STATE_TIMEOUT = 5
 PORT_STATS_INTERVAL = 5
+HOST_TRAFFIC_ACTIVE_WINDOW = 15
 LINK_CAPACITY_BPS = 10_000_000
 CONGESTION_REEVAL_INTERVAL = 5
 CONGESTION_REROUTE_COOLDOWN = 15
@@ -209,6 +210,8 @@ class TopologyMonitor(app_manager.RyuApp):
 
         # PortStats samples used by traffic-aware path selection.
         self.port_stats_previous = {}
+        # Recent endpoint traffic, separate from inter-switch utilization.
+        self.host_traffic_last_seen = {}
 
         # Topology state.
         self.topology_signature = None
@@ -609,21 +612,29 @@ class TopologyMonitor(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
-        """Convert PortStats deltas into operational link utilization."""
+        """Track endpoint traffic and convert link deltas to utilization."""
         dpid = ev.msg.datapath.id
         now = time.time()
 
         for stat in ev.msg.body:
             port_no = int(stat.port_no)
-            peer = self.port_to_link.get((dpid, port_no))
-
-            if peer is None:
-                continue
-
             counter = int(stat.rx_bytes) + int(stat.tx_bytes)
             key = (dpid, port_no)
             previous = self.port_stats_previous.get(key)
             self.port_stats_previous[key] = (counter, now)
+
+            entry = self.vlan_port_map.get(key, {})
+            if (previous is not None
+                    and entry.get("kind") == "access"
+                    and entry.get("role") == "endpoint"):
+                old_counter, old_time = previous
+                if counter > old_counter and now > old_time:
+                    self.host_traffic_last_seen[dpid] = now
+
+            peer = self.port_to_link.get((dpid, port_no))
+
+            if peer is None:
+                continue
 
             if previous is None:
                 continue

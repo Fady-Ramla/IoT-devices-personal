@@ -9,7 +9,7 @@ import tempfile
 import threading
 import time
 
-DEFAULT_STATS = "/home/zolikha/secureiot-lb-stats.json"
+DEFAULT_STATS = "/var/tmp/secureiot-lb-stats.json"
 
 class TcpLoadBalancer:
     def __init__(self, listen_host, listen_port, backends, health_timeout=1.0):
@@ -24,6 +24,9 @@ class TcpLoadBalancer:
             "requests_total": 0, "requests_active": 0,
             "bytes_in": 0, "bytes_out": 0,
             "backend_failovers": 0,
+            "healthy_backends": [],
+            "health_checks_performed": False,
+            "last_health_check": None,
             "listen_host": self.listen_host,
             "listen_port": self.listen_port,
             "backends": [f"{h}:{p}" for h, p in self.backends],
@@ -73,8 +76,14 @@ class TcpLoadBalancer:
                 return None
             ordered = self.backends[self.next_backend:] + self.backends[:self.next_backend]
             self.next_backend = (self.next_backend + 1) % len(self.backends)
+        healthy = [backend for backend in ordered if self.healthy(backend)]
+        with self.lock:
+            self.stats["healthy_backends"] = [f"{host}:{port}" for host, port in healthy]
+            self.stats["health_checks_performed"] = True
+            self.stats["last_health_check"] = time.time()
+        self.write_stats()
         for backend in ordered:
-            if self.healthy(backend):
+            if backend in healthy:
                 return backend
         return None
 

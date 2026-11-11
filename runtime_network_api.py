@@ -275,9 +275,21 @@ class RuntimeNetworkController(ControllerBase):
         return topology, (_call(topology, ["get_topology_status"], {}) or {})
 
     def _traffic_dpids(self):
-        """Return DPIDs with recent growth on real inter-switch PortStats counters."""
+        """Return DPIDs with recent growth on endpoint access-port counters."""
         active = set()
         topology = self._topology()
+        host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
+        now = time.time()
+        if isinstance(host_activity, dict):
+            for dpid, observed_at in host_activity.items():
+                try:
+                    if now - float(observed_at) <= 15:
+                        active.add(int(dpid))
+                except (TypeError, ValueError):
+                    continue
+            return active
+
+        # Compatibility fallback for older TopologyMonitor versions.
         # TopologyMonitor stores (byte_counter, sample_time) in this map, and
         # only for currently discovered inter-switch ports.
         samples = getattr(topology, "port_stats_previous", {}) if topology is not None else {}
@@ -525,36 +537,56 @@ class RuntimeNetworkController(ControllerBase):
     @api_auth_required
     @route("load_balancer_status", "/network/load-balancer/status", methods=["GET"])
     def load_balancer_status(self, req, **kwargs):
-        return json_response({"status": "configured", "health_checks_performed": False,
-                              "healthy_backends": None, "total_backends": 2, "last_check": None})
+        stats = self._load_balancer_stats()
+        if stats is None:
+            return json_response({"status": "unavailable", "health_checks_performed": False,
+                                  "healthy_backends": [], "total_backends": 2, "last_check": None,
+                                  "source": "stats-file-unavailable"}, status=503)
+        healthy = stats.get("healthy_backends", [])
+        return json_response({"status": "running", "health_checks_performed": bool(stats.get("health_checks_performed")),
+                              "healthy_backends": healthy, "total_backends": len(stats.get("backends", [])) or 2,
+                              "last_check": stats.get("last_health_check"),
+                              "updated_at": stats.get("updated_at"), "source": "shared-load-balancer-stats"})
 
     @api_auth_required
     @route("load_balancer_backends", "/network/load-balancer/backends", methods=["GET"])
     def load_balancer_backends(self, req, **kwargs):
         service = SERVICE_PAIRS.get("http_api", {})
+        stats = self._load_balancer_stats() or {}
+        healthy = set(stats.get("healthy_backends", []))
+        checked = bool(stats.get("health_checks_performed"))
         backends = []
         for key in ("primary", "backup"):
             host_id = service.get(key)
             if host_id and host_id in HOST_IPS:
                 backends.append({"backend_id": host_id,
                                  "address": "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000)),
-                                 "status": "configured", "health_checked": False, "weight": 1})
+                                 "status": ("healthy" if "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000)) in healthy
+                                             else ("unhealthy" if checked else "unknown")),
+                                 "health_checked": checked, "weight": 1,
+                                 "last_check": stats.get("last_health_check")})
         return json_response(backends)
 
     @api_auth_required
     @route("load_balancer_stats", "/network/load-balancer/stats", methods=["GET"])
     def load_balancer_stats(self, req, **kwargs):
-        path = os.environ.get("SECUREIOT_LB_STATS_FILE", "/var/tmp/secureiot-lb-stats.json")
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                value = json.load(handle)
+        value = self._load_balancer_stats()
+        if value is not None:
             value["timestamp"] = now_utc()
             value["source"] = "shared-load-balancer-stats"
             return json_response(value)
+        return json_response({"status": "unavailable", "requests_total": 0, "requests_active": 0,
+                              "bytes_in": 0, "bytes_out": 0, "backend_failovers": 0,
+                              "timestamp": now_utc(), "source": "stats-file-unavailable"}, status=503)
+
+    @staticmethod
+    def _load_balancer_stats():
+        path = os.environ.get("SECUREIOT_LB_STATS_FILE", "/var/tmp/secureiot-lb-stats.json")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                return json.load(handle)
         except (FileNotFoundError, json.JSONDecodeError, OSError):
-            return json_response({"status": "unavailable", "requests_total": 0, "requests_active": 0,
-                                  "bytes_in": 0, "bytes_out": 0, "backend_failovers": 0,
-                                  "timestamp": now_utc(), "source": "stats-file-unavailable"}, status=503)
+            return None
 
     @api_auth_required
     @route("firewall_status", "/firewall/status", methods=["GET"])
