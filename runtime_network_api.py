@@ -362,9 +362,9 @@ class RuntimeNetworkController(ControllerBase):
     def iot_telemetry_get(self, req, **kwargs):
         return json_response(self.iot_store.telemetry(req.GET.get("device_id"), req.GET.get("sensor_id"), req.GET.get("limit", 100)))
 
-    # Lab-mode telemetry ingress is intentionally public because Mininet IoT
-    # hosts POST directly through the configured ngrok endpoint. Read/query
-    # endpoints remain protected by api_auth_required below.
+    # Lab-mode telemetry ingress is intentionally public because the internal
+    # server-side poller POSTs fresh readings through the configured ngrok
+    # endpoint. Read/query endpoints remain protected below.
     @route("iot_telemetry_post", "/api/iot/telemetry", methods=["POST"])
     def iot_telemetry_post(self, req, **kwargs):
         try:

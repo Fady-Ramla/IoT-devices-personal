@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Server-side polling for Mininet IoT sensor HTTP endpoints.
+"""Server-side polling and optional contract POST delivery for IoT sensors.
 
-The poller is deliberately internal: it adds no public API route. It reads
-sensor endpoints from the Services host, then writes normalized observations to
-the existing shared IoTTelemetryStore used by both the Flask service and Ryu.
+The poller reads private sensor endpoints from the Services host every interval.
+When ``IOT_TELEMETRY_POST_URL`` is configured, each fresh reading is POSTed to
+the existing contract endpoint (for example through ngrok); otherwise it is
+written directly to the shared local store.
 """
 from __future__ import annotations
 
@@ -52,6 +53,24 @@ def read_sensor(url: str, timeout: float = 2.0,
     return payload
 
 
+def post_telemetry(url: str, record: dict, timeout: float = 2.0,
+                   token: str = "", opener: Callable[..., object] | None = None) -> dict:
+    """POST one normalized reading and require a successful JSON response."""
+    body = json.dumps(record).encode("utf-8")
+    headers = {"Accept": "application/json", "Content-Type": "application/json",
+               "User-Agent": "SecureIoT-Poller/1.0"}
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    fetch = opener or urllib.request.urlopen
+    with fetch(request, timeout=timeout) as response:
+        status = getattr(response, "status", 200)
+        if not 200 <= int(status) < 300:
+            raise urllib.error.HTTPError(url, int(status), "telemetry POST rejected", {}, None)
+        raw = response.read().decode("utf-8")
+    return json.loads(raw) if raw else {"status": "accepted"}
+
+
 class IoTPoller:
     """Daemon poller with bounded timeouts and graceful shutdown."""
 
@@ -59,7 +78,8 @@ class IoTPoller:
                  devices: Iterable[tuple[str, str]] | None = None,
                  interval: float | None = None, port: int | None = None,
                  timeout: float | None = None, enabled: bool | None = None,
-                 reader: Callable[[str, float], dict] | None = None) -> None:
+                 reader: Callable[[str, float], dict] | None = None,
+                 poster: Callable[[str, dict, float], dict] | None = None) -> None:
         self.store = store or IoTTelemetryStore()
         self.devices = list(devices or default_devices())
         self.interval = max(1.0, float(interval if interval is not None else os.getenv("IOT_POLL_INTERVAL", "5")))
@@ -68,6 +88,10 @@ class IoTPoller:
         raw_enabled = os.getenv("IOT_POLLING_ENABLED", "1").strip().lower()
         self.enabled = (enabled if enabled is not None else raw_enabled not in {"0", "false", "no", "off"})
         self.reader = reader or (lambda url, timeout: read_sensor(url, timeout))
+        self.post_url = os.getenv("IOT_TELEMETRY_POST_URL", "").strip()
+        self.post_token = os.getenv("IOT_TELEMETRY_POST_TOKEN", "").strip()
+        self.poster = poster or (lambda url, record, timeout: post_telemetry(
+            url, record, timeout, token=self.post_token))
         self.stop_event = threading.Event()
         self.thread: threading.Thread | None = None
         self.last_poll_at: str | None = None
@@ -88,7 +112,12 @@ class IoTPoller:
                     "sequence": payload.get("sequence"),
                     "simulation": bool(payload.get("simulation", True)),
                 }
-                self.store.record(record)
+                if self.post_url:
+                    accepted = self.poster(self.post_url, record, self.timeout)
+                    LOGGER.info("IoT telemetry POST accepted device=%s sequence=%s url=%s",
+                                device_id, record.get("sequence"), self.post_url)
+                else:
+                    accepted = self.store.record(record)
                 successes += 1
             except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError,
                     urllib.error.URLError) as exc:
@@ -109,8 +138,8 @@ class IoTPoller:
             return self
         self.thread = threading.Thread(target=self._run, name="secureiot-iot-poller", daemon=True)
         self.thread.start()
-        LOGGER.info("IoT server polling enabled devices=%d interval=%ss port=%s",
-                    len(self.devices), self.interval, self.port)
+        LOGGER.info("IoT server polling enabled devices=%d interval=%ss port=%s post_url=%s",
+                    len(self.devices), self.interval, self.port, self.post_url or "local-store")
         return self
 
     def stop(self) -> None:
@@ -119,4 +148,4 @@ class IoTPoller:
             self.thread.join(timeout=max(1.0, self.timeout + 1.0))
 
 
-__all__ = ["IoTPoller", "default_devices", "read_sensor"]
+__all__ = ["IoTPoller", "default_devices", "post_telemetry", "read_sensor"]

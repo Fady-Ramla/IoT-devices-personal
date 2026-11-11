@@ -291,14 +291,18 @@ def start_live_iot_web_api(net, ingest_token):
     db_path = os.environ.get("SECUREIOT_IOT_DB", "/var/lib/secureiot/iot-telemetry.sqlite3")
     poll_interval = os.environ.get("IOT_POLL_INTERVAL", "5")
     sensor_port = os.environ.get("IOT_SENSOR_PORT", "8081")
+    post_url = os.environ.get("IOT_TELEMETRY_POST_URL", "")
+    post_token = os.environ.get("IOT_TELEMETRY_POST_TOKEN", ingest_token)
     host.cmd("pkill -f '[w]eb_api_server.py' >/dev/null 2>&1 || true")
     host.cmd("sleep 0.3")
     launch = (
         "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s IOT_POLLING_ENABLED=1 "
-        "IOT_POLL_INTERVAL=%s IOT_SENSOR_PORT=%s WEB_API_PORT=5000 python3 %s "
+        "IOT_POLL_INTERVAL=%s IOT_SENSOR_PORT=%s IOT_TELEMETRY_POST_URL=%s "
+        "IOT_TELEMETRY_POST_TOKEN=%s WEB_API_PORT=5000 python3 %s "
         "> /tmp/web_api_h2_iot_live.log 2>&1 &"
         % (shlex.quote(db_path), shlex.quote(ingest_token),
-           shlex.quote(poll_interval), shlex.quote(sensor_port), shlex.quote(server))
+           shlex.quote(poll_interval), shlex.quote(sensor_port), shlex.quote(post_url),
+           shlex.quote(post_token), shlex.quote(server))
     )
     host.cmd(launch)
     deadline = time.monotonic() + 20

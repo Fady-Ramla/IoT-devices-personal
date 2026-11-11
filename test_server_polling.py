@@ -58,6 +58,40 @@ class ServerPollingTest(unittest.TestCase):
             self.assertEqual(poller.poll_once(), {"successes": 0, "failures": 1})
             self.assertEqual(store.devices(), [])
 
+    def test_polling_posts_each_fresh_reading_to_contract_endpoint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = IoTTelemetryStore(f"{directory}/iot.sqlite3")
+            posted = []
+            sequence = {"value": 40}
+
+            def reader(url, timeout):
+                sequence["value"] += 1
+                return {
+                    "device_id": "h16",
+                    "device_role": "vibration_sensor",
+                    "readings": {"vibration_mm_s": sequence["value"] / 10},
+                    "sequence": sequence["value"],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+
+            def poster(url, record, timeout):
+                posted.append((url, record.copy()))
+                return {"status": "accepted"}
+
+            poller = IoTPoller(store=store, devices=[("h16", "vibration_sensor")],
+                                reader=reader, poster=poster, enabled=True)
+            poller.post_url = "https://example.ngrok-free.dev/api/iot/telemetry"
+            self.assertEqual(poller.poll_once(), {"successes": 1, "failures": 0})
+            self.assertEqual(poller.poll_once(), {"successes": 1, "failures": 0})
+            self.assertEqual(len(posted), 2)
+            self.assertEqual(posted[0][0], poller.post_url)
+            self.assertEqual([item[1]["sequence"] for item in posted], [41, 42])
+            self.assertNotEqual(
+                posted[0][1]["readings"]["vibration_mm_s"],
+                posted[1][1]["readings"]["vibration_mm_s"],
+            )
+            self.assertEqual(store.devices(), [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
