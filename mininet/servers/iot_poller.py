@@ -21,6 +21,7 @@ from typing import Callable, Iterable
 from iot_telemetry_store import IoTTelemetryStore
 
 LOGGER = logging.getLogger("secureiot.iot_poller")
+_DIRECT_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def now_utc() -> str:
@@ -45,7 +46,8 @@ def read_sensor(url: str, timeout: float = 2.0,
     """Fetch one sensor response and validate its minimum shape."""
     request = urllib.request.Request(url, headers={"Accept": "application/json",
                                                    "User-Agent": "SecureIoT-Poller/1.0"})
-    fetch = opener or urllib.request.urlopen
+    # Private Mininet sensor IPs must not go through a host HTTP(S) proxy.
+    fetch = opener or _DIRECT_OPENER.open
     with fetch(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     if not isinstance(payload, dict) or not isinstance(payload.get("readings"), dict):
