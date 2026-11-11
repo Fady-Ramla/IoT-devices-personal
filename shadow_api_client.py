@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Asynchronous Shadow API client for TrustFlow.
 
-Shadow mode only:
+Continuous Shadow API client:
 - Sends the exact 16-field API request.
 - Keeps run_id and observation_id local.
-- Stores one JSONL result per submitted flow under:
-  New_Datasets/raw/shadow_api/<run_id>.jsonl
-- Never enforces BLOCK_DEVICE or UNBLOCK_DEVICE.
+- Stores submission, request, verdict, and enforcement audit events under:
+  New_Datasets/raw/shadow_api/<session_uuid>.jsonl
+- Only requests local enforcement when SHADOW_ENFORCE=1; Ryu applies strict
+  allowlist, VLAN, identity, and block-origin checks before changing switches.
 """
 
 import ipaddress
@@ -272,8 +273,8 @@ def _start_workers():
 def _send_payload(payload, api_key):
     """Send one flow and return its result.
 
-    The returned verdict is recorded only.
-    This function never enforces network actions.
+    This request function only returns a validated verdict; the worker may
+    separately forward it to the authenticated local Ryu guard if enabled.
     """
 
     url = _get_api_url()
@@ -423,8 +424,8 @@ def _send_payload(payload, api_key):
                 latency_ms,
             )
 
-            # Shadow mode only:
-            # Never enforce BLOCK_DEVICE or UNBLOCK_DEVICE here.
+            # Enforcement is deliberately performed by a separate local guard,
+            # never in this API response parser.
 
             return _build_result(
                 status=status,
@@ -514,8 +515,64 @@ def _send_payload(payload, api_key):
 # Background worker
 # ---------------------------------------------------------------------
 
+def _apply_shadow_verdict(request_payload, result, metadata):
+    """Send a valid API verdict to the local Ryu guard; never fail closed."""
+    if os.environ.get("SHADOW_ENFORCE") != "1":
+        return {"status": "disabled"}
+    if result.get("http_status") != 200 or result.get("decision") not in (
+        "BLOCK_DEVICE", "UNBLOCK_DEVICE"
+    ):
+        return {"status": "skipped", "reason": "no_valid_http_200_verdict"}
+
+    token = os.environ.get("SECUREIOT_CONTROL_TOKEN", "").strip()
+    if not token:
+        return {"status": "rejected", "reason": "missing_control_token"}
+
+    url = os.environ.get(
+        "SHADOW_ENFORCEMENT_URL",
+        "http://127.0.0.1:8080/shadow/verdict",
+    ).strip()
+    if not (url.startswith("http://127.0.0.1:") or url.startswith("http://localhost:")):
+        return {"status": "rejected", "reason": "enforcement_url_must_be_loopback"}
+
+    body = {
+        "decision": result.get("decision"),
+        "requested_src_ip": request_payload.get("src_ip"),
+        "response_src_ip": result.get("response_src_ip"),
+        "reason": result.get("reason"),
+        "confidence": result.get("confidence"),
+        "request_id": metadata.get("observation_id"),
+        "observation_id": metadata.get("observation_id"),
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body, allow_nan=False).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "X-SecureIoT-Token": token,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            text = response.read(8192).decode("utf-8", errors="replace")
+            try:
+                response_body = json.loads(text)
+            except ValueError:
+                response_body = {"raw_response": text}
+            return {
+                "status": "submitted" if response.status == 200 else "rejected",
+                "http_status": response.status,
+                "network_result": response_body,
+            }
+    except urllib.error.HTTPError as exc:
+        return {"status": "network_api_error", "http_status": exc.code}
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {"status": "network_api_unreachable", "error": type(exc).__name__}
+
+
 def _worker_loop():
-    """Consume queued flows and send them asynchronously."""
+    """Consume queued flows, send them asynchronously, and audit enforcement."""
     global _LAST_REQUEST_AT
 
     while True:
@@ -546,6 +603,14 @@ def _worker_loop():
                 },
             ):
                 LOG.error("SHADOW_API_LIVE result audit failed")
+
+            enforcement_result = _apply_shadow_verdict(payload, result, metadata)
+            if not _append_audit_event(
+                metadata,
+                "enforcement_result",
+                {"enforcement_result": enforcement_result},
+            ):
+                LOG.error("SHADOW_API_LIVE enforcement audit failed")
 
         except Exception as exc:
             LOG.warning(

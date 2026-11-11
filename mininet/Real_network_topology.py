@@ -37,7 +37,7 @@ from mininet.net import Mininet
 from mininet.node import OVSSwitch, RemoteController
 from mininet.topo import Topo
 
-from configure_gateway import configure_gateway
+from configure_gateway import configure_gateway, configure_wan
 from vlan_config_38host import (
     HOSTS, INTER_SWITCH_LINKS, NETWORKS, SWITCH_NAMES, host_cidr, gateway_for,
 )
@@ -820,6 +820,7 @@ def run():
         time.sleep(5)
 
         configure_gateway(net.get("gw"))
+        configure_wan(net.get("gw"))
         configure_ovs_zones(net)
         batch_path = os.getenv("SECUREIOT_BATCH_PLAN", "").strip()
         if batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":

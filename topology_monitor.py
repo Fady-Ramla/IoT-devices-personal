@@ -2231,7 +2231,6 @@ class TopologyMonitor(app_manager.RyuApp):
             and port_no > 0
             and not self._is_special_port(port_no)
         }
-
     def _send_lldp(self, datapath, port_no):
 
         if lldp is None or not self.vlan_map_ready:
