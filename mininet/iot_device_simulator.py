@@ -8,6 +8,7 @@ This is a simulator, not a physical sensor driver.
 
 import argparse
 import json
+import os
 import random
 import time
 import urllib.error
@@ -46,10 +47,17 @@ def make_reading(role, rng):
 
 def post_json(url, payload, timeout):
     data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "SecureIoT-Simulator/1.0",
+    }
+    ingest_token = os.environ.get("IOT_INGEST_TOKEN", "").strip()
+    if ingest_token:
+        headers["Authorization"] = "Bearer " + ingest_token
     request = urllib.request.Request(
         url,
         data=data,
-        headers={"Content-Type": "application/json", "User-Agent": "SecureIoT-Simulator/1.0"},
+        headers=headers,
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=timeout) as response:

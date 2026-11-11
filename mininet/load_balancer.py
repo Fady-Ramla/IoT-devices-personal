@@ -49,6 +49,10 @@ class TcpLoadBalancer:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, self.stats_file)
+            # The stats contain counters and health state, not credentials.
+            # Mininet may launch the LB as root while the dashboard is run by
+            # the normal user, so keep the atomically replaced file readable.
+            os.chmod(self.stats_file, 0o644)
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)
