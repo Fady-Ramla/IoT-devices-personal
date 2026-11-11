@@ -4,8 +4,8 @@
 This file is the Mininet implementation of
 SECUREIOT_TARGET_DESIGN_38HOSTS_FINAL.md.
 
-Run Ryu first with EXPECTED_SWITCHES=6 and EXPECTED_PHYSICAL_LINKS=11.
-The topology creates a Linux gateway node with five zone interfaces and
+Run Ryu first with EXPECTED_SWITCHES=6 and EXPECTED_PHYSICAL_LINKS=12.
+The topology creates a Linux gateway node with one 802.1Q trunk and
 installs a conservative inter-zone iptables policy. VLAN access/trunk
 programming is kept explicit in configure_ovs_zones so it can be audited
 against the VLAN-aware Ryu forwarding implementation before production tests.
@@ -18,8 +18,10 @@ import csv
 import json
 import math
 import re
+import secrets
 import shlex
 import uuid
+import urllib.parse
 import urllib.request
 from types import SimpleNamespace
 from attack_manager import (
@@ -35,8 +37,10 @@ from mininet.net import Mininet
 from mininet.node import OVSSwitch, RemoteController
 from mininet.topo import Topo
 
-from configure_gateway import configure_gateway
-from vlan_config_38host import HOSTS, INTER_SWITCH_LINKS, NETWORKS, host_cidr, gateway_for
+from configure_gateway import configure_gateway, configure_wan
+from vlan_config_38host import (
+    HOSTS, INTER_SWITCH_LINKS, NETWORKS, SWITCH_NAMES, host_cidr, gateway_for,
+)
 
 
 RYU_IP = os.getenv("RYU_IP", "127.0.0.1")
@@ -46,12 +50,13 @@ VLAN_PORT_MAP_FILE = os.getenv(
     "SECUREIOT_VLAN_PORT_MAP",
     os.path.join(PROJECT_ROOT, "New_Datasets", "config", "vlan_port_map.json"),
 )
+LIVE_IOT_INGEST_TOKEN = ""
 
 
 class SecureIoT38Topo(Topo):
     def build(self):
         switches = {name: self.addSwitch(name, cls=OVSSwitch)
-                    for name in ("s1", "s2", "s3", "s4", "s5", "s6")}
+                    for name in SWITCH_NAMES}
         gateway = self.addHost("gw", ip=None)
 
         for host_id, spec in HOSTS.items():
@@ -62,10 +67,8 @@ class SecureIoT38Topo(Topo):
             )
             self.addLink(host, switches[spec["switch"]])
 
-        # Five routed zone interfaces. Interface order is stable because these
-        # links are created in this order: IoT, services, DNS, management, employees.
-        for zone_switch in ("s3", "s2", "s2", "s6", "s5"):
-            self.addLink(gateway, switches[zone_switch])
+        # One tagged trunk carries all five VLANs to Linux VLAN subinterfaces.
+        self.addLink(gateway, switches["s3"])
 
         for left, right in INTER_SWITCH_LINKS:
             self.addLink(switches[left], switches[right])
@@ -144,19 +147,10 @@ def _write_vlan_port_map(net):
     for host_id, spec in HOSTS.items():
         add_record(net.get(spec["switch"]), net.get(host_id), "access", spec["vlan"])
 
-    gateway_zones = (
-        ("gw-eth0", "s3", 10),
-        ("gw-eth1", "s2", 20),
-        ("gw-eth2", "s2", 30),
-        ("gw-eth3", "s6", 40),
-        ("gw-eth4", "s5", 50),
-    )
     gateway = net.get("gw")
-    for gateway_intf, switch_name, vlan_id in gateway_zones:
-        switch = net.get(switch_name)
-        add_record(
-            switch, gateway, "access", vlan_id,
-            role="gateway", node_intf_name=gateway_intf)
+    add_record(
+        net.get("s3"), gateway, "trunk", role="gateway",
+        node_intf_name="gw-eth0")
 
     for left_name, right_name in INTER_SWITCH_LINKS:
         left, right = net.get(left_name), net.get(right_name)
@@ -168,8 +162,8 @@ def _write_vlan_port_map(net):
         raise RuntimeError("duplicate switch/port in VLAN map")
     access_count = sum(row["kind"] == "access" for row in records)
     trunk_count = sum(row["kind"] == "trunk" for row in records)
-    if (len(HOSTS) != 38 or access_count != 43 or trunk_count != 22
-            or len(records) != 65 or len(allowed_vlans) != 5):
+    if (len(HOSTS) != 38 or access_count != 38 or trunk_count != 25
+            or len(records) != 63 or len(allowed_vlans) != 5):
         raise RuntimeError(
             "unexpected VLAN map size: hosts=%d access=%d trunks=%d vlans=%d"
             % (len(HOSTS), access_count, trunk_count, len(allowed_vlans))
@@ -179,7 +173,7 @@ def _write_vlan_port_map(net):
         "schema_version": 2,
         "topology_id": uuid.uuid4().hex,
         "expected_switches": 6,
-        "expected_inter_switch_links": 11,
+        "expected_inter_switch_links": 12,
         "host_count": len(HOSTS),
         "allowed_vlans": allowed_vlans,
         "networks": {str(key): value for key, value in NETWORKS.items()},
@@ -219,31 +213,20 @@ def configure_ovs_zones(net):
         if result.strip():
             info("[vlan] %s", result)
 
-    # Configure each gateway-facing link as an access port for its zone.
-    # The gateway uses one untagged Linux interface per VLAN, so these OVS
-    # ports must add/remove the VLAN tag at the switch boundary.
-    gateway_zones = (
-        ("gw-eth0", "s3", 10),  # IoT
-        ("gw-eth1", "s2", 20),  # Services
-        ("gw-eth2", "s2", 30),  # DNS
-        ("gw-eth3", "s6", 40),  # IT management
-        ("gw-eth4", "s5", 50),  # Employees
-    )
+    # Configure one Core-to-gateway 802.1Q trunk for all five VLANs.
+    trunk_vlans = ",".join(str(vlan) for vlan in sorted(NETWORKS))
     gateway = net.get("gw")
-    for gateway_intf_name, switch_name, vlan in gateway_zones:
-        switch = net.get(switch_name)
-        switch_intf = _switch_interface_for_node_interface(
-            switch, gateway, gateway_intf_name)
-        result = switch.cmd(
-            f"ovs-vsctl set Port {switch_intf.name} tag={vlan} trunks=[]"
-        )
-        if result.strip():
-            info("[vlan] %s", result)
+    core = net.get("s3")
+    core_intf = _switch_interface_for_node_interface(core, gateway, "gw-eth0")
+    result = core.cmd(
+        f"ovs-vsctl set Port {core_intf.name} tag=[] trunks={trunk_vlans}"
+    )
+    if result.strip():
+        info("[trunk] gateway %s", result)
 
     # Configure every inter-switch link as an 802.1Q trunk. Without this,
     # access VLANs remain local to a switch and same-VLAN hosts on different
     # switches cannot communicate.
-    trunk_vlans = ",".join(str(vlan) for vlan in sorted(NETWORKS))
     for left_name, right_name in INTER_SWITCH_LINKS:
         left = net.get(left_name)
         right = net.get(right_name)
@@ -279,8 +262,9 @@ def start_iot_simulators(net):
         spec = HOSTS[host_id]
         host = net.get(host_id)
         log_path = f"/tmp/secureiot-{host_id}-iot.log"
+        token_env = ("IOT_INGEST_TOKEN=%s " % shlex.quote(LIVE_IOT_INGEST_TOKEN)) if LIVE_IOT_INGEST_TOKEN else ""
         command = (
-            f"python3 {simulator} --device-id {host_id} --role {spec['role']} "
+            f"{token_env}python3 {simulator} --device-id {host_id} --role {spec['role']} "
             f"--server {target} --port {port} --interval {interval} "
             f"> {log_path} 2>&1 &"
         )
@@ -291,7 +275,8 @@ def start_iot_simulators(net):
 
 def print_inventory():
     info("\n=== SecureIoT 38-host topology ===\n")
-    info("Switches: s1-s6 | inter-switch links: 11\n")
+    info("Switches: s1,s2,s3,s4,s5,s6 | inter-switch links: 12\n")
+    info("Gateway: one 802.1Q trunk to Core s3 carrying VLANs 10,20,30,40,50\n")
     info("VLAN 10 IoT:          10.10.10.0/24\n")
     info("VLAN 20 Services:     10.10.20.0/24\n")
     info("VLAN 30 DNS:          10.10.30.0/24\n")
@@ -303,21 +288,49 @@ def print_inventory():
     info("\nUseful checks: pingall, net, links, nodes, gw iptables -L -n -v\n\n")
 
 
-def start_demo_services(net):
-    """Start HTTP backends and TCP load-balancer listeners for local tests."""
+def start_live_iot_web_api(net, ingest_token):
+    """Start the real Flask Web/API on h2 with shared persistent IoT storage."""
+    host = net.get("h2")
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    server = os.path.join(project_dir, "servers", "web_api_server.py")
+    db_path = os.environ.get("SECUREIOT_IOT_DB", "/var/lib/secureiot/iot-telemetry.sqlite3")
+    host.cmd("pkill -f '[w]eb_api_server.py' >/dev/null 2>&1 || true")
+    host.cmd("sleep 0.3")
+    launch = (
+        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s WEB_API_PORT=5000 python3 %s "
+        "> /tmp/web_api_h2_iot_live.log 2>&1 &"
+        % (shlex.quote(db_path), shlex.quote(ingest_token), shlex.quote(server))
+    )
+    host.cmd(launch)
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        response = host.cmd("curl -fsS --max-time 1 http://127.0.0.1:5000/health 2>/dev/null")
+        if '"healthy"' in response:
+            info("*** Live IoT Web/API ready on h2:5000; shared store=%s\n", db_path)
+            return
+        time.sleep(0.5)
+    tail = host.cmd("tail -n 20 /tmp/web_api_h2_iot_live.log 2>/dev/null")
+    raise RuntimeError("live IoT Web/API did not become healthy on h2:5000; " + tail.strip())
+
+
+def start_demo_services(net, live_iot_api=False):
+    """Start local HTTP backends and the TCP load-balancer listener."""
+    global LIVE_IOT_INGEST_TOKEN
     project_dir = os.path.dirname(os.path.abspath(__file__))
     service_stub = os.path.join(project_dir, "service_stub.py")
     load_balancer = os.path.join(project_dir, "load_balancer.py")
-
-    for host_id, port, name in (
-        ("h2", 5000, "primary-web-api"),
-        ("h18", 5000, "backup-web-api"),
-    ):
+    if live_iot_api:
+        LIVE_IOT_INGEST_TOKEN = secrets.token_urlsafe(32)
+        start_live_iot_web_api(net, LIVE_IOT_INGEST_TOKEN)
+        stub_backends = (("h18", 5000, "backup-web-api"),)
+    else:
+        stub_backends = (("h2", 5000, "primary-web-api"),
+                         ("h18", 5000, "backup-web-api"))
+    for host_id, port, name in stub_backends:
         net.get(host_id).cmd(
             f"python3 {service_stub} --host 0.0.0.0 --port {port} --name {name} "
             f"> /tmp/{name}.log 2>&1 &"
         )
-
     lb = net.get("h38")
     lb.cmd(
         f"python3 {load_balancer} --listen-port 5000 "
@@ -596,7 +609,7 @@ def build_attack_spec(attack_type, dst_ip, parameters):
         raise ValueError('unknown attack type: ' + attack_type)
     return dict(command=command, dst_port=str(port), src_port='*', protocol='TCP',
                 service_name=service, rate_value=rate, duration_sec=duration,
-                accepted_returncodes=(0, 124), notes=json.dumps(notes, sort_keys=True))
+                accepted_returncodes=((0,) if attack_type == 'port_scan' else (0, 124)), notes=json.dumps(notes, sort_keys=True))
 
 
 class AttackCLI(CLI):
@@ -631,6 +644,50 @@ class AttackCLI(CLI):
         except Exception as exc:
             self._last_run_error = exc
             print('Run failed; no next run was started: %s' % exc)
+        return False
+
+    def do_iot_test(self, line):
+        """Send one h5 probe through h2 and verify it via the local Ryu API."""
+        token = os.environ.get("SECUREIOT_API_TOKEN", "")
+        ingest_token = LIVE_IOT_INGEST_TOKEN
+        if len(token) < 32 or len(ingest_token) < 32:
+            print("Start Ryu with SECUREIOT_API_TOKEN and Mininet with START_DEMO_SERVICES=1 START_IOT_SIMULATORS=1 first.")
+            return False
+        sequence = int(time.time() * 1000)
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        payload = {
+            "device_id": "h5",
+            "device_role": "alarm_sensor",
+            "telemetry": {"api_e2e_probe": sequence, "timestamp": timestamp,
+                          "sequence": sequence, "simulation": True},
+        }
+        body = json.dumps(payload, separators=(",", ":"))
+        command = (
+            "curl -4 -sS --connect-timeout 2 --max-time 5 -o /tmp/secureiot-iot-test-response.json "
+            "-w 'HTTP=%{http_code}' -H 'Content-Type: application/json' "
+            "-H %s --data-binary %s http://10.10.20.2:5000/api/iot/telemetry"
+            % (shlex.quote("Authorization: Bearer " + ingest_token), shlex.quote(body))
+        )
+        posted = self.mn.get("h5").cmd(command).strip()
+        if "HTTP=202" not in posted:
+            print("FAIL Mininet h5 -> h2 Web/API POST: %s" % posted)
+            return False
+        query = urllib.parse.urlencode({"device_id": "h5", "sensor_id": "api_e2e_probe", "limit": "10"})
+        request = urllib.request.Request(
+            "http://127.0.0.1:8080/api/iot/telemetry?" + query,
+            headers={"Authorization": "Bearer " + token},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                records = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            print("FAIL h2 store -> Ryu API GET: %s" % exc)
+            return False
+        if not any(row.get("sequence") == sequence and row.get("device_id") == "h5"
+                   for row in records if isinstance(row, dict)):
+            print("FAIL POST accepted but probe was not found in Ryu API response")
+            return False
+        print("PASS h5 -> h2:5000 -> shared SQLite -> Ryu API: sequence=%s" % sequence)
         return False
 
 
@@ -763,6 +820,7 @@ def run():
         time.sleep(5)
 
         configure_gateway(net.get("gw"))
+        configure_wan(net.get("gw"))
         configure_ovs_zones(net)
         batch_path = os.getenv("SECUREIOT_BATCH_PLAN", "").strip()
         if batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":
@@ -774,10 +832,16 @@ def run():
                 "dataset batch cannot include background IoT simulators"
             )
         if not batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":
-            start_demo_services(net)
+            start_demo_services(
+                net,
+                live_iot_api=(os.getenv("START_IOT_SIMULATORS", "0") == "1"),
+            )
         if not batch_path and os.getenv("START_IOT_SIMULATORS", "0") == "1":
             if os.getenv("START_DEMO_SERVICES", "0") != "1":
-                info("*** WARNING: IoT simulators need the demo Web/API service; set START_DEMO_SERVICES=1\n")
+                raise RuntimeError(
+                    "START_IOT_SIMULATORS=1 requires START_DEMO_SERVICES=1 "
+                    "because telemetry is sent to the demo Web/API on h2:5000"
+                )
             start_iot_simulators(net)
         print_inventory()
         if batch_path:

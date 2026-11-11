@@ -144,6 +144,13 @@ from zero_trust.zero_trust_decision import ZeroTrustDecision
 
 from topology_monitor import EventRerouteHost
 
+# Shadow API client exports telemetry and may request guarded local enforcement
+# through the authenticated /shadow/verdict route when explicitly enabled.
+try:
+    from shadow_api_client import submit_flow_live
+except ImportError:
+    submit_flow_live = None
+
 
 # =============================================================
 # CONSTANTS
@@ -170,6 +177,7 @@ ACTIVE_RUN_FILE = Path(os.environ.get("SECUREIOT_ACTIVE_RUN_FILE", str(PROJECT_R
 RAW_DATA_ROOT = Path(os.environ.get("SECUREIOT_RAW_DATA_ROOT", str(PROJECT_ROOT / "New_Datasets" / "raw"))).expanduser().resolve()
 PACKET_DATA_DIR = RAW_DATA_ROOT / "packet"
 FLOW_DATA_DIR = RAW_DATA_ROOT / "flow"
+SHADOW_API_DATA_DIR = RAW_DATA_ROOT / "shadow_api"
 DATASET_RUN_LEDGER = RAW_DATA_ROOT / ".dataset_run_ids.jsonl"
 PACKET_HEADER = [
     "run_id", "observation_id", "timestamp", "switch_dpid", "in_port",
@@ -421,13 +429,37 @@ class NetworkActionController(ControllerBase):
                 }).encode("utf-8")
             )
 
+    @route("shadow_verdict", "/shadow/verdict", methods=["POST"])
+    def shadow_verdict(self, req, **kwargs):
+        expected_token = self.monitor.control_token
+        supplied_token = req.headers.get("X-SecureIoT-Token", "")
+        if not expected_token or not supplied_token or not hmac.compare_digest(
+                supplied_token, expected_token):
+            return Response(status=401, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "unauthorized"
+                            }).encode("utf-8"))
+        try:
+            payload = json.loads(req.body.decode("utf-8"))
+            result = self.monitor.execute_shadow_api_verdict(payload)
+            status = 200 if result.get("success") else 400
+            return Response(status=status, content_type="application/json",
+                            charset="utf-8", body=json.dumps(result).encode("utf-8"))
+        except Exception as exc:
+            self.monitor.logger.exception("Shadow verdict execution failed")
+            return Response(status=500, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "error",
+                                "message": type(exc).__name__
+                            }).encode("utf-8"))
+
     @route(
         "security_decision",
         "/security/decision",
         methods=["POST"]
     )
     def security_decision(self, req, **kwargs):
-        """Accept Security telemetry and execute only its BLOCK decision."""
+        """Accept Security telemetry and execute explicit BLOCK/UNBLOCK decisions."""
         expected_token = self.monitor.control_token
         supplied_token = req.headers.get("X-SecureIoT-Token", "")
         if not expected_token:
@@ -809,6 +841,19 @@ class TrafficMonitorMerged(
         self.flow_requests = {}
         self.flow_request_sequence = 0
         self.flow_used_xids = {}
+        # Continuous telemetry gets its own UUID and does not create or alter
+        # the experiment active_run.json / CSV lifecycle.
+        self.shadow_live_run = {
+            "run_id": str(uuid.uuid4()),
+            "generation": 0,
+            "state": "active",
+            "datapaths": {},
+            "last_sequence": {},
+            "final_done": set(),
+            "pending_final": {},
+            "shadow_live_only": True,
+        }
+        self.shadow_seen_request_ids = set()
 
         # -----------------------------------------------------
         # WSGI registration
@@ -1259,10 +1304,11 @@ class TrafficMonitorMerged(
             if not dst_ip and dst_mac:
                 dst_ip = self.mac_to_ip.get(dst_mac, "")
 
-            protocol = match.get(
-                "ip_proto",
-                ""
-            )
+            protocol = match.get("ip_proto", "")
+            try:
+                protocol_number = int(protocol)
+            except (TypeError, ValueError):
+                protocol_number = -1
 
             src_port = ""
             dst_port = ""
@@ -1271,7 +1317,7 @@ class TrafficMonitorMerged(
             # TCP
             # -------------------------------------------------
 
-            if protocol == 6:
+            if protocol_number == 6:
 
                 src_port = match.get(
                     "tcp_src",
@@ -1287,7 +1333,7 @@ class TrafficMonitorMerged(
             # UDP
             # -------------------------------------------------
 
-            elif protocol == 17:
+            elif protocol_number == 17:
 
                 src_port = match.get(
                     "udp_src",
@@ -1448,25 +1494,64 @@ class TrafficMonitorMerged(
             # Write feature row.
             # -------------------------------------------------
 
-            self._write_flow_feature_locked([
-                now,
-                dpid,
-                src_ip,
-                dst_ip,
-                src_port,
-                dst_port,
-                protocol,
-                stat.priority,
-                packet_count,
-                byte_count,
-                packet_rate,
-                byte_rate,
-                duration_sec,
-                byte_count / max(packet_count, 1),
-                0, 0, 0, 0, 0.0, 0.0, 0, 0,
-                float(protocol == 6), float(protocol == 17), float(protocol == 1),
-                "switch_flow_stats", src_mac, dst_mac
-            ], run)
+            if run.get("shadow_live_only"):
+                # Continuous mode writes the exact API request/result to JSONL;
+                # it does not create dataset CSV rows or require an experiment run.
+                flow_row_written = True
+            else:
+                flow_row_written = self._write_flow_feature_locked([
+                    now,
+                    dpid,
+                    src_ip,
+                    dst_ip,
+                    src_port,
+                    dst_port,
+                    protocol,
+                    stat.priority,
+                    packet_count,
+                    byte_count,
+                    packet_rate,
+                    byte_rate,
+                    duration_sec,
+                    byte_count / max(packet_count, 1),
+                    0, 0, 0, 0, 0.0, 0.0, 0, 0,
+                    float(protocol_number == 6), float(protocol_number == 17), float(protocol_number == 1),
+                    "switch_flow_stats", src_mac, dst_mac
+                ], run)
+
+            # Submit only a single valid TCP/UDP destination port; never select an
+            # arbitrary port from an ambiguous flow. Enforcement is separately guarded.
+            if (flow_row_written
+                   and submit_flow_live is not None
+                   and protocol_number in (6, 17)
+                   and src_ip and dst_ip and time_delta > 0 and packet_delta > 0):
+                try:
+                    destination_port = int(dst_port)
+                except (TypeError, ValueError):
+                    destination_port = 0
+                if 1 <= destination_port <= 65535:
+                    try:
+                        queued = submit_flow_live({
+                            "run_id": run["run_id"],
+                            "observation_id": "%s_switch_%d_%s" % (
+                                run["run_id"], dpid, uuid.uuid4().hex),
+                            "src_ip": str(src_ip),
+                            "dst_ip": str(dst_ip),
+                            "dst_port": destination_port,
+                            "protocol": "TCP" if protocol_number == 6 else "UDP",
+                            "ip_proto": protocol_number,
+                            "packet_count": int(packet_delta),
+                            "byte_count": int(byte_delta),
+                            "packet_rate": float(packet_rate),
+                            "byte_rate": float(byte_rate),
+                            "duration_sec": float(max(time_delta, 0.001)),
+                            "switch_dpid": int(dpid),
+                            "priority": int(stat.priority),
+                        })
+                        if not queued:
+                            self.logger.debug("Shadow API did not queue switch-flow observation")
+                    except Exception as exc:
+                        self.logger.warning("Shadow API switch-flow submission failed: %s", exc)
     def _flush_packet_flow_windows_locked(self, run=None):
         """Flush windows while dataset_lock is already held."""
         for key, state in list(self.packet_flow_windows.items()):
@@ -1506,7 +1591,7 @@ class TrafficMonitorMerged(
             if self.flow_rows_since_flush >= CSV_FLUSH_EVERY:
                 self.flow_file.flush()
                 self.flow_rows_since_flush = 0
-        return True
+        return observation_id
     def _get_topology_monitor(self):
 
         if self.topology_monitor is not None:
@@ -2001,6 +2086,7 @@ class TrafficMonitorMerged(
             RAW_DATA_ROOT.mkdir(parents=True, exist_ok=True)
             PACKET_DATA_DIR.mkdir(parents=True, exist_ok=True)
             FLOW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+            SHADOW_API_DATA_DIR.mkdir(parents=True, exist_ok=True)
             packet_ids = self._validate_run_files(PACKET_DATA_DIR, PACKET_HEADER)
             flow_ids = self._validate_run_files(FLOW_DATA_DIR, FLOW_HEADER)
             if packet_ids != flow_ids:
@@ -2505,7 +2591,10 @@ class TrafficMonitorMerged(
                 or protocol not in (1, 6, 17)):
             return
         identity = (run["run_id"], run["generation"])
-        key = identity + (dpid, str(src_addr), str(dst_addr), protocol)
+        key = identity + (
+            dpid, str(src_addr), str(dst_addr), protocol,
+            str(src_port or ""), str(dst_port or ""),
+        )
         state = self.packet_flow_windows.get(key)
         if state is None or now - state["start_time"] >= PACKET_FLOW_WINDOW:
             if state is not None:
@@ -2529,7 +2618,7 @@ class TrafficMonitorMerged(
     def _write_packet_flow_window(self, key, state, lock_held=False):
         if not state or state["packet_count"] <= 0:
             return False
-        _, _, dpid, src_ip, dst_ip, protocol = key
+        _, _, dpid, src_ip, dst_ip, protocol, _, _ = key
         run = state["run"]
         if self.dataset_run is not run or run["state"] not in ("active", "draining"):
             return False
@@ -2547,8 +2636,50 @@ class TrafficMonitorMerged(
                max(syn - ack, 0), float(protocol == 6), float(protocol == 17),
                float(protocol == 1), "packetin_window", "", ""]
         if lock_held:
-            return self._write_flow_feature_locked(row, run)
-        return self._write_flow_feature(row, run)
+            written = self._write_flow_feature_locked(row, run)
+        else:
+            written = self._write_flow_feature(row, run)
+        if not written:
+            return False
+
+        # Submit only complete TCP/UDP observations. The API client queues
+        # asynchronously and separately audits any guarded enforcement result.
+        if protocol in (6, 17) and submit_flow_live is not None:
+            try:
+                source_port = int(next(iter(state["src_ports"])))
+                destination_port = int(next(iter(state["dst_ports"])))
+            except (StopIteration, TypeError, ValueError):
+                source_port = destination_port = 0
+
+            if (1 <= source_port <= 65535
+                    and 1 <= destination_port <= 65535):
+                try:
+                    queued = submit_flow_live({
+                        "run_id": run["run_id"],
+                        "observation_id": written,
+                        "src_ip": str(src_ip),
+                        "dst_ip": str(dst_ip),
+                        "dst_port": destination_port,
+                        "protocol": "TCP" if protocol == 6 else "UDP",
+                        "ip_proto": int(protocol),
+                        "packet_count": int(packets),
+                        "byte_count": int(byte_count),
+                        "packet_rate": float(packets / duration),
+                        "byte_rate": float(byte_count / duration),
+                        "duration_sec": float(duration),
+                        "switch_dpid": int(dpid),
+                        "priority": 0,
+                    })
+                    if not queued:
+                        self.logger.debug(
+                            "Shadow API did not queue PacketIn observation"
+                        )
+                except Exception as exc:
+                    self.logger.warning(
+                        "Shadow API PacketIn submission failed: %s", exc
+                    )
+
+        return True
     def _flow_stats_loop(self):
         while True:
             try:
@@ -2566,19 +2697,32 @@ class TrafficMonitorMerged(
             hub.sleep(FLOW_POLL_INTERVAL)
     def _request_flow_stats(self, datapath):
         with self.dataset_lock:
-            run = self.dataset_run
-            if (not run or run["state"] != "active"
-                    or self.dataset_error or self.dataset_closed):
+            dataset_run = self.dataset_run
+            if self.dataset_closed:
                 return None
+            if dataset_run and dataset_run["state"] == "active":
+                if self.dataset_error:
+                    return None
+                run = dataset_run
+            elif dataset_run and dataset_run["state"] == "draining":
+                # Do not overlap final dataset snapshots with live telemetry.
+                return None
+            elif (os.environ.get("SHADOW_API_LIVE") == "1"
+                    and os.environ.get("SHADOW_API_CONTINUOUS") == "1"):
+                run = self.shadow_live_run
+            else:
+                return None
+
             if self.datapaths.get(datapath.id) is not datapath:
                 return None
             owner = run["datapaths"].get(datapath.id)
             if owner is None:
                 run["datapaths"][datapath.id] = datapath
             elif owner is not datapath:
-                run["drain_errors"][str(datapath.id)] = "Datapath reconnected during run"
-                return None
-            # Bound pending polls: one multipart request per connection.
+                if run is not self.shadow_live_run:
+                    run["drain_errors"][str(datapath.id)] = "Datapath reconnected during run"
+                else:
+                    run["datapaths"][datapath.id] = datapath
             if any(r["datapath"] is datapath and r["run"] is run
                    for r in self.flow_requests.values()):
                 return None
@@ -2590,16 +2734,26 @@ class TrafficMonitorMerged(
         key = (id(datapath), msg.xid)
         with self.dataset_lock:
             owner = self.flow_requests.get(key)
-            run = self.dataset_run
-            if (not owner or owner["datapath"] is not datapath
-                    or owner["run"] is not run or not run
+            if not owner or owner["datapath"] is not datapath:
+                return
+            run = owner["run"]
+            if run is self.shadow_live_run:
+                dataset_run = self.dataset_run
+                if (os.environ.get("SHADOW_API_LIVE") != "1"
+                        or os.environ.get("SHADOW_API_CONTINUOUS") != "1"
+                        or self.dataset_closed
+                        or (dataset_run and dataset_run["state"] in ("active", "draining"))):
+                    self.flow_requests.pop(key, None)
+                    return
+            elif (run is not self.dataset_run or not run
                     or (owner["run_id"], owner["generation"]) != (run["run_id"], run["generation"])
                     or run["state"] not in ("active", "draining")
                     or self.dataset_error or self.dataset_closed):
-                return  # unsolicited, stale generation/run, or closed collection
+                self.flow_requests.pop(key, None)
+                return  # unsolicited, stale run, or closed collection
             owner["body"].extend(msg.body)
             if msg.flags & datapath.ofproto.OFPMPF_REPLY_MORE:
-                return  # no delta and no drain completion before the last part
+                return
             self.flow_requests.pop(key, None)
             dpid = datapath.id
             if dpid in run["final_done"]:
@@ -2609,14 +2763,13 @@ class TrafficMonitorMerged(
                     self._process_flow_stats_locked(datapath, owner["body"], run)
                     run["last_sequence"][dpid] = owner["sequence"]
                 except Exception as exc:
-                    self.dataset_error = "FlowStats processing/write failed: %s" % exc
+                    if run is not self.shadow_live_run:
+                        self.dataset_error = "FlowStats processing/write failed: %s" % exc
                     self.logger.exception("FlowStats processing failed")
                     return
             if owner["final"] and run["pending_final"].get(dpid) == key:
                 run["pending_final"].pop(dpid)
                 run["final_done"].add(dpid)
-                # Older polls can neither alter the baseline nor write after
-                # this connection's final snapshot, even if delivered later.
                 for pending, item in list(self.flow_requests.items()):
                     if item["run"] is run and item["datapath"] is datapath:
                         self.flow_requests.pop(pending, None)
@@ -2721,21 +2874,145 @@ class TrafficMonitorMerged(
             self.trust_scores[host_ip] = trust_score
         return {"success": True, "host_ip": host_ip,
                 "trust_state": state, "trust_score": trust_score}
+    def execute_shadow_api_verdict(self, payload):
+        """Validate and enforce an API verdict through Zero Trust.
+
+        Enforcement is opt-in, restricted to exact SHADOW_ENFORCEMENT_IPS,
+        VLANs listed in SHADOW_ENFORCEMENT_VLANS (default VLAN 10), and a
+        currently learned IP->MAC identity. Automatic unblocking is separately
+        opt-in and only applies to a block previously issued by this API path.
+        """
+        if os.environ.get("SHADOW_ENFORCE") != "1":
+            return {"success": False, "status": "disabled",
+                    "message": "SHADOW_ENFORCE is not enabled"}
+        if not isinstance(payload, dict):
+            return {"success": False, "status": "rejected",
+                    "message": "payload must be a JSON object"}
+        decision = str(payload.get("decision", "")).strip().upper()
+        if decision not in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            return {"success": False, "status": "rejected",
+                    "message": "unsupported decision"}
+        try:
+            requested_ip = str(ipaddress.ip_address(
+                str(payload.get("requested_src_ip", "")).strip()))
+            response_ip = str(ipaddress.ip_address(
+                str(payload.get("response_src_ip", "")).strip()))
+        except ValueError:
+            return {"success": False, "status": "rejected",
+                    "message": "invalid or missing source IP"}
+        if requested_ip != response_ip:
+            return {"success": False, "status": "rejected",
+                    "message": "API source IP does not match the submitted flow"}
+
+        allow_ips = set()
+        for value in os.environ.get("SHADOW_ENFORCEMENT_IPS", "").split(","):
+            value = value.strip()
+            if value:
+                try:
+                    allow_ips.add(str(ipaddress.ip_address(value)))
+                except ValueError:
+                    return {"success": False, "status": "rejected",
+                            "message": "invalid SHADOW_ENFORCEMENT_IPS configuration"}
+        if requested_ip not in allow_ips:
+            return {"success": False, "status": "rejected",
+                    "message": "source IP is not explicitly allowlisted for enforcement"}
+
+        protected_ips = set()
+        for value in os.environ.get("SECUREIOT_PROTECTED_IPS", "").split(","):
+            value = value.strip()
+            if value:
+                try:
+                    protected_ips.add(str(ipaddress.ip_address(value)))
+                except ValueError:
+                    return {"success": False, "status": "rejected",
+                            "message": "invalid SECUREIOT_PROTECTED_IPS configuration"}
+        if requested_ip in protected_ips:
+            return {"success": False, "status": "rejected",
+                    "message": "source IP is protected"}
+
+        try:
+            allowed_vlans = {int(v.strip()) for v in
+                             os.environ.get("SHADOW_ENFORCEMENT_VLANS", "10").split(",")
+                             if v.strip()}
+        except ValueError:
+            return {"success": False, "status": "rejected",
+                    "message": "invalid SHADOW_ENFORCEMENT_VLANS configuration"}
+
+        topology = self._get_topology_monitor()
+        if topology is None:
+            return {"success": False, "status": "unavailable",
+                    "message": "TopologyMonitor is not available"}
+        mac = topology.ip_to_mac.get(requested_ip)
+        if not mac or mac not in topology.host_location:
+            return {"success": False, "status": "rejected",
+                    "message": "source IP has no current learned host identity"}
+        if topology.ip_vlan.get(requested_ip) not in allowed_vlans:
+            return {"success": False, "status": "rejected",
+                    "message": "source host VLAN is outside enforcement scope"}
+        try:
+            mac = topology.normalize_device_mac(mac)
+        except ValueError:
+            return {"success": False, "status": "rejected",
+                    "message": "learned MAC is invalid"}
+
+        request_id = str(payload.get("request_id") or "").strip()
+        if not request_id or len(request_id) > 200:
+            return {"success": False, "status": "rejected",
+                    "message": "valid request_id is required"}
+        if request_id in self.shadow_seen_request_ids:
+            return {"success": True, "status": "duplicate_ignored",
+                    "request_id": request_id, "ip": requested_ip, "mac": mac}
+
+        reason = str(payload.get("reason") or "Shadow API verdict")[:300]
+        current_block = topology.blocked_devices.get(mac)
+        if decision == ACTION_BLOCK_DEVICE:
+            if current_block:
+                if current_block.get("source") == "shadow_api":
+                    self.shadow_seen_request_ids.add(request_id)
+                    return {"success": True, "status": "already_blocked_by_shadow",
+                            "request_id": request_id, "ip": requested_ip, "mac": mac}
+                return {"success": False, "status": "rejected",
+                        "message": "device is already blocked by another source"}
+        else:
+            if os.environ.get("SHADOW_AUTO_UNBLOCK") != "1":
+                return {"success": False, "status": "rejected",
+                        "message": "automatic unblocking is not enabled"}
+            if not current_block or current_block.get("source") != "shadow_api":
+                return {"success": False, "status": "rejected",
+                        "message": "only a block previously issued by Shadow API may be removed"}
+
+        result = self.execute_security_action(
+            host_ip=requested_ip, mac=mac, action=decision,
+            request_id="SHADOW-" + request_id, reason=reason)
+        # Keep ownership metadata for any block this path created, including
+        # a partial switch failure, so it cannot be mistaken for a manual block.
+        if decision == ACTION_BLOCK_DEVICE:
+            block = topology.blocked_devices.get(mac)
+            if block is not None and block.get("request_id") == "SHADOW-" + request_id:
+                block["source"] = "shadow_api"
+                block["shadow_request_id"] = request_id
+        if result.get("success"):
+            self.shadow_seen_request_ids.add(request_id)
+        return result
+
     def handle_security_decision(self, payload):
-        """Map Security's BLOCK/NOT_BLOCK decision to network behavior."""
+        """Execute explicit Security BLOCK/UNBLOCK decisions; record NOT_BLOCK."""
         if not isinstance(payload, dict):
             return {"success": False, "status": "rejected",
                     "message": "Security payload must be a JSON object"}
+
         decision = str(payload.get("decision", "")).strip().upper()
-        if decision not in {"BLOCK", "NOT_BLOCK"}:
+        if decision not in {"BLOCK", "NOT_BLOCK", "UNBLOCK"}:
             return {"success": False, "status": "rejected",
-                    "message": "decision must be BLOCK or NOT_BLOCK"}
+                    "message": "decision must be BLOCK, NOT_BLOCK or UNBLOCK"}
+
         request_id = payload.get("request_id") or (
             "SECURITY-%d" % int(time.time() * 1000)
         )
         src = payload.get("src") or payload.get("source_ip")
         dst = payload.get("dst") or payload.get("destination_ip")
         mac = payload.get("mac")
+
         telemetry = {
             "src": src, "dst": dst,
             "src_port": payload.get("src_port"),
@@ -2746,25 +3023,51 @@ class TrafficMonitorMerged(
             "reason": payload.get("reason"),
             "request_id": request_id, "timestamp": time.time()
         }
+
+        # NOT_BLOCK is informational only. It never removes an existing block.
         if decision == "NOT_BLOCK":
             self.security_decisions[request_id] = telemetry
-            self._record_action(request_id, src, "NOT_BLOCK", "recorded",
-                                payload.get("reason"), mac)
-            return {"success": True, "status": "recorded",
-                    "decision": decision, "action": "NONE",
-                    "request_id": request_id, "telemetry": telemetry}
-        if not mac or not src:
-            return {"success": False, "status": "rejected",
-                    "message": "src and mac are required for BLOCK"}
+            self._record_action(
+                request_id, src, "NOT_BLOCK", "recorded",
+                payload.get("reason"), mac
+            )
+            return {
+                "success": True, "status": "recorded",
+                "decision": decision, "action": "NONE",
+                "request_id": request_id, "telemetry": telemetry
+            }
+
+        if not mac:
+            return {
+                "success": False, "status": "rejected",
+                "message": "mac is required for BLOCK and UNBLOCK"
+            }
+
+        if decision == "BLOCK" and not src:
+            return {
+                "success": False, "status": "rejected",
+                "message": "src is required for BLOCK"
+            }
+
+        action = (
+            ACTION_BLOCK_DEVICE if decision == "BLOCK"
+            else ACTION_UNBLOCK_DEVICE
+        )
+
         result = self.execute_security_action(
-            host_ip=src, mac=mac, action=ACTION_BLOCK_DEVICE,
-            request_id=request_id, reason=payload.get("reason"))
-        execution_result = dict(result)
-        telemetry["action"] = "BLOCK_DEVICE"
-        telemetry["execution"] = execution_result
+            host_ip=src,
+            mac=mac,
+            action=action,
+            request_id=request_id,
+            reason=payload.get("reason")
+        )
+
+        telemetry["action"] = action
+        telemetry["execution"] = dict(result)
         self.security_decisions[request_id] = telemetry
         result.update({"decision": decision, "telemetry": telemetry})
         return result
+
     def execute_security_action(
         self, host_ip=None, action=None, request_id=None, trust_state=None,
         trust_score=None, reason=None, mac=None

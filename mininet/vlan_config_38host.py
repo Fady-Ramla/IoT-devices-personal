@@ -37,20 +37,50 @@ VLAN_GATEWAYS = {
     VLAN_EMPLOYEES: "10.10.50.1",
 }
 
-# The exact 11 inter-switch links copied from the current topology output.
+# Proposed 12 switch links: seven retained mesh links plus five Core uplinks.
 INTER_SWITCH_LINKS = (
     ("s1", "s2"),
-    ("s2", "s3"),
-    ("s3", "s4"),
-    ("s4", "s5"),
-    ("s1", "s3"),
+    ("s1", "s5"),
     ("s2", "s4"),
-    ("s3", "s5"),
+    ("s2", "s5"),
+    ("s4", "s5"),
     ("s4", "s6"),
     ("s5", "s6"),
-    ("s1", "s5"),
-    ("s2", "s5"),
+    ("s1", "s3"),
+    ("s2", "s3"),
+    ("s4", "s3"),
+    ("s5", "s3"),
+    ("s6", "s3"),
 )
+
+SWITCH_NAMES = ("s1", "s2", "s3", "s4", "s5", "s6")
+
+# Canonical IoT device identities used by the simulator. Only the role is
+# configured here; per-role send timing lives in
+# iot_device_simulator.ROLE_INTERVAL_MULTIPLIER (the single place it is read).
+IOT_DEVICE_PROFILES = {
+    "h5":  {"role": "alarm_sensor"},
+    "h6":  {"role": "temperature_sensor"},
+    "h7":  {"role": "hvac_controller"},
+    "h8":  {"role": "humidity_sensor"},
+    "h9":  {"role": "ip_camera"},
+    "h10": {"role": "smoke_fire_alarm"},
+    "h11": {"role": "smart_light_bulb"},
+    "h12": {"role": "smart_door_lock"},
+    "h13": {"role": "environment_sensor"},
+    "h14": {"role": "smart_printer"},
+    "h15": {"role": "voip_phone"},
+    "h16": {"role": "vibration_sensor"},
+}
+
+# Service names match Real_network_topology's attack/normal-traffic naming.
+SERVICE_PAIRS = {
+    "dns":      {"primary": "h1", "backup": "h17", "port": 53,   "vlan": VLAN_DNS},
+    "http_api": {"primary": "h2", "backup": "h18", "port": 5000, "vlan": VLAN_SERVICES},
+    "https":    {"primary": "h3", "backup": "h19", "port": 443,  "vlan": VLAN_SERVICES},
+    "ssh":      {"primary": "h4", "backup": "h20", "port": 22,   "vlan": VLAN_SERVICES},
+}
+LOAD_BALANCER = {"host": "h38", "frontends": (5000, 443)}
 
 HOSTS = {}
 
@@ -72,16 +102,10 @@ _add("h2", "s1", VLAN_SERVICES, "10.10.20.2", "web_api_primary")
 _add("h3", "s2", VLAN_SERVICES, "10.10.20.3", "https_primary")
 _add("h4", "s2", VLAN_SERVICES, "10.10.20.4", "ssh_primary")
 
-# IoT clients h5-h16; six attach to each of s3 and s4.
-for host_number in range(5, 17):
-    switch = "s3" if host_number <= 10 else "s4"
-    _add(
-        "h%d" % host_number,
-        switch,
-        VLAN_CLIENTS,
-        "10.10.10.%d" % host_number,
-        "iot",
-    )
+# IoT clients h5-h16 attach to s4; former IoT s3 is now the Core switch.
+# Keep a distinct role per device so the simulator emits device-specific telemetry.
+for host_id, profile in IOT_DEVICE_PROFILES.items():
+    _add(host_id, "s4", VLAN_CLIENTS, "10.10.10.%d" % int(host_id[1:]), profile["role"])
 
 # Backup services h17-h20. h18 uses .8 because the supplied load-balancer
 # command explicitly lists 10.10.20.8 as its second backend.
@@ -112,14 +136,27 @@ def host_cidr(host_id):
     return HOSTS[host_id]["ip"]
 
 
+def host_ip(host_id):
+    """Return the configured host IPv4 address without the CIDR suffix."""
+    return HOSTS[host_id]["ip"].split("/", 1)[0]
+
+
 def gateway_for(host_id):
     """Return the zone gateway address for a Mininet host ID."""
     return VLAN_GATEWAYS[HOSTS[host_id]["vlan"]]
 
 
 # Fail early on accidental edits that would invalidate this proposed map.
+assert len(IOT_DEVICE_PROFILES) == 12
+assert set(IOT_DEVICE_PROFILES) == {"h%d" % n for n in range(5, 17)}
 assert len(HOSTS) == 38, "expected exactly 38 hosts"
 assert set(HOSTS) == {"h%d" % n for n in range(1, 39)}
 assert len({spec["ip"] for spec in HOSTS.values()}) == 38, "host IPs must be unique"
-assert len(INTER_SWITCH_LINKS) == 11, "expected exactly 11 inter-switch links"
+assert len(INTER_SWITCH_LINKS) == 12, "expected exactly 12 inter-switch links"
 assert {spec["vlan"] for spec in HOSTS.values()} <= set(VLAN_IDS)
+
+# Fail early if a service pair drifts from the host map above.
+for _name, _svc in SERVICE_PAIRS.items():
+    assert _svc["primary"] in HOSTS and _svc["backup"] in HOSTS, _name
+    assert HOSTS[_svc["primary"]]["vlan"] == _svc["vlan"] == HOSTS[_svc["backup"]]["vlan"], _name
+assert LOAD_BALANCER["host"] in HOSTS

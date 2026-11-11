@@ -37,20 +37,23 @@ VLAN_GATEWAYS = {
     VLAN_EMPLOYEES: "10.10.50.1",
 }
 
-# The exact 11 inter-switch links copied from the current topology output.
+# Proposed 12 switch links: seven retained mesh links plus five Core uplinks.
 INTER_SWITCH_LINKS = (
     ("s1", "s2"),
-    ("s2", "s3"),
-    ("s3", "s4"),
-    ("s4", "s5"),
-    ("s1", "s3"),
+    ("s1", "s5"),
     ("s2", "s4"),
-    ("s3", "s5"),
+    ("s2", "s5"),
+    ("s4", "s5"),
     ("s4", "s6"),
     ("s5", "s6"),
-    ("s1", "s5"),
-    ("s2", "s5"),
+    ("s1", "s3"),
+    ("s2", "s3"),
+    ("s4", "s3"),
+    ("s5", "s3"),
+    ("s6", "s3"),
 )
+
+SWITCH_NAMES = ("s1", "s2", "s3", "s4", "s5", "s6")
 
 HOSTS = {}
 
@@ -72,15 +75,29 @@ _add("h2", "s1", VLAN_SERVICES, "10.10.20.2", "web_api_primary")
 _add("h3", "s2", VLAN_SERVICES, "10.10.20.3", "https_primary")
 _add("h4", "s2", VLAN_SERVICES, "10.10.20.4", "ssh_primary")
 
-# IoT clients h5-h16; six attach to each of s3 and s4.
-for host_number in range(5, 17):
-    switch = "s3" if host_number <= 10 else "s4"
+# IoT clients h5-h16 attach to s4; former IoT s3 is now the Core switch.
+# Keep a distinct role per device so the simulator emits device-specific telemetry.
+IOT_DEVICE_ROLES = {
+    5: "alarm_sensor",
+    6: "temperature_sensor",
+    7: "hvac_controller",
+    8: "humidity_sensor",
+    9: "ip_camera",
+    10: "smoke_fire_alarm",
+    11: "smart_light_bulb",
+    12: "smart_door_lock",
+    13: "environment_sensor",
+    14: "smart_printer",
+    15: "voip_phone",
+    16: "vibration_sensor",
+}
+for host_number, device_role in IOT_DEVICE_ROLES.items():
     _add(
         "h%d" % host_number,
-        switch,
+        "s4",
         VLAN_CLIENTS,
         "10.10.10.%d" % host_number,
-        "iot",
+        device_role,
     )
 
 # Backup services h17-h20. h18 uses .8 because the supplied load-balancer
@@ -121,6 +138,5 @@ def gateway_for(host_id):
 assert len(HOSTS) == 38, "expected exactly 38 hosts"
 assert set(HOSTS) == {"h%d" % n for n in range(1, 39)}
 assert len({spec["ip"] for spec in HOSTS.values()}) == 38, "host IPs must be unique"
-assert len(INTER_SWITCH_LINKS) == 11, "expected exactly 11 inter-switch links"
+assert len(INTER_SWITCH_LINKS) == 12, "expected exactly 12 inter-switch links"
 assert {spec["vlan"] for spec in HOSTS.values()} <= set(VLAN_IDS)
-
