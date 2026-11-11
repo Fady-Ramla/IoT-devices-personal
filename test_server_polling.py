@@ -5,9 +5,18 @@ from __future__ import annotations
 import tempfile
 import unittest
 from datetime import datetime, timezone
+import importlib.util
+from pathlib import Path
 
 from iot_telemetry_store import IoTTelemetryStore
-from mininet.servers.iot_poller import IoTPoller
+
+_POLLER_PATH = Path(__file__).parent / "mininet" / "servers" / "iot_poller.py"
+_POLLER_SPEC = importlib.util.spec_from_file_location("secureiot_test_iot_poller", _POLLER_PATH)
+if _POLLER_SPEC is None or _POLLER_SPEC.loader is None:
+    raise RuntimeError(f"cannot load poller module from {_POLLER_PATH}")
+_POLLER_MODULE = importlib.util.module_from_spec(_POLLER_SPEC)
+_POLLER_SPEC.loader.exec_module(_POLLER_MODULE)
+IoTPoller = _POLLER_MODULE.IoTPoller
 
 
 class ServerPollingTest(unittest.TestCase):
