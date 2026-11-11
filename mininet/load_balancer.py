@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Small TCP load balancer for the Mininet demonstration.
-
-It performs TCP health checks and forwards each connection to the first healthy
-backend. The same implementation works for plain HTTP/API and TLS passthrough;
-TLS termination is intentionally not performed here.
-"""
-
+"""Small TCP load balancer with live counters."""
 import argparse
+import json
+import os
 import select
 import socket
+import tempfile
 import threading
 import time
 
+DEFAULT_STATS = "/home/zolikha/secureiot-lb-stats.json"
 
 class TcpLoadBalancer:
     def __init__(self, listen_host, listen_port, backends, health_timeout=1.0):
@@ -19,15 +17,50 @@ class TcpLoadBalancer:
         self.listen_port = int(listen_port)
         self.backends = list(backends)
         self.health_timeout = float(health_timeout)
-        self._lock = threading.Lock()
-        self._next = 0
+        self.stats_file = os.environ.get("SECUREIOT_LB_STATS_FILE", DEFAULT_STATS)
+        self.lock = threading.Lock()
+        self.next_backend = 0
+        self.stats = {
+            "requests_total": 0, "requests_active": 0,
+            "bytes_in": 0, "bytes_out": 0,
+            "backend_failovers": 0,
+            "listen_host": self.listen_host,
+            "listen_port": self.listen_port,
+            "backends": [f"{h}:{p}" for h, p in self.backends],
+            "updated_at": time.time(),
+        }
+        self.write_stats()
+
+    def write_stats(self):
+        directory = os.path.dirname(self.stats_file) or "."
+        os.makedirs(directory, exist_ok=True)
+        with self.lock:
+            data = dict(self.stats)
+            data["backends"] = list(self.stats["backends"])
+            data["updated_at"] = time.time()
+        fd, tmp = tempfile.mkstemp(prefix=".lb-stats.", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, separators=(",", ":"))
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.stats_file)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+
+    def update(self, **delta):
+        with self.lock:
+            for key, value in delta.items():
+                self.stats[key] += value
+        self.write_stats()
 
     def healthy(self, backend):
-        host, port = backend
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(self.health_timeout)
         try:
-            sock.connect((host, port))
+            sock.connect(backend)
             return True
         except OSError:
             return False
@@ -35,36 +68,35 @@ class TcpLoadBalancer:
             sock.close()
 
     def choose_backend(self):
-        with self._lock:
+        with self.lock:
             if not self.backends:
                 return None
-            ordered = self.backends[self._next:] + self.backends[:self._next]
-            self._next = (self._next + 1) % len(self.backends)
+            ordered = self.backends[self.next_backend:] + self.backends[:self.next_backend]
+            self.next_backend = (self.next_backend + 1) % len(self.backends)
         for backend in ordered:
             if self.healthy(backend):
                 return backend
         return None
 
-    @staticmethod
-    def relay(left, right):
-        sockets = [left, right]
+    def relay(self, client, upstream):
+        sockets = [client, upstream]
         try:
             while sockets:
                 readable, _, exceptional = select.select(sockets, [], sockets, 30)
-                if exceptional:
-                    break
-                if not readable:
-                    break
+                if exceptional or not readable:
+                    return
                 for source in readable:
                     data = source.recv(65536)
                     if not data:
                         return
-                    destination = right if source is left else left
+                    destination = upstream if source is client else client
                     destination.sendall(data)
+                    self.update(**({"bytes_in": len(data)} if source is client
+                                    else {"bytes_out": len(data)}))
         except OSError:
-            pass
+            return
         finally:
-            for sock in (left, right):
+            for sock in (client, upstream):
                 try:
                     sock.shutdown(socket.SHUT_RDWR)
                 except OSError:
@@ -72,49 +104,41 @@ class TcpLoadBalancer:
                 sock.close()
 
     def handle(self, client, address):
+        self.update(requests_total=1, requests_active=1)
         backend = self.choose_backend()
         if backend is None:
             client.close()
-            print(f"NO_HEALTHY_BACKEND listen={self.listen_port} client={address}", flush=True)
+            self.update(requests_active=-1, backend_failovers=1)
+            print(f"NO_HEALTHY_BACKEND client={address}", flush=True)
             return
         try:
             upstream = socket.create_connection(backend, timeout=self.health_timeout)
         except OSError:
             client.close()
+            self.update(requests_active=-1, backend_failovers=1)
             print(f"BACKEND_CONNECT_FAILED backend={backend}", flush=True)
             return
         print(f"FORWARD listen={self.listen_port} backend={backend} client={address}", flush=True)
-        self.relay(client, upstream)
+        try:
+            self.relay(client, upstream)
+        finally:
+            self.update(requests_active=-1)
 
     def serve_forever(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.listen_host, self.listen_port))
         server.listen(128)
-        print(
-            f"LOAD_BALANCER_READY listen={self.listen_host}:{self.listen_port} "
-            f"backends={self.backends}",
-            flush=True,
-        )
+        print(f"LOAD_BALANCER_READY listen={self.listen_host}:{self.listen_port} stats_file={self.stats_file}", flush=True)
         try:
             while True:
                 client, address = server.accept()
-                threading.Thread(
-                    target=self.handle,
-                    args=(client, address),
-                    daemon=True,
-                ).start()
+                threading.Thread(target=self.handle, args=(client, address), daemon=True).start()
         finally:
             server.close()
 
-
 def parse_backends(value):
-    result = []
-    for item in value.split(","):
-        host, port = item.rsplit(":", 1)
-        result.append((host, int(port)))
-    return result
-
+    return [(host, int(port)) for host, port in (item.rsplit(":", 1) for item in value.split(","))]
 
 def main():
     parser = argparse.ArgumentParser()
@@ -122,12 +146,7 @@ def main():
     parser.add_argument("--listen-port", type=int, required=True)
     parser.add_argument("--backends", required=True)
     args = parser.parse_args()
-    TcpLoadBalancer(
-        args.listen_host,
-        args.listen_port,
-        parse_backends(args.backends),
-    ).serve_forever()
-
+    TcpLoadBalancer(args.listen_host, args.listen_port, parse_backends(args.backends)).serve_forever()
 
 if __name__ == "__main__":
     main()

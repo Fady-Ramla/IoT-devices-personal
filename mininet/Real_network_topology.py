@@ -432,15 +432,22 @@ def start_project_web_api(net):
     invalid_payload = '{"username":"invalid_probe","password":"invalid"}'
     auth_probe = (
         "set -a; . %s; set +a; "
-        "valid=$(curl -4 -sS --connect-timeout 1 --max-time 2 -o /dev/null "
-        "-w '%%%{http_code}' -H 'Content-Type: application/json' "
-        "--data-binary \"%s\" %s) && "
-        "invalid=$(curl -4 -sS --connect-timeout 1 --max-time 2 -o /dev/null "
-        "-w '%%%{http_code}' -H 'Content-Type: application/json' "
-        "--data-binary %s %s) && "
+        "valid=$(printf '{\"username\":\"%%s\",\"password\":\"%%s\"}' "
+        "\"$ADMIN_USERNAME\" \"$TRUSTFLOW_DEMO_PASSWORD\" | "
+        "curl -4 -sS --connect-timeout 2 --max-time 4 "
+        "-o /dev/null -w '%%{http_code}' "
+        "-H 'Content-Type: application/json' --data-binary @- %s); "
+        "invalid=$(curl -4 -sS --connect-timeout 2 --max-time 4 "
+        "-o /dev/null -w '%%{http_code}' "
+        "-H 'Content-Type: application/json' "
+        "--data-binary '{\"username\":\"invalid_probe\",\"password\":\"invalid\"}' %s); "
+        "printf 'AUTH_CODES valid=%%s invalid=%%s\\n' \"$valid\" \"$invalid\"; "
         "test \"$valid\" = 200 && test \"$invalid\" = 401 && echo AUTH_READY"
-        % (shlex.quote(auth_env), valid_payload, shlex.quote(valid_url),
-           shlex.quote(invalid_payload), shlex.quote(valid_url))
+        % (
+            shlex.quote(auth_env),
+            shlex.quote(valid_url),
+            shlex.quote(valid_url),
+        )
     )
     probe_result = host.cmd(auth_probe)
     if "AUTH_READY" not in probe_result:
@@ -483,7 +490,7 @@ def start_project_https(net):
     while time.monotonic() < deadline:
         last_response = client_host.cmd(
             "curl -4 -k -sS --connect-timeout 1 --max-time 2 "
-            "-o /dev/null -w '%%{http_code}' https://10.10.20.3/ 2>/dev/null"
+            "-o /dev/null -w '%{http_code}' https://10.10.20.3/ 2>/dev/null"
         ).strip()
         if last_response == "200":
             info("*** Project HTTPS ready on h3:443; reachable from h5.\n")
@@ -752,6 +759,10 @@ def run_normal_plan(net, specification, *, controller=None, manifest_path=None, 
         port, url, extra = 5000, 'http://%s:5000/login' % target_ip, ''
     elif service == 'https':
         port, url, extra = 443, 'https://%s/' % target_ip, '-k '
+    elif service == 'dns':
+        port, url, extra = 53, target_ip, ''
+    elif service == 'ssh':
+        port, url, extra = 22, target_ip, ''
     else:
         raise RuntimeError('unsupported normal service: ' + service)
     single_login_control = service in {
@@ -778,6 +789,16 @@ def run_normal_plan(net, specification, *, controller=None, manifest_path=None, 
             "--data-binary '{\"username\":\"normal_typo_probe\",\"password\":\"wrong\"}' "
             '%s) && test "$status" = 401' % shlex.quote(url)
         )
+    elif service == 'dns':
+        request = (
+            'dig +time=1 +tries=1 @%s example.com >/dev/null 2>&1'
+            % shlex.quote(url)
+        )
+    elif service == 'ssh':
+        request = (
+            'nc -z -w 2 %s 22 >/dev/null 2>&1'
+            % shlex.quote(url)
+        )
     else:
         request = ('curl -4 %s-sS --fail --connect-timeout 1 --max-time 2 '
                    '-o /dev/null %s' % (extra, shlex.quote(url)))
@@ -788,7 +809,7 @@ def run_normal_plan(net, specification, *, controller=None, manifest_path=None, 
     command = 'timeout --signal=TERM --kill-after=1s %ds sh -c %s' % (
         duration, shlex.quote(loop))
     return run_experiment(
-        client, command, run_type='normal', label='Normal',
+        client, command, run_type='normal', label='', attack_type='',
         target_host=target.name, target_ip=target_ip,
         service_name=service, protocol='TCP', dst_port=str(port), src_port='*',
         rate_value=rate, duration_sec=duration, experiment_category='normal_baseline',

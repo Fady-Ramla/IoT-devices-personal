@@ -74,17 +74,36 @@ def json_response(payload, status=200):
 
 
 def api_auth_required(handler):
-    """Require a configured bearer token for every non-health API endpoint."""
+    """Bearer authentication, optionally disabled for local demo testing."""
     @wraps(handler)
     def wrapped(self, req, *args, **kwargs):
-        expected = os.environ.get("SECUREIOT_API_TOKEN", "")
-        if len(expected) < 32:
-            return json_response({"error": "API authentication is not configured"}, status=503)
-        authorization = req.headers.get("Authorization", "")
-        scheme, separator, supplied = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not separator or not hmac.compare_digest(supplied, expected):
-            return json_response({"error": "valid bearer token required"}, status=401)
+        disable_auth = os.environ.get(
+            "SECUREIOT_DISABLE_API_AUTH", "0"
+        ).strip().lower() in {"1", "true", "yes"}
+
+        if not disable_auth:
+            expected = os.environ.get("SECUREIOT_API_TOKEN", "")
+            if len(expected) < 32:
+                return json_response(
+                    {"error": "API authentication is not configured"},
+                    status=503
+                )
+
+            authorization = req.headers.get("Authorization", "")
+            scheme, separator, supplied = authorization.partition(" ")
+
+            if (
+                scheme.lower() != "bearer"
+                or not separator
+                or not hmac.compare_digest(supplied, expected)
+            ):
+                return json_response(
+                    {"error": "valid bearer token required"},
+                    status=401
+                )
+
         return handler(self, req, *args, **kwargs)
+
     return wrapped
 
 

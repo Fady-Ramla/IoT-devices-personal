@@ -144,6 +144,7 @@ from zero_trust.zero_trust_decision import ZeroTrustDecision
 # =============================================================
 
 from topology_monitor import EventRerouteHost
+import uuid
 
 
 # =============================================================
@@ -946,6 +947,7 @@ class TrafficMonitorMerged(
         self.logger.info(
             "================================================="
         )
+    @staticmethod
     def _valid_run_identity(run_id, generation):
         try:
             canonical_uuid = isinstance(run_id, str) and str(uuid.UUID(run_id)) == run_id
@@ -964,8 +966,25 @@ class TrafficMonitorMerged(
                 and type(data.get("generation")) is int
                 and data.get("generation") == run.get("generation"))
     def _ready_datapaths_locked(self):
-        return {dpid: dp for dpid, dp in self.datapaths.items()
-                if getattr(dp, "state", MAIN_DISPATCHER) == MAIN_DISPATCHER}
+        # FlowStatsReply is handled only in MAIN_DISPATCHER. Never advertise
+        # CONFIG_DISPATCHER datapaths as collector-ready.
+        ready = {
+            dpid: dp for dpid, dp in self.datapaths.items()
+            if getattr(dp, "state", None) == MAIN_DISPATCHER
+        }
+
+        # TopologyMonitor is the authoritative datapath registry during
+        # startup. Import only fully negotiated MAIN_DISPATCHER datapaths.
+        topology = self._get_topology_monitor()
+        topology_datapaths = getattr(topology, "datapaths", {}) or {}
+
+        for dpid, datapath in topology_datapaths.items():
+            if getattr(datapath, "state", None) == MAIN_DISPATCHER:
+                self.datapaths[dpid] = datapath
+                ready[dpid] = datapath
+
+        return ready
+
     def _dataset_status_locked(self):
         run = self.dataset_run
         if run is None:
@@ -998,16 +1017,37 @@ class TrafficMonitorMerged(
             if self.dataset_error or self.dataset_closed:
                 return 503, {"success": False, "message": self.dataset_error or "Monitor closed"}
             if self.dataset_run and self.dataset_run["state"] != "drained":
-                return 409, {"success": False, "message": "An active/draining run already exists"}
+                message = "An active/draining run already exists"
+                self.logger.error(
+                    "DATASET START REJECTED: %s current=%r requested_run=%s generation=%r",
+                    message, self.dataset_run, run_id, generation)
+                return 409, {"success": False, "message": message}
+
             if run_id in self.used_run_ids:
-                return 409, {"success": False, "message": "run_id has already been used"}
+                message = "run_id has already been used"
+                self.logger.error(
+                    "DATASET START REJECTED: %s run=%s generation=%r",
+                    message, run_id, generation)
+                return 409, {"success": False, "message": message}
+
             candidate = {"run_id": run_id, "generation": generation}
             if not self._active_run_matches(candidate):
-                return 409, {"success": False,
-                             "message": "active_run.json missing, invalid, inactive, or identity mismatch"}
+                try:
+                    active_contents = ACTIVE_RUN_FILE.read_text(encoding="utf-8")
+                except Exception as exc:
+                    active_contents = "READ_ERROR:%s" % exc
+                message = "active_run.json missing, invalid, inactive, or identity mismatch"
+                self.logger.error(
+                    "DATASET START REJECTED: %s requested=%r active_file=%s",
+                    message, candidate, active_contents.strip())
+                return 409, {"success": False, "message": message}
             datapaths = self._ready_datapaths_locked()
             if len(datapaths) < expected_switches:
-                return 409, {"success": False, "message": "Insufficient connected datapaths",
+                message = "Insufficient connected datapaths"
+                self.logger.error(
+                    "DATASET START REJECTED: %s connected=%s expected=%s run=%s generation=%r",
+                    message, len(datapaths), expected_switches, run_id, generation)
+                return 409, {"success": False, "message": message,
                              "connected_switches": len(datapaths),
                              "expected_switches": expected_switches}
             try:
@@ -1144,6 +1184,7 @@ class TrafficMonitorMerged(
                 raise ValueError("Unterminated CSV record in %s" % path)
             run_ids.add(run_id)
         return run_ids
+    @staticmethod
     def _terminated_csv(path):
         size = path.stat().st_size
         if size == 0:
@@ -2561,6 +2602,7 @@ class TrafficMonitorMerged(
                    for r in self.flow_requests.values()):
                 return None
             return self._request_flow_stats_locked(datapath, run)
+    @handler.set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def flow_stats_reply_handler(self, ev):
         msg = ev.msg
         datapath = msg.datapath
