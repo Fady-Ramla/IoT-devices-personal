@@ -9,6 +9,7 @@ written directly to the shared local store.
 from __future__ import annotations
 
 import json
+import http.client
 import logging
 import os
 import threading
@@ -17,6 +18,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from typing import Callable, Iterable
+from urllib.parse import urlsplit
 
 from iot_telemetry_store import IoTTelemetryStore
 
@@ -44,6 +46,33 @@ def default_devices() -> list[tuple[str, str]]:
 def read_sensor(url: str, timeout: float = 2.0,
                 opener: Callable[..., object] | None = None) -> dict:
     """Fetch one sensor response and validate its minimum shape."""
+    if opener is None:
+        # Use an explicit socket connection for private Mininet IPs. This
+        # cannot consult HTTP(S)_PROXY or perform proxy DNS resolution.
+        target = urlsplit(url)
+        if target.scheme != "http" or not target.hostname:
+            raise ValueError("private sensor URL must be an HTTP host URL")
+        connection = http.client.HTTPConnection(
+            target.hostname, target.port or 80, timeout=timeout
+        )
+        try:
+            path = target.path or "/"
+            if target.query:
+                path += "?" + target.query
+            connection.request("GET", path, headers={
+                "Accept": "application/json",
+                "User-Agent": "SecureIoT-Poller/1.0",
+            })
+            response = connection.getresponse()
+            raw = response.read()
+            if not 200 <= response.status < 300:
+                raise ValueError("sensor returned HTTP %d" % response.status)
+            payload = json.loads(raw.decode("utf-8"))
+        finally:
+            connection.close()
+        if not isinstance(payload, dict) or not isinstance(payload.get("readings"), dict):
+            raise ValueError("sensor response must contain a readings object")
+        return payload
     request = urllib.request.Request(url, headers={"Accept": "application/json",
                                                    "User-Agent": "SecureIoT-Poller/1.0"})
     # Private Mininet sensor IPs must not go through a host HTTP(S) proxy.
