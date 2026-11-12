@@ -37,7 +37,7 @@ from mininet.net import Mininet
 from mininet.node import OVSSwitch, RemoteController
 from mininet.topo import Topo
 
-from configure_gateway import configure_gateway
+from configure_gateway import cleanup_wan, configure_gateway, configure_wan
 from vlan_config_38host import (
     HOSTS, INTER_SWITCH_LINKS, NETWORKS, SWITCH_NAMES, host_cidr, gateway_for,
 )
@@ -852,6 +852,9 @@ def run():
         started = True
         time.sleep(5)
 
+        # Create the WAN interface before installing gateway rules that refer
+        # to wan-gw; only the Services VLAN is allowed to use this egress.
+        configure_wan(net.get("gw"))
         configure_gateway(net.get("gw"))
         configure_ovs_zones(net)
         batch_path = os.getenv("SECUREIOT_BATCH_PLAN", "").strip()
@@ -888,6 +891,7 @@ def run():
     finally:
         info("*** Stopping topology\n")
         clear_vlan_port_map()
+        cleanup_wan()
         if started:
             net.stop()
 
