@@ -36,7 +36,7 @@ FORWARD_RULES = (
     "iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT",
     # Services may reach the host WAN for the server-side ngrok POST. IoT
     # devices remain isolated from the WAN and can only be polled on :8081.
-    "iptables -A FORWARD -i gw-eth0.20 -o wan-gw -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.20 -o sio-wan-gw -j ACCEPT",
     # IoT to approved application services and DNS.
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -p tcp -m multiport --dports 5000,443 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.30 -p udp --dport 53 -j ACCEPT",
