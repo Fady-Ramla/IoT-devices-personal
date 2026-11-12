@@ -621,8 +621,6 @@ class RuntimeNetworkController(ControllerBase):
                 blocked = max(blocked, len(value))
             elif isinstance(value, int):
                 blocked = max(blocked, value)
-        blocked += sum(1 for event in self.network_event_store
-                       if isinstance(event, dict) and event.get("action") in ("BLOCK", "DROP"))
         return json_response({"status": "active" if topology is not None else "unavailable",
                               "default_policy": "DROP", "protected_vlans": sorted(VLAN_NETWORKS),
                               "blocked_flows": blocked, "controller_connected": topology is not None,
@@ -638,7 +636,7 @@ class RuntimeNetworkController(ControllerBase):
             provider_rules = getattr(topology, "firewall_rules", None)
         if isinstance(provider_rules, dict):
             provider_rules = list(provider_rules.values())
-        if isinstance(provider_rules, list) and provider_rules:
+        if isinstance(provider_rules, list):
             return json_response(provider_rules)
         return json_response([{"rule_id": "default-deny", "priority": 1000, "action": "DROP", "direction": "both",
                                "source": "any", "destination": "any", "enabled": True,
@@ -647,8 +645,11 @@ class RuntimeNetworkController(ControllerBase):
     @api_auth_required
     @route("firewall_events", "/firewall/events", methods=["GET"])
     def firewall_events(self, req, **kwargs):
-        events = [event for event in self.network_event_store
-                  if isinstance(event, dict) and any(key in event for key in ("action", "blocked", "rule_id"))]
+        topology = self._topology()
+        provider_events = _call(topology, ["get_firewall_events"], []) if topology else []
+        events = list(provider_events) if isinstance(provider_events, list) else []
+        events.extend(event for event in self.network_event_store
+                      if isinstance(event, dict) and any(key in event for key in ("action", "blocked", "rule_id")))
         return json_response(events[-200:])
 
     @api_auth_required

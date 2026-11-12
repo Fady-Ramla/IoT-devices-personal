@@ -235,6 +235,9 @@ class TopologyMonitor(app_manager.RyuApp):
         # Explicit Security blocks keyed by normalized source MAC.
         # IP is retained only for audit; enforcement matches eth_src.
         self.blocked_devices = {}
+        # Dashboard-facing firewall history.  Keep this separate from Ryu's
+        # internal event queue and from forwarding-flow bookkeeping.
+        self.firewall_events = []
 
         # Active host-to-host flows (for rerouting).
         self.active_flows = {}
@@ -1158,9 +1161,11 @@ class TopologyMonitor(app_manager.RyuApp):
 
         datapaths = list(self.datapaths.values())
         if not datapaths:
-            return {"success": False, "status": "no_switches",
+            result = {"success": False, "status": "no_switches",
                     "mac": mac, "ip": ip,
                     "message": "Block is recorded; no switch is connected"}
+            self._record_firewall_event(result, reason=reason)
+            return result
 
         failed = []
         for datapath in datapaths:
@@ -1176,19 +1181,23 @@ class TopologyMonitor(app_manager.RyuApp):
         self.logger.warning(
             "BLOCK_DEVICE %s ip=%s switches=%s failed=%s request_id=%s reason=%s",
             mac, ip, [dp.id for dp in datapaths], failed, request_id, reason)
-        return {"success": success,
+        result = {"success": success,
                 "status": "executed" if success else "partial_failure",
                 "action": "BLOCK_DEVICE", "mac": mac, "ip": ip,
                 "switches": [dp.id for dp in datapaths],
                 "failed_switches": failed, "request_id": request_id}
+        self._record_firewall_event(result, reason=reason)
+        return result
 
     def unblock_device(self, mac, ip=None, request_id=None, reason=None):
         """Remove a Security block without changing Trust Score/state."""
         mac = self.normalize_device_mac(mac)
         if mac not in self.blocked_devices:
-            return {"success": False, "status": "not_blocked",
+            result = {"success": False, "status": "not_blocked",
                     "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
                     "request_id": request_id}
+            self._record_firewall_event(result, reason=reason)
+            return result
 
         datapaths = list(self.datapaths.values())
         removed = []
@@ -1206,18 +1215,53 @@ class TopologyMonitor(app_manager.RyuApp):
                     self.logger.exception(
                         "Failed to restore device block on s%d for %s",
                         datapath.id, mac)
-            return {"success": False, "status": "partial_failure",
+            result = {"success": False, "status": "partial_failure",
                     "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
                     "request_id": request_id}
+            self._record_firewall_event(result, reason=reason)
+            return result
 
         self.blocked_devices.pop(mac, None)
         self.logger.info(
             "UNBLOCK_DEVICE %s ip=%s request_id=%s reason=%s",
             mac, ip, request_id, reason)
-        return {"success": True, "status": "executed",
+        result = {"success": True, "status": "executed",
                 "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
                 "switches": [dp.id for dp in datapaths],
                 "request_id": request_id}
+        self._record_firewall_event(result, reason=reason)
+        return result
+
+    def _record_firewall_event(self, result, reason=None):
+        """Record a dashboard-safe security action without raw packet data."""
+        event = dict(result)
+        event.update({"event_type": "firewall_action", "reason": reason,
+                      "timestamp": time.time()})
+        self.firewall_events.append(event)
+        self.firewall_events[:] = self.firewall_events[-200:]
+
+    def get_firewall_events(self):
+        """Return recent block/unblock actions for the runtime dashboard."""
+        return [dict(event) for event in self.firewall_events[-200:]]
+
+    def get_firewall_rules(self):
+        """Project installed device blocks into the dashboard rule schema."""
+        rules = [{"rule_id": "default-deny", "priority": 1000,
+                  "action": "DROP", "direction": "both", "source": "any",
+                  "destination": "any", "enabled": True, "status": "installed",
+                  "source_provider": "TopologyMonitor"}]
+        for mac, block in sorted(self.blocked_devices.items()):
+            rules.append({"rule_id": "device-block-" + mac.replace(":", ""),
+                          "priority": DEVICE_BLOCK_PRIORITY, "action": "DROP",
+                          "direction": "ingress", "source": mac,
+                          "destination": "any", "enabled": True,
+                          "status": "installed", "ip": block.get("ip"),
+                          "switches": sorted(int(dpid) for dpid in self.datapaths),
+                          "reason": block.get("reason"),
+                          "request_id": block.get("request_id"),
+                          "blocked_at": block.get("blocked_at"),
+                          "source_provider": "TopologyMonitor"})
+        return rules
 
     # ============================================================
     # Operational graph / link isolation (called by Person 3)
