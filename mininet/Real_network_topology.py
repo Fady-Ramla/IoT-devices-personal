@@ -264,6 +264,15 @@ def start_iot_simulators(net):
             f"--serve --listen-port {port} > {log_path} 2>&1 &"
         )
         host.cmd(command)
+    for host_id in (f"h{i}" for i in range(5, 17)):
+        host = net.get(host_id)
+        ready = host.cmd(
+            "for i in $(seq 1 20); do "
+            "curl --noproxy '*' -fsS --max-time 1 http://127.0.0.1:%s/health "
+            ">/dev/null 2>&1 && echo READY && break; sleep 0.1; done" % port
+        )
+        if "READY" not in ready:
+            raise RuntimeError("IoT sensor did not become ready: %s" % host_id)
     info("*** IoT sensor endpoints started for h5-h16 on private TCP/%s\n", port)
     info("*** Per-device logs: /tmp/secureiot-h5-iot.log through /tmp/secureiot-h16-iot.log\n")
 
@@ -854,18 +863,20 @@ def run():
             raise RuntimeError(
                 "dataset batch cannot include background IoT simulators"
             )
-        if not batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":
-            start_demo_services(
-                net,
-                live_iot_api=(os.getenv("START_IOT_SIMULATORS", "0") == "1"),
-            )
         if not batch_path and os.getenv("START_IOT_SIMULATORS", "0") == "1":
             if os.getenv("START_DEMO_SERVICES", "0") != "1":
                 raise RuntimeError(
                     "START_IOT_SIMULATORS=1 requires START_DEMO_SERVICES=1 "
-                    "because telemetry is sent to the demo Web/API on h2:5000"
+                    "because the live Web/API poller reads the private sensor endpoints"
                 )
             start_iot_simulators(net)
+        if not batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":
+            # Start sensors before the Web/API poller so its first cycle does
+            # not race the TCP/8081 listeners during topology startup.
+            start_demo_services(
+                net,
+                live_iot_api=(os.getenv("START_IOT_SIMULATORS", "0") == "1"),
+            )
         print_inventory()
         if batch_path:
             wait_for_controller_ready()
