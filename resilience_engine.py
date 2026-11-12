@@ -5,6 +5,7 @@ from ryu.base import app_manager
 from ryu.controller.handler import set_ev_cls
 
 from topology_monitor import EventTopologyChanged
+import time
 
 
 class ResilienceEngine(app_manager.RyuApp):
@@ -16,6 +17,8 @@ class ResilienceEngine(app_manager.RyuApp):
         super(ResilienceEngine, self).__init__(*args, **kwargs)
         self.event_history = []
         self.last_event = None
+        self.recovery_history = []
+        self.last_recovery = None
         self.logger.info("ResilienceEngine initialized")
 
     @set_ev_cls(EventTopologyChanged)
@@ -26,6 +29,7 @@ class ResilienceEngine(app_manager.RyuApp):
             "added": sorted(ev.added),
             "removed": sorted(ev.removed),
             "topology_ready": ev.topology_ready,
+            "timestamp": time.time(),
         }
         self.last_event = record
         self.event_history.append(record)
@@ -51,6 +55,17 @@ class ResilienceEngine(app_manager.RyuApp):
             self.logger.exception("SELF-HEALING: Recovery execution failed")
             return
 
+        recovery = {
+            "timestamp": time.time(),
+            "failed_links": sorted(ev.removed),
+            "success": bool(result.get("success")),
+            "rerouted": result.get("rerouted", 0),
+            "failed": result.get("failed", 0),
+        }
+        self.last_recovery = recovery
+        self.recovery_history.append(recovery)
+        self.recovery_history = self.recovery_history[-100:]
+
         if result.get("success"):
             self.logger.warning(
                 "SELF-HEALING: SUCCESS rerouted=%d failed=%d",
@@ -65,5 +80,8 @@ class ResilienceEngine(app_manager.RyuApp):
     def get_status(self):
         return {
             "event_count": len(self.event_history),
+            "recovery_count": len(self.recovery_history),
             "last_event": self.last_event,
+            "last_event_at": self.last_event.get("timestamp") if self.last_event else None,
+            "last_recovery": self.last_recovery,
         }

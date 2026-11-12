@@ -450,7 +450,10 @@ class RuntimeNetworkController(ControllerBase):
     def links(self, req, **kwargs):
         topology, _ = self._topology_status()
         links = _call(topology, ["get_links"], []) if topology is not None else []
-        return json_response(links if isinstance(links, list) else [])
+        if not isinstance(links, list):
+            return json_response([])
+        return json_response([dict(link, status=("isolated" if link.get("isolated") else "active"))
+                              for link in links if isinstance(link, dict)])
 
     @api_auth_required
     @route("topology_hosts", "/topology/hosts", methods=["GET"])
@@ -687,7 +690,17 @@ class RuntimeNetworkController(ControllerBase):
     @api_auth_required
     @route("network_events", "/network/events", methods=["GET"])
     def network_events(self, req, **kwargs):
-        return json_response(list(self.network_event_store))
+        events = list(self.network_event_store)
+        topology = self._topology()
+        topology_events = _call(topology, ["get_network_events"], []) if topology else []
+        if isinstance(topology_events, list):
+            events.extend(topology_events)
+        resilience = self._resilience()
+        resilience_status = _call(resilience, ["get_status"], {}) or {}
+        for event in (resilience_status.get("last_event"), resilience_status.get("last_recovery")):
+            if isinstance(event, dict):
+                events.append(dict(event, source="resilience"))
+        return json_response(events[-500:])
 
     @api_auth_required
     @route("runtime_clff", "/controller/clff", methods=["GET"])
@@ -695,11 +708,16 @@ class RuntimeNetworkController(ControllerBase):
     def clff(self, req, **kwargs):
         topology, status = self._topology_status()
         ready = bool(topology is not None and status.get("clff_ready", True))
-        return json_response({"enabled": topology is not None, "ready": ready, "algorithm": "bfs_per_root",
-                              "root_count": len(SWITCH_DPIDS) if ready else 0, "tree_count": len(SWITCH_DPIDS) if ready else 0,
-                              "broadcast_ports": {}, "uses_ofpp_flood": False, "uses_stp": False,
-                              "physical_graph_nodes": len(SWITCH_DPIDS), "physical_graph_edges": EXPECTED_INTER_SWITCH_LINKS, "last_rebuild_at": None,
-                              "last_rebuild_reason": None, "last_error": None, "timestamp": now_utc()})
+        provider = _call(topology, ["get_clff_status"], None) if topology is not None else None
+        result = provider if isinstance(provider, dict) else {
+            "enabled": topology is not None, "ready": ready, "algorithm": "bfs_per_root",
+            "root_count": len(SWITCH_DPIDS) if ready else 0, "tree_count": len(SWITCH_DPIDS) if ready else 0,
+            "broadcast_ports": 0, "uses_ofpp_flood": False, "uses_stp": False,
+            "physical_graph_nodes": len(SWITCH_DPIDS), "physical_graph_edges": EXPECTED_INTER_SWITCH_LINKS,
+            "last_rebuild_at": None, "last_rebuild_reason": None, "last_error": None,
+        }
+        result["timestamp"] = now_utc()
+        return json_response(result)
 
     @api_auth_required
     @route("runtime_resilience", "/controller/resilience", methods=["GET"])

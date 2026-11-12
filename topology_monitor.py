@@ -241,6 +241,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
         # Active host-to-host flows (for rerouting).
         self.active_flows = {}
+        self.topology_events = []
         self.congestion_last_reroute = {}
 
         # Forwarding rules we installed, so they can be flushed:
@@ -255,6 +256,9 @@ class TopologyMonitor(app_manager.RyuApp):
 
         self._clff_valid = False
         self.clff_packet_state = {}
+        self._clff_last_rebuild_at = None
+        self._clff_last_rebuild_reason = None
+        self._clff_last_error = None
 
         self.lldp_thread = hub.spawn(self._lldp_loop)
         self.port_stats_thread = hub.spawn(self._port_stats_loop)
@@ -1387,6 +1391,10 @@ class TopologyMonitor(app_manager.RyuApp):
 
         self.logger.warning(
             "Link PHYSICALLY ISOLATED: %s ports=%s", edge, endpoints)
+        self._record_topology_event({
+            "event_type": "link_isolation", "status": "executed",
+            "failed_link": list(edge), "timestamp": time.time(),
+        })
         return True
 
     def restore_link(self, dpid_a, dpid_b):
@@ -1432,7 +1440,18 @@ class TopologyMonitor(app_manager.RyuApp):
         self.logger.info(
             "Link physically restored: %s ports=%s; LLDP will rediscover it",
             edge, endpoints)
+        self._record_topology_event({
+            "event_type": "link_restore", "status": "executed",
+            "restored_link": list(edge), "timestamp": time.time(),
+        })
         return True
+
+    def _record_topology_event(self, event):
+        self.topology_events.append(dict(event))
+        self.topology_events[:] = self.topology_events[-200:]
+
+    def get_network_events(self):
+        return [dict(event) for event in self.topology_events[-200:]]
 
     # ============================================================
     # CLFF management
@@ -1442,6 +1461,9 @@ class TopologyMonitor(app_manager.RyuApp):
         """Drop old packet state, then rebuild or invalidate CLFF."""
 
         self.clff_packet_state.clear()
+        self._clff_last_rebuild_reason = (
+            "isolated_link_change" if self.isolated_links else "topology_change"
+        )
 
         usable = (
             self.topology_ready
@@ -1465,6 +1487,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 dict(self.link_to_port))
 
             self._clff_valid = bool(success)
+            self._clff_last_rebuild_at = time.time()
+            self._clff_last_error = None if success else "CLFF rebuild failed"
 
             if success:
                 self.logger.info("CLFF rebuilt: %s", self.clff.summary())
@@ -1475,12 +1499,16 @@ class TopologyMonitor(app_manager.RyuApp):
 
         except Exception as exc:
             self._clff_valid = False
+            self._clff_last_rebuild_at = time.time()
+            self._clff_last_error = str(exc)
             self.logger.exception("CLFF rebuild error: %s", exc)
             return False
 
     def _invalidate_clff(self):
 
         self._clff_valid = False
+        self._clff_last_rebuild_at = time.time()
+        self._clff_last_error = "operational graph is not connected"
 
         if self.clff is None:
             return
@@ -2593,6 +2621,27 @@ class TopologyMonitor(app_manager.RyuApp):
                 len(self.clff.trees)
                 if self.clff is not None and hasattr(self.clff, "trees")
                 else 0),
+        }
+
+    def get_clff_status(self):
+        """Return live CLFF state for the runtime dashboard."""
+        summary = self.clff.summary() if self.clff is not None else {}
+        return {
+            "enabled": self.clff is not None,
+            "ready": bool(self._clff_usable()),
+            "algorithm": "bfs_per_root",
+            "root_count": len(self.clff.trees) if self.clff is not None and hasattr(self.clff, "trees") else 0,
+            "tree_count": summary.get("trees", 0),
+            "broadcast_ports": summary.get("broadcast_ports", 0),
+            "uses_ofpp_flood": False,
+            "uses_stp": False,
+            "physical_graph_nodes": self.graph.number_of_nodes(),
+            "physical_graph_edges": self.graph.number_of_edges(),
+            "operational_graph_nodes": self.operational_graph.number_of_nodes(),
+            "operational_graph_edges": self.operational_graph.number_of_edges(),
+            "last_rebuild_at": self._clff_last_rebuild_at,
+            "last_rebuild_reason": self._clff_last_rebuild_reason,
+            "last_error": self._clff_last_error,
         }
 
     def get_host_status(self):
