@@ -55,8 +55,9 @@ FORWARD_RULES = (
 )
 
 _RC_MARKER = "__SECUREIOT_GATEWAY_RC__"
-WAN_HOST_INTERFACE = "secureiot-wan-host"
-WAN_GATEWAY_INTERFACE = "secureiot-wan-gw"
+# Linux interface names are limited to 15 characters.
+WAN_HOST_INTERFACE = "sio-wan-host"
+WAN_GATEWAY_INTERFACE = "sio-wan-gw"
 
 
 def _host_run(command):
