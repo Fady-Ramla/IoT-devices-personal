@@ -50,6 +50,12 @@ EXPECTED_INTER_SWITCH_LINKS = len(_topology_config.INTER_SWITCH_LINKS)
 LOAD_BALANCER_CONFIG = dict(_topology_config.LOAD_BALANCER)
 SERVICE_PAIRS = dict(_topology_config.SERVICE_PAIRS)
 LOAD_BALANCER_IP = HOST_IPS.get(LOAD_BALANCER_CONFIG.get("host"), "unknown")
+# A switch is active only briefly after a real data-plane counter increase.
+# The previous 15-second window made a 5-second IoT polling cycle look like
+# every switch was permanently active.
+TRAFFIC_ACTIVE_WINDOW = max(
+    1.0, float(os.getenv("SECUREIOT_TRAFFIC_ACTIVE_WINDOW", "3"))
+)
 
 
 def now_utc():
@@ -285,7 +291,7 @@ class RuntimeNetworkController(ControllerBase):
         if isinstance(host_activity, dict):
             for dpid, observed_at in host_activity.items():
                 try:
-                    if now - float(observed_at) <= 15:
+                    if now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW:
                         active.add(int(dpid))
                 except (TypeError, ValueError):
                     continue
@@ -307,7 +313,8 @@ class RuntimeNetworkController(ControllerBase):
                     counter, observed_at = float(counter), float(observed_at)
                     old = self._traffic_counter_snapshot.get(key)
                     self._traffic_counter_snapshot[key] = (counter, observed_at)
-                    if old is None or counter <= float(old[0]) or now - observed_at > 15:
+                    if (old is None or counter <= float(old[0])
+                            or now - observed_at > TRAFFIC_ACTIVE_WINDOW):
                         continue
                     active.add(dpid)
                     peer = port_to_link.get(key)
@@ -428,8 +435,9 @@ class RuntimeNetworkController(ControllerBase):
             result.append(compact({"switch_id": name, "name": name, "dpid": dpid, "n_ports": int(n_ports),
                            "status": item.get("status", "up" if provider_dp is not None else "unknown"),
                            "controller_connected": bool(item.get("controller_connected", provider_dp is not None)),
-                           "traffic_active": bool(item.get("traffic_active", dpid in active_dpids)),
-                           "last_traffic_at": item.get("last_traffic_at")}))
+                           "traffic_active": dpid in active_dpids,
+                           "last_traffic_at": (item.get("last_traffic_at")
+                                                if dpid in active_dpids else None)}))
         return result
 
     @api_auth_required
@@ -488,8 +496,10 @@ class RuntimeNetworkController(ControllerBase):
                            "ipv4": item.get("ipv4", [HOST_IPS[host_id]]), "vlan_id": HOST_VLANS[host_id],
                            "status": item.get("status", "configured" if topology else "unknown"),
                            "controller_seen": bool(item.get("controller_seen", dpid in datapaths)),
-                           "traffic_active": bool(item.get("traffic_active", dpid in active_dpids)),
-                           "last_seen": item.get("last_seen"), "last_traffic_at": item.get("last_traffic_at"),
+                           "traffic_active": dpid in active_dpids,
+                           "last_seen": item.get("last_seen"),
+                           "last_traffic_at": (item.get("last_traffic_at")
+                                                if dpid in active_dpids else None),
                            "path": self.paths.get(host_id, {}).get("nodes", []),
                            "path_status": self.paths.get(host_id, {}).get("path_status") if self.paths.get(host_id) else None}))
         return json_response(result)
