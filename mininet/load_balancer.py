@@ -27,6 +27,10 @@ class TcpLoadBalancer:
             "healthy_backends": [],
             "health_checks_performed": False,
             "last_health_check": None,
+            "last_backend": None,
+            "backend_requests": {
+                f"{host}:{port}": 0 for host, port in self.backends
+            },
             "listen_host": self.listen_host,
             "listen_port": self.listen_port,
             "backends": [f"{h}:{p}" for h, p in self.backends],
@@ -61,6 +65,15 @@ class TcpLoadBalancer:
         with self.lock:
             for key, value in delta.items():
                 self.stats[key] += value
+        self.write_stats()
+
+    def record_backend(self, backend):
+        """Record the backend selected for one accepted client connection."""
+        backend_id = f"{backend[0]}:{backend[1]}"
+        with self.lock:
+            self.stats["last_backend"] = backend_id
+            self.stats["backend_requests"].setdefault(backend_id, 0)
+            self.stats["backend_requests"][backend_id] += 1
         self.write_stats()
 
     def healthy(self, backend):
@@ -124,6 +137,7 @@ class TcpLoadBalancer:
             self.update(requests_active=-1, backend_failovers=1)
             print(f"NO_HEALTHY_BACKEND client={address}", flush=True)
             return
+        self.record_backend(backend)
         try:
             upstream = socket.create_connection(backend, timeout=self.health_timeout)
         except OSError:

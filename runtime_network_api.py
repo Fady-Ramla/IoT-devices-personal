@@ -542,11 +542,17 @@ class RuntimeNetworkController(ControllerBase):
     @route("load_balancer", "/network/load-balancer", methods=["GET"])
     def load_balancer(self, req, **kwargs):
         service = SERVICE_PAIRS.get("http_api", {})
+        stats = self._load_balancer_stats() or {}
         return json_response({"service_id": "secureiot-lb", "host_id": LOAD_BALANCER_CONFIG.get("host"),
-                              "vip": LOAD_BALANCER_IP, "status": "configured",
-                              "algorithm": "round_robin", "backend_count": 2,
+                              "vip": LOAD_BALANCER_IP,
+                              "status": "running" if stats else "configured",
+                              "algorithm": "round_robin", "backend_count": len(stats.get("backends", [])) or 2,
                               "frontends": list(LOAD_BALANCER_CONFIG.get("frontends", ())),
-                              "service_port": service.get("port")})
+                              "service_port": service.get("port"),
+                              "requests_total": stats.get("requests_total", 0),
+                              "last_backend": stats.get("last_backend"),
+                              "backend_requests": stats.get("backend_requests", {}),
+                              "healthy_backends": stats.get("healthy_backends", [])})
 
     @api_auth_required
     @route("load_balancer_status", "/network/load-balancer/status", methods=["GET"])
