@@ -813,7 +813,7 @@ class TopologyMonitor(app_manager.RyuApp):
         # Register real IPv4 source traffic before forwarding. This also
         # covers gateway ping flows whose destination MAC is not a learned
         # endpoint MAC. Known health-check probes are filtered in the helper.
-        self._observe_ipv4_flow(dpid, src_mac, pkt, vlan_id)
+        self._observe_ipv4_flow(dpid, in_port, src_mac, pkt, vlan_id)
 
         # Broadcast / multicast -> CLFF.
         if self._is_broadcast_or_multicast(dst_mac):
@@ -1662,10 +1662,10 @@ class TopologyMonitor(app_manager.RyuApp):
                 self._learn_ip(ipv4_pkt.src, src_mac, vlan_id)
         return True
 
-    def _observe_ipv4_flow(self, dpid, src_mac, pkt, vlan_id):
+    def _observe_ipv4_flow(self, dpid, in_port, src_mac, pkt, vlan_id):
         """Register source-host IPv4 traffic, excluding LB health probes."""
         ip_pkt = pkt.get_protocol(ipv4.ipv4)
-        if ip_pkt is None or not self.host_location.get(src_mac):
+        if ip_pkt is None:
             return
 
         tcp_pkt = pkt.get_protocol(tcp.tcp)
@@ -1677,6 +1677,21 @@ class TopologyMonitor(app_manager.RyuApp):
             return
 
         src_loc = self.host_location.get(src_mac)
+        if src_loc is None:
+            ingress = self.vlan_port_map.get((int(dpid), int(in_port)), {})
+            if (isinstance(ingress, dict)
+                    and ingress.get("kind") == "access"
+                    and ingress.get("role") == "endpoint"
+                    and int(ingress.get("vlan_id", -1)) == int(vlan_id)):
+                src_loc = (int(dpid), int(in_port))
+                self.host_location[src_mac] = src_loc
+                self.mac_vlan[src_mac] = int(vlan_id)
+                self.logger.info(
+                    "Flow observation learned source %s VLAN %d -> s%d:%d",
+                    src_mac, vlan_id, dpid, in_port)
+        if src_loc is None:
+            return
+
         dst_mac = self.ip_to_mac.get(ip_pkt.dst)
         if dst_mac is None:
             eth_pkt = pkt.get_protocol(ethernet.ethernet)
