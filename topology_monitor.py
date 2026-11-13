@@ -1678,14 +1678,19 @@ class TopologyMonitor(app_manager.RyuApp):
 
         src_loc = self.host_location.get(src_mac)
         dst_mac = self.ip_to_mac.get(ip_pkt.dst)
+        if dst_mac is None:
+            eth_pkt = pkt.get_protocol(ethernet.ethernet)
+            dst_mac = eth_pkt.dst if eth_pkt is not None else None
         dst_loc = self.host_location.get(dst_mac) if dst_mac else None
         dst_dpid = dst_loc[0] if dst_loc is not None else None
+        gateway_loc = None
 
         if dst_dpid is None:
-            for (candidate_dpid, _port_no), entry in self.vlan_port_map.items():
+            for (candidate_dpid, candidate_port), entry in self.vlan_port_map.items():
                 if (isinstance(entry, dict) and entry.get("role") == "gateway"
                         and int(entry.get("vlan_id", -1)) == int(vlan_id)):
                     dst_dpid = int(candidate_dpid)
+                    gateway_loc = (int(candidate_dpid), int(candidate_port))
                     break
 
         path = []
@@ -1694,7 +1699,10 @@ class TopologyMonitor(app_manager.RyuApp):
             candidate = self._shortest_path(src_loc[0], dst_dpid)
             if candidate:
                 path = list(candidate)
-                path_type = "same_switch" if len(path) == 1 else "inter_switch"
+                path_type = (
+                    "gateway" if gateway_loc is not None
+                    else ("same_switch" if len(path) == 1 else "inter_switch")
+                )
 
         if any(isinstance(flow, dict) and flow.get("src_mac") == src_mac
                and flow.get("dst_ip") == ip_pkt.dst
@@ -1715,6 +1723,13 @@ class TopologyMonitor(app_manager.RyuApp):
                 "path": path,
                 "path_type": path_type,
                 "path_status": "active",
+                "dst_dpid": gateway_loc[0] if gateway_loc is not None else (
+                    dst_loc[0] if dst_loc is not None else None),
+                "dst_port": gateway_loc[1] if gateway_loc is not None else (
+                    dst_loc[1] if dst_loc is not None else None),
+                "destination_type": (
+                    "gateway" if gateway_loc is not None else "host"
+                ),
             }
         )
 
@@ -2043,7 +2058,8 @@ class TopologyMonitor(app_manager.RyuApp):
     # Flow installation
     # ============================================================
 
-    def _install_path(self, path, src_mac, dst_mac, vlan_id=None):
+    def _install_path(self, path, src_mac, dst_mac, vlan_id=None,
+                      dst_location=None):
         """
         Install priority-100 rules along `path`, INCLUDING the last hop
         to the destination host port. The reverse direction is installed
@@ -2055,7 +2071,7 @@ class TopologyMonitor(app_manager.RyuApp):
         if vlan_id not in ALLOWED_VLANS:
             return False
 
-        dst_loc = self.host_location.get(dst_mac)
+        dst_loc = dst_location or self.host_location.get(dst_mac)
         src_loc = self.host_location.get(src_mac)
 
         if not path or dst_loc is None:
@@ -2068,7 +2084,8 @@ class TopologyMonitor(app_manager.RyuApp):
 
         self._install_direction(path, src_mac, dst_mac, dst_port, vlan_id)
 
-        if src_loc is not None and src_loc[0] == path[0]:
+        if (src_loc is not None and src_loc[0] == path[0]
+                and self.host_location.get(dst_mac) is not None):
             self._install_direction(
                 list(reversed(path)), dst_mac, src_mac, src_loc[1], vlan_id)
 
@@ -2587,9 +2604,9 @@ class TopologyMonitor(app_manager.RyuApp):
                 )
                 continue
 
-            if not src_mac or not dst_mac:
+            if not src_mac:
                 self.logger.warning(
-                    "SELF-HEALING: Missing MAC information for flow=%s",
+                    "SELF-HEALING: Missing source MAC information for flow=%s",
                     flow_id
                 )
                 failed += 1
@@ -2597,6 +2614,14 @@ class TopologyMonitor(app_manager.RyuApp):
 
             src_location = self.host_location.get(src_mac)
             dst_location = self.host_location.get(dst_mac)
+            if dst_location is None and flow.get("destination_type") == "gateway":
+                try:
+                    dst_location = (
+                        int(flow["dst_dpid"]),
+                        int(flow["dst_port"]),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    dst_location = None
 
             if not src_location or not dst_location:
                 self.logger.warning(
@@ -2633,7 +2658,8 @@ class TopologyMonitor(app_manager.RyuApp):
                     new_path,
                     src_mac,
                     dst_mac,
-                    flow.get("vlan_id")
+                    flow.get("vlan_id"),
+                    dst_location=dst_location,
                 )
             except Exception:
                 self.logger.exception(
