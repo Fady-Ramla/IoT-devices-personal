@@ -49,6 +49,7 @@ from ryu.lib.packet import (
     arp,
     ipv4,
     ipv6,
+    tcp,
     vlan,
 )
 
@@ -808,6 +809,11 @@ class TopologyMonitor(app_manager.RyuApp):
         if self.mac_vlan.get(src_mac) != vlan_id:
             self.logger.warning("Drop source MAC %s outside learned VLAN %d", src_mac, vlan_id)
             return
+
+        # Register real IPv4 source traffic before forwarding. This also
+        # covers gateway ping flows whose destination MAC is not a learned
+        # endpoint MAC. Known health-check probes are filtered in the helper.
+        self._observe_ipv4_flow(dpid, src_mac, pkt, vlan_id)
 
         # Broadcast / multicast -> CLFF.
         if self._is_broadcast_or_multicast(dst_mac):
@@ -1655,6 +1661,62 @@ class TopologyMonitor(app_manager.RyuApp):
             if ipv4_pkt is not None:
                 self._learn_ip(ipv4_pkt.src, src_mac, vlan_id)
         return True
+
+    def _observe_ipv4_flow(self, dpid, src_mac, pkt, vlan_id):
+        """Register source-host IPv4 traffic, excluding LB health probes."""
+        ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        if ip_pkt is None or not self.host_location.get(src_mac):
+            return
+
+        tcp_pkt = pkt.get_protocol(tcp.tcp)
+        # The topology's backend health checker probes every IoT endpoint on
+        # TCP/8081 from the services host. It is operational monitoring, not
+        # application traffic, so it must not activate the probed host.
+        if (ip_pkt.src == "10.10.20.2" and tcp_pkt is not None
+                and int(tcp_pkt.dst_port) == 8081):
+            return
+
+        src_loc = self.host_location.get(src_mac)
+        dst_mac = self.ip_to_mac.get(ip_pkt.dst)
+        dst_loc = self.host_location.get(dst_mac) if dst_mac else None
+        dst_dpid = dst_loc[0] if dst_loc is not None else None
+
+        if dst_dpid is None:
+            for (candidate_dpid, _port_no), entry in self.vlan_port_map.items():
+                if (isinstance(entry, dict) and entry.get("role") == "gateway"
+                        and int(entry.get("vlan_id", -1)) == int(vlan_id)):
+                    dst_dpid = int(candidate_dpid)
+                    break
+
+        path = []
+        path_type = "none"
+        if dst_dpid is not None and src_loc is not None:
+            candidate = self._shortest_path(src_loc[0], dst_dpid)
+            if candidate:
+                path = list(candidate)
+                path_type = "same_switch" if len(path) == 1 else "inter_switch"
+
+        if any(isinstance(flow, dict) and flow.get("src_mac") == src_mac
+               and flow.get("dst_ip") == ip_pkt.dst
+               for flow in self.active_flows.values()):
+            return
+
+        protocol = int(ip_pkt.proto)
+        dst_port = int(tcp_pkt.dst_port) if tcp_pkt is not None else None
+        flow_id = ("ipv4", int(vlan_id), src_mac, ip_pkt.dst, protocol, dst_port)
+        self.register_active_flow(
+            flow_id,
+            {
+                "src_mac": src_mac,
+                "dst_mac": dst_mac,
+                "vlan_id": int(vlan_id),
+                "src_ip": ip_pkt.src,
+                "dst_ip": ip_pkt.dst,
+                "path": path,
+                "path_type": path_type,
+                "path_status": "active",
+            }
+        )
 
     def _learn_from_arp(self, dpid, in_port, arp_pkt, vlan_id):
 
