@@ -2883,6 +2883,22 @@ class TopologyMonitor(app_manager.RyuApp):
                 "isolated": tuple(sorted((a, b))) in self.isolated_links,
             })
 
+        # LLDP removes administratively isolated links from the physical graph
+        # after the port-down event. Keep them in the API response so clients
+        # can observe the dynamic transition instead of seeing the link vanish.
+        represented = {tuple(sorted((row["src_dpid"], row["dst_dpid"]))) for row in result}
+        for edge in sorted(self.isolated_links):
+            if edge in represented:
+                continue
+            ports = self.isolated_link_ports.get(edge)
+            result.append({
+                "src_dpid": edge[0],
+                "dst_dpid": edge[1],
+                "src_port": ports[0][1] if ports else None,
+                "dst_port": ports[1][1] if ports else None,
+                "isolated": True,
+            })
+
         return result
 
     def print_topology_summary(self):
