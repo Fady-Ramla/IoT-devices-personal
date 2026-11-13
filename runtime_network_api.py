@@ -372,9 +372,9 @@ class RuntimeNetworkController(ControllerBase):
     def iot_telemetry_get(self, req, **kwargs):
         return json_response(self.iot_store.telemetry(req.GET.get("device_id"), req.GET.get("sensor_id"), req.GET.get("limit", 100)))
 
-    # Lab-mode telemetry ingress is intentionally public because the internal
-    # server-side poller POSTs fresh readings through the configured ngrok
-    # endpoint. Read/query endpoints remain protected below.
+    # Lab-mode POST telemetry ingress remains for older clients. The Web-track
+    # poller uses the GET ingestion route below so the sensor-to-Web path and
+    # the Web-to-runtime delivery path are both GET-based.
     @route("iot_telemetry_post", "/api/iot/telemetry", methods=["POST"])
     def iot_telemetry_post(self, req, **kwargs):
         try:
@@ -382,6 +382,26 @@ class RuntimeNetworkController(ControllerBase):
             if not isinstance(payload, dict):
                 raise ValueError("JSON object required")
             return json_response({"status": "accepted", "telemetry": self.iot_store.record(payload)}, status=201)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            return json_response({"status": "rejected", "error": str(exc)}, status=400)
+
+    @route("iot_telemetry_ingest_get", "/api/iot/telemetry/ingest", methods=["GET"])
+    def iot_telemetry_ingest_get(self, req, **kwargs):
+        """Accept one URL-encoded reading from the server-side Web poller."""
+        try:
+            readings = json.loads(req.GET.get("readings", "{}"))
+            if not isinstance(readings, dict):
+                raise ValueError("readings must be a JSON object")
+            payload = {
+                "device_id": req.GET.get("device_id", ""),
+                "device_role": req.GET.get("device_role", "iot_device"),
+                "readings": readings,
+                "timestamp": req.GET.get("timestamp") or now_utc(),
+                "sequence": req.GET.get("sequence") or None,
+                "simulation": req.GET.get("simulation", "1") in {"1", "true", "yes"},
+            }
+            record = self.iot_store.record(payload)
+            return json_response({"status": "accepted", "telemetry": record}, status=202)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             return json_response({"status": "rejected", "error": str(exc)}, status=400)
 

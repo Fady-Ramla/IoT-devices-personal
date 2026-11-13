@@ -18,7 +18,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from typing import Callable, Iterable
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from iot_telemetry_store import IoTTelemetryStore
 
@@ -102,6 +102,34 @@ def post_telemetry(url: str, record: dict, timeout: float = 2.0,
     return json.loads(raw) if raw else {"status": "accepted"}
 
 
+def get_telemetry(url: str, record: dict, timeout: float = 2.0,
+                  token: str = "", opener: Callable[..., object] | None = None) -> dict:
+    """Deliver one normalized reading through the Web GET ingestion route."""
+    query = urlencode({
+        "device_id": record.get("device_id", ""),
+        "device_role": record.get("device_role", ""),
+        "readings": json.dumps(record.get("readings", {}), separators=(",", ":")),
+        "timestamp": record.get("timestamp", ""),
+        "sequence": "" if record.get("sequence") is None else record.get("sequence"),
+        "simulation": "1" if record.get("simulation") else "0",
+    })
+    separator = "&" if "?" in url else "?"
+    request = urllib.request.Request(
+        url + separator + query,
+        headers={"Accept": "application/json", "User-Agent": "SecureIoT-Poller/1.0"},
+        method="GET",
+    )
+    if token:
+        request.add_header("Authorization", "Bearer " + token)
+    fetch = opener or urllib.request.urlopen
+    with fetch(request, timeout=timeout) as response:
+        status = getattr(response, "status", 200)
+        if not 200 <= int(status) < 300:
+            raise urllib.error.HTTPError(url, int(status), "telemetry GET rejected", {}, None)
+        raw = response.read().decode("utf-8")
+    return json.loads(raw) if raw else {"status": "accepted"}
+
+
 class IoTPoller:
     """Daemon poller with bounded timeouts and graceful shutdown."""
 
@@ -119,8 +147,16 @@ class IoTPoller:
         raw_enabled = os.getenv("IOT_POLLING_ENABLED", "1").strip().lower()
         self.enabled = (enabled if enabled is not None else raw_enabled not in {"0", "false", "no", "off"})
         self.reader = reader or (lambda url, timeout: read_sensor(url, timeout))
+        # GET is the Web-track delivery path. The old POST variables remain
+        # accepted so existing deployments can be migrated without breaking.
+        self.get_url = os.getenv("IOT_TELEMETRY_GET_URL", "").strip()
+        self.get_token = os.getenv("IOT_TELEMETRY_GET_TOKEN", "").strip()
         self.post_url = os.getenv("IOT_TELEMETRY_POST_URL", "").strip()
         self.post_token = os.getenv("IOT_TELEMETRY_POST_TOKEN", "").strip()
+        if not self.get_url and self.post_url:
+            self.get_url = self.post_url.rstrip("/") + "/ingest"
+        if not self.get_token:
+            self.get_token = self.post_token
         self.poster = poster or (lambda url, record, timeout: post_telemetry(
             url, record, timeout, token=self.post_token))
         self.stop_event = threading.Event()
@@ -143,7 +179,11 @@ class IoTPoller:
                     "sequence": payload.get("sequence"),
                     "simulation": bool(payload.get("simulation", True)),
                 }
-                if self.post_url:
+                if self.get_url:
+                    accepted = get_telemetry(self.get_url, record, self.timeout, token=self.get_token)
+                    LOGGER.info("IoT telemetry GET accepted device=%s sequence=%s url=%s",
+                                device_id, record.get("sequence"), self.get_url)
+                elif self.post_url:
                     accepted = self.poster(self.post_url, record, self.timeout)
                     LOGGER.info("IoT telemetry POST accepted device=%s sequence=%s url=%s",
                                 device_id, record.get("sequence"), self.post_url)
@@ -169,8 +209,8 @@ class IoTPoller:
             return self
         self.thread = threading.Thread(target=self._run, name="secureiot-iot-poller", daemon=True)
         self.thread.start()
-        LOGGER.info("IoT server polling enabled devices=%d interval=%ss port=%s post_url=%s",
-                    len(self.devices), self.interval, self.port, self.post_url or "local-store")
+        LOGGER.info("IoT server polling enabled devices=%d interval=%ss port=%s get_url=%s",
+                    len(self.devices), self.interval, self.port, self.get_url or "local-store")
         return self
 
     def stop(self) -> None:
@@ -179,4 +219,4 @@ class IoTPoller:
             self.thread.join(timeout=max(1.0, self.timeout + 1.0))
 
 
-__all__ = ["IoTPoller", "default_devices", "post_telemetry", "read_sensor"]
+__all__ = ["IoTPoller", "default_devices", "get_telemetry", "post_telemetry", "read_sensor"]
