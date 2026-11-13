@@ -491,6 +491,15 @@ class RuntimeNetworkController(ControllerBase):
         datapaths = getattr(topology, "datapaths", {}) if topology is not None else {}
         host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
         now = time.time()
+        telemetry_online = set()
+        try:
+            telemetry_online = {
+                str(device.get("device_id"))
+                for device in self.iot_store.devices()
+                if isinstance(device, dict) and device.get("status") == "online"
+            }
+        except Exception:
+            telemetry_online = set()
         for host_id in sorted(HOST_SWITCHES, key=lambda x: int(x[1:])):
             observed_row = observed_by_ip.get(HOST_IPS[host_id])
             item = dict(observed_row[1]) if observed_row else {}
@@ -509,6 +518,14 @@ class RuntimeNetworkController(ControllerBase):
             flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
             if not host_active:
                 flows = []
+            flow_active = bool(flows)
+            telemetry_active = host_id in telemetry_online
+            # Port counters alone include ARP and load-balancer health checks.
+            # A host is active for this endpoint only when that recent traffic
+            # is corroborated by fresh telemetry or a registered flow.
+            host_active = bool(host_active and (telemetry_active or flow_active))
+            if not host_active:
+                flows = []
             primary_flow = flows[0] if flows else {}
             fallback_path = self.paths.get(host_id, {}) if host_active else {}
             result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": port_no,
@@ -517,6 +534,7 @@ class RuntimeNetworkController(ControllerBase):
                            "status": item.get("status", "configured" if topology else "unknown"),
                            "controller_seen": bool(item.get("controller_seen", dpid in datapaths)),
                            "traffic_active": host_active,
+                           "telemetry_active": telemetry_active,
                            "last_seen": item.get("last_seen"),
                            "last_traffic_at": observed_at,
                            "active_flows": flows,
