@@ -271,6 +271,36 @@ class RuntimeNetworkController(ControllerBase):
         return app_manager.lookup_service_brick("ResilienceEngine")
 
     @staticmethod
+    def _traffic_monitor():
+        """Return the live TrafficMonitorMerged service across Ryu name variants."""
+        for name in ("TrafficMonitorMerged", "traffic_monitor_merged", "traffic_monitor"):
+            service = app_manager.lookup_service_brick(name)
+            if service is not None:
+                return service
+        return None
+
+    def _firewall_action_events(self):
+        """Normalize live security actions for the firewall dashboard."""
+        monitor = self._traffic_monitor()
+        history = getattr(monitor, "action_history", {}) if monitor is not None else {}
+        if not isinstance(history, dict):
+            return []
+        events = []
+        for request_id, row in history.items():
+            if not isinstance(row, dict):
+                continue
+            action = str(row.get("action", "")).upper()
+            if action not in {"BLOCK_DEVICE", "UNBLOCK_DEVICE", "BLOCK", "DROP"}:
+                continue
+            event = dict(row)
+            event.setdefault("request_id", request_id)
+            event.setdefault("event_type", "firewall")
+            event["blocked"] = action in {"BLOCK_DEVICE", "BLOCK", "DROP"}
+            events.append(event)
+        events.sort(key=lambda item: float(item.get("timestamp", 0) or 0))
+        return events
+
+    @staticmethod
     def _service(*names):
         for name in names:
             service = app_manager.lookup_service_brick(name)
@@ -657,6 +687,7 @@ class RuntimeNetworkController(ControllerBase):
     @route("firewall_status", "/firewall/status", methods=["GET"])
     def firewall_status(self, req, **kwargs):
         topology, topology_status = self._topology_status()
+        action_events = self._firewall_action_events()
         blocked = 0
         for name in ("blocked_flows", "blocked_devices", "blocked_macs"):
             value = getattr(topology, name, None) if topology is not None else None
@@ -666,11 +697,13 @@ class RuntimeNetworkController(ControllerBase):
                 blocked = max(blocked, len(value))
             elif isinstance(value, int):
                 blocked = max(blocked, value)
+        blocked = max(blocked, sum(1 for event in action_events if event.get("blocked")))
         return json_response({"status": "active" if topology is not None else "unavailable",
                               "default_policy": "DROP", "protected_vlans": sorted(VLAN_NETWORKS),
                               "blocked_flows": blocked, "controller_connected": topology is not None,
                               "topology_status": topology_status, "last_update": now_utc(),
-                              "source": "topology-monitor-and-traffic-monitor"})
+                              "source": "topology-monitor-and-traffic-monitor",
+                              "event_count": len(action_events)})
 
     @api_auth_required
     @route("firewall_rules", "/firewall/rules", methods=["GET"])
@@ -681,11 +714,21 @@ class RuntimeNetworkController(ControllerBase):
             provider_rules = getattr(topology, "firewall_rules", None)
         if isinstance(provider_rules, dict):
             provider_rules = list(provider_rules.values())
-        if isinstance(provider_rules, list):
-            return json_response(provider_rules)
-        return json_response([{"rule_id": "default-deny", "priority": 1000, "action": "DROP", "direction": "both",
-                               "source": "any", "destination": "any", "enabled": True,
-                               "status": "installed", "source_provider": "topology-monitor"}])
+        rules = list(provider_rules) if isinstance(provider_rules, list) else []
+        blocked_devices = getattr(topology, "blocked_devices", {}) if topology is not None else {}
+        if isinstance(blocked_devices, dict):
+            for mac, details in blocked_devices.items():
+                details = details if isinstance(details, dict) else {}
+                rules.append({"rule_id": "device-block-%s" % mac.replace(":", ""),
+                              "priority": 50000, "action": "DROP", "direction": "ingress",
+                              "source": mac, "source_ip": details.get("ip"),
+                              "enabled": True, "status": "installed",
+                              "reason": details.get("reason"), "blocked_at": details.get("blocked_at"),
+                              "source_provider": "topology-monitor"})
+        rules.insert(0, {"rule_id": "default-deny", "priority": 1000, "action": "DROP", "direction": "both",
+                         "source": "any", "destination": "any", "enabled": True,
+                         "status": "installed", "source_provider": "topology-monitor"})
+        return json_response(rules)
 
     @api_auth_required
     @route("firewall_events", "/firewall/events", methods=["GET"])
@@ -695,6 +738,8 @@ class RuntimeNetworkController(ControllerBase):
         events = list(provider_events) if isinstance(provider_events, list) else []
         events.extend(event for event in self.network_event_store
                       if isinstance(event, dict) and any(key in event for key in ("action", "blocked", "rule_id")))
+        events.extend(self._firewall_action_events())
+        events.sort(key=lambda item: float(item.get("timestamp", 0) or 0))
         return json_response(events[-200:])
 
     @api_auth_required
