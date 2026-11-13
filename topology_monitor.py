@@ -828,11 +828,19 @@ class TopologyMonitor(app_manager.RyuApp):
             return
 
         dst_dpid, dst_port = destination
+        src_loc = self.host_location.get(src_mac)
 
-        # Same switch.
-        if dst_dpid == dpid:
+        # Same-switch means the source host and destination host are
+        # attached to the same switch, not merely that the current PacketIn
+        # arrived at the destination switch after traversing a path.
+        if src_loc is not None and dst_dpid == src_loc[0]:
 
-            if dst_port == in_port:
+            if dst_port == in_port and dpid == src_loc[0]:
+                return
+
+            if dpid != src_loc[0]:
+                # This packet is already on an inter-switch hop; do not
+                # overwrite the source flow with a false same-switch path.
                 return
 
             self._install_output_flow(datapath, in_port, dst_mac, dst_port, vlan_id)
@@ -843,7 +851,7 @@ class TopologyMonitor(app_manager.RyuApp):
                     "vlan_id": vlan_id,
                     "src_ip": self.mac_to_ip.get(src_mac),
                     "dst_ip": self.mac_to_ip.get(dst_mac),
-                    "path": [int(dpid)],
+                    "path": [int(src_loc[0])],
                     "path_type": "same_switch",
                     "path_status": "active",
                 }
@@ -852,7 +860,6 @@ class TopologyMonitor(app_manager.RyuApp):
             return
 
         # Different switch: prefer the full path from the source's switch.
-        src_loc = self.host_location.get(src_mac)
 
         path = None
 
