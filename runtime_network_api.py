@@ -286,14 +286,17 @@ class RuntimeNetworkController(ControllerBase):
         """Return DPIDs with recent growth on endpoint access-port counters."""
         active = set()
         topology = self._topology()
-        host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
+        host_activity = getattr(topology, "switch_traffic_last_seen", None) if topology is not None else None
+        if not isinstance(host_activity, dict):
+            host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
         now = time.time()
         if isinstance(host_activity, dict):
-            for dpid, observed_at in host_activity.items():
+            for key, observed_at in host_activity.items():
                 try:
+                    dpid = key[0] if isinstance(key, tuple) else key
                     if now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW:
                         active.add(int(dpid))
-                except (TypeError, ValueError):
+                except (TypeError, ValueError, IndexError):
                     continue
             return active
 
@@ -486,7 +489,8 @@ class RuntimeNetworkController(ControllerBase):
             for ports in access_ports.values():
                 ports.sort()
         datapaths = getattr(topology, "datapaths", {}) if topology is not None else {}
-        active_dpids = self._traffic_dpids()
+        host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
+        now = time.time()
         for host_id in sorted(HOST_SWITCHES, key=lambda x: int(x[1:])):
             observed_row = observed_by_ip.get(HOST_IPS[host_id])
             item = dict(observed_row[1]) if observed_row else {}
@@ -494,17 +498,31 @@ class RuntimeNetworkController(ControllerBase):
             dpid = int(item.get("dpid") or SWITCH_DPIDS[HOST_SWITCHES[host_id]])
             host_index = sum(1 for h in HOST_SWITCHES if HOST_SWITCHES[h] == HOST_SWITCHES[host_id] and int(h[1:]) < int(host_id[1:]))
             provider_port = (access_ports.get(dpid) or [])[host_index % len(access_ports.get(dpid, [1]))] if access_ports.get(dpid) else 1 + (host_index % 48)
-            result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": int(item.get("port") or item.get("port_no") or provider_port),
+            port_no = int(item.get("port") or item.get("port_no") or provider_port)
+            observed_at = host_activity.get((dpid, port_no)) if isinstance(host_activity, dict) else None
+            host_active = False
+            if observed_at is not None:
+                try:
+                    host_active = now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW
+                except (TypeError, ValueError):
+                    host_active = False
+            flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
+            if not host_active:
+                flows = []
+            primary_flow = flows[0] if flows else {}
+            fallback_path = self.paths.get(host_id, {}) if host_active else {}
+            result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": port_no,
                            "mac": item.get("mac", observed_mac or f"00:00:00:00:00:{int(host_id[1:]):02x}"),
                            "ipv4": item.get("ipv4", [HOST_IPS[host_id]]), "vlan_id": HOST_VLANS[host_id],
                            "status": item.get("status", "configured" if topology else "unknown"),
                            "controller_seen": bool(item.get("controller_seen", dpid in datapaths)),
-                           "traffic_active": dpid in active_dpids,
+                           "traffic_active": host_active,
                            "last_seen": item.get("last_seen"),
-                           "last_traffic_at": (item.get("last_traffic_at")
-                                                if dpid in active_dpids else None),
-                           "path": self.paths.get(host_id, {}).get("nodes", []),
-                           "path_status": self.paths.get(host_id, {}).get("path_status") if self.paths.get(host_id) else None}))
+                           "last_traffic_at": observed_at,
+                           "active_flows": flows,
+                           "path": primary_flow.get("path", fallback_path.get("nodes", [])),
+                           "path_type": primary_flow.get("path_type", fallback_path.get("path_type")),
+                           "path_status": primary_flow.get("path_status", fallback_path.get("path_status", "inactive" if not host_active else None))}))
         return json_response(result)
 
     @api_auth_required
@@ -669,6 +687,9 @@ class RuntimeNetworkController(ControllerBase):
             return json_response(list(provider_paths.values()))
         if isinstance(provider_paths, list):
             return json_response(provider_paths)
+        active_flow_paths = _call(topology, ["get_active_flow_paths"], None) if topology is not None else None
+        if isinstance(active_flow_paths, list) and active_flow_paths:
+            return json_response(active_flow_paths)
         return json_response(list(self.paths.values()))
 
     @api_auth_required

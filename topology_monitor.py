@@ -211,7 +211,10 @@ class TopologyMonitor(app_manager.RyuApp):
         # PortStats samples used by traffic-aware path selection.
         self.port_stats_previous = {}
         # Recent endpoint traffic, separate from inter-switch utilization.
+        # Host activity is keyed by (dpid, access_port); switch activity is
+        # aggregated separately for the switch-level API.
         self.host_traffic_last_seen = {}
+        self.switch_traffic_last_seen = {}
 
         # Topology state.
         self.topology_signature = None
@@ -636,7 +639,8 @@ class TopologyMonitor(app_manager.RyuApp):
                     and entry.get("role") == "endpoint"):
                 old_counter, old_time = previous
                 if counter > old_counter and now > old_time:
-                    self.host_traffic_last_seen[dpid] = now
+                    self.switch_traffic_last_seen[dpid] = now
+                    self.host_traffic_last_seen[key] = now
 
             peer = self.port_to_link.get((dpid, port_no))
 
@@ -832,6 +836,18 @@ class TopologyMonitor(app_manager.RyuApp):
                 return
 
             self._install_output_flow(datapath, in_port, dst_mac, dst_port, vlan_id)
+            self.register_active_flow(
+                ("vlan_mac", vlan_id, src_mac, dst_mac),
+                {
+                    "src_mac": src_mac, "dst_mac": dst_mac,
+                    "vlan_id": vlan_id,
+                    "src_ip": self.mac_to_ip.get(src_mac),
+                    "dst_ip": self.mac_to_ip.get(dst_mac),
+                    "path": [int(dpid)],
+                    "path_type": "same_switch",
+                    "path_status": "active",
+                }
+            )
             self._packet_out(datapath, msg, dst_port, vlan_id)
             return
 
@@ -871,6 +887,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 "src_ip": self.mac_to_ip.get(src_mac),
                 "dst_ip": self.mac_to_ip.get(dst_mac),
                 "path": list(path),
+                "path_type": "inter_switch",
+                "path_status": "active",
             }
         )
 
@@ -2645,15 +2663,35 @@ class TopologyMonitor(app_manager.RyuApp):
         }
 
     def get_host_status(self):
-
-        return {
-            mac: {
-"ip": self.mac_to_ip.get(mac),
+        result = {}
+        for mac, loc in list(self.host_location.items()):
+            flows = []
+            for flow in self.active_flows.values():
+                if not isinstance(flow, dict) or flow.get("src_mac") != mac:
+                    continue
+                item = dict(flow)
+                item.pop("src_mac", None)
+                item.pop("dst_mac", None)
+                flows.append(item)
+            result[mac] = {
+                "ip": self.mac_to_ip.get(mac),
                 "dpid": loc[0],
                 "port": loc[1],
+                "active_flows": flows,
             }
-            for mac, loc in list(self.host_location.items())
-        }
+        return result
+
+    def get_active_flow_paths(self):
+        """Return flow-specific paths currently known by the controller."""
+        result = []
+        for flow in self.active_flows.values():
+            if not isinstance(flow, dict):
+                continue
+            item = dict(flow)
+            item.pop("src_mac", None)
+            item.pop("dst_mac", None)
+            result.append(item)
+        return result
 
     def get_graph(self):
         return self.graph.copy()
