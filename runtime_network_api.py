@@ -521,8 +521,12 @@ class RuntimeNetworkController(ControllerBase):
                            "last_traffic_at": observed_at,
                            "active_flows": flows,
                            "path": primary_flow.get("path", fallback_path.get("nodes", [])),
-                           "path_type": primary_flow.get("path_type", fallback_path.get("path_type")),
-                           "path_status": primary_flow.get("path_status", fallback_path.get("path_status", "inactive" if not host_active else None))}))
+                           "path_type": (primary_flow.get("path_type")
+                                         or fallback_path.get("path_type")
+                                         or ("none" if not host_active else "unknown")),
+                           "path_status": (primary_flow.get("path_status")
+                                           or fallback_path.get("path_status")
+                                           or ("inactive" if not host_active else "unknown"))}))
         return json_response(result)
 
     @api_auth_required
