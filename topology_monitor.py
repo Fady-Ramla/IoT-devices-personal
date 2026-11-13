@@ -2747,6 +2747,10 @@ class TopologyMonitor(app_manager.RyuApp):
         }
 
     def register_active_flow(self, flow_id, flow_data):
+        # Attach activity to the logical host flow rather than generic switch
+        # counters; the dashboard uses this timestamp with the flow path.
+        if isinstance(flow_data, dict):
+            flow_data["last_seen"] = time.time()
         # The same packet can be observed by the IPv4 observer and by the
         # known-destination forwarding path. Keep one logical host flow, not
         # two records with different internal keys.

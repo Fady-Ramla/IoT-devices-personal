@@ -313,48 +313,26 @@ class RuntimeNetworkController(ControllerBase):
         return topology, (_call(topology, ["get_topology_status"], {}) or {})
 
     def _traffic_dpids(self):
-        """Return DPIDs with recent growth on endpoint access-port counters."""
+        """Return switches on recently observed host-to-host flow paths.
+
+        Do not use switch-wide counters here: LLDP, gateway traffic, and
+        controller housekeeping can make every switch look active.
+        """
         active = set()
         topology = self._topology()
-        host_activity = getattr(topology, "switch_traffic_last_seen", None) if topology is not None else None
-        if not isinstance(host_activity, dict):
-            host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
         now = time.time()
-        if isinstance(host_activity, dict):
-            for key, observed_at in host_activity.items():
+        flows = getattr(topology, "active_flows", {}) if topology is not None else {}
+        if isinstance(flows, dict):
+            for flow in flows.values():
+                if not isinstance(flow, dict) or flow.get("path_status", "active") != "active":
+                    continue
                 try:
-                    dpid = key[0] if isinstance(key, tuple) else key
-                    if now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW:
-                        active.add(int(dpid))
-                except (TypeError, ValueError, IndexError):
+                    if now - float(flow.get("last_seen", 0)) > TRAFFIC_ACTIVE_WINDOW:
+                        continue
+                    active.update(int(dpid) for dpid in (flow.get("path") or []))
+                except (TypeError, ValueError):
                     continue
             return active
-
-        # Compatibility fallback for older TopologyMonitor versions.
-        # TopologyMonitor stores (byte_counter, sample_time) in this map, and
-        # only for currently discovered inter-switch ports.
-        samples = getattr(topology, "port_stats_previous", {}) if topology is not None else {}
-        port_to_link = getattr(topology, "port_to_link", {}) if topology is not None else {}
-        now = time.time()
-        if isinstance(samples, dict):
-            for key, sample in samples.items():
-                if not isinstance(key, tuple) or len(key) != 2:
-                    continue
-                try:
-                    dpid, _port_no = int(key[0]), int(key[1])
-                    counter, observed_at = sample
-                    counter, observed_at = float(counter), float(observed_at)
-                    old = self._traffic_counter_snapshot.get(key)
-                    self._traffic_counter_snapshot[key] = (counter, observed_at)
-                    if (old is None or counter <= float(old[0])
-                            or now - observed_at > TRAFFIC_ACTIVE_WINDOW):
-                        continue
-                    active.add(dpid)
-                    peer = port_to_link.get(key)
-                    if isinstance(peer, (tuple, list)) and peer:
-                        active.add(int(peer[0]))
-                except (TypeError, ValueError, IndexError):
-                    continue
         return active
 
     def _collect_active_dpids(self, value, active):
