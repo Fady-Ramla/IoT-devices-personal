@@ -529,7 +529,9 @@ class RuntimeNetworkController(ControllerBase):
             primary_flow = flows[0] if flows else {}
             fallback_path = self.paths.get(host_id, {}) if host_active else {}
             result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": port_no,
-                           "mac": item.get("mac", observed_mac or f"00:00:00:00:00:{int(host_id[1:]):02x}"),
+                           # Mininet creates gw before h1, so the default
+                           # fallback MAC for h16 is ...:11, not ...:10.
+                           "mac": item.get("mac", observed_mac or f"00:00:00:00:00:{int(host_id[1:]) + 1:02x}"),
                            "ipv4": item.get("ipv4", [HOST_IPS[host_id]]), "vlan_id": HOST_VLANS[host_id],
                            "status": item.get("status", "configured" if topology else "unknown"),
                            "controller_seen": bool(item.get("controller_seen", dpid in datapaths)),
