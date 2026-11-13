@@ -132,8 +132,10 @@ HTTP 200
 داخل Mininet:
 
 ```text
-h16 ping -c 5 10.10.10.1
+h16 ping -i 0.5 10.10.10.1
 ```
+
+اتركي الـping مستمرًا أثناء فحص الـendpoints، ثم أوقفيه بـ`Ctrl+C` بعد تسجيل النتيجة.
 
 ثم خارج Mininet:
 
@@ -147,8 +149,8 @@ curl -s "$API/topology/switches"
 
 - `packet_count` أو `byte_count` يزيدان.
 - `timestamp` جديد.
-- switch يملك `traffic_active: true` لفترة قصيرة.
-- بعد انتهاء نافذة النشاط، قد يرجع `traffic_active: false`.
+- أثناء استمرار الـping وزيادة counters، تعرض switches الموجودة على المسار `traffic_active: true`.
+- بعد توقف الـtraffic وعدم زيادة counters لمدة 8 ثوانٍ، يرجع `traffic_active: false`.
 
 ---
 

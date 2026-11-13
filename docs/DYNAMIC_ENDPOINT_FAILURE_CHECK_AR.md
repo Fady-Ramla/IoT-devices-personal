@@ -142,7 +142,7 @@ curl -s "$API/stats/flow/1"
 curl -s "$API/topology/switches"
 ```
 
-`traffic_active` في switches يتغير بعد counter growth ثم ينتهي بعد نافذة `SECUREIOT_TRAFFIC_ACTIVE_WINDOW`.
+`traffic_active` في switches يصبح `true` عند زيادة عدادات forwarding flows ذات الأولوية الأعلى من قواعد التحكم العادية؛ لذلك يمكن أن يظهر على كل switch في مسار الـflow من دون اعتبار رسائل LLDP. تتم قراءة عدادات الـflow كل 5 ثوانٍ، وتغطي نافذة الـ8 ثوانٍ استمرار الترافيك بين العينات. بعد توقف زيادة العداد، يرجع `false` خلال 8 ثوانٍ. هذا مؤشر على traffic حديث، وليس حدثًا لحظيًا لحذف قاعدة OpenFlow.
 
 ## 5. Restore link
 

@@ -46,7 +46,7 @@ sudo --preserve-env=SECUREIOT_API_TOKEN env \
   SECUREIOT_API_TOKEN="$SECUREIOT_API_TOKEN" \
   SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3 \
   SECUREIOT_LB_STATS_FILE=/var/tmp/secureiot-lb-stats.json \
-  SECUREIOT_TRAFFIC_ACTIVE_WINDOW=3 \
+  SECUREIOT_TRAFFIC_ACTIVE_WINDOW=8 \
   "$PWD/ryu_env/bin/ryu-manager" \
   --observe-links \
   --ofp-tcp-listen-port 6633 \

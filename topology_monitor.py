@@ -211,11 +211,11 @@ class TopologyMonitor(app_manager.RyuApp):
 
         # PortStats samples used by traffic-aware path selection.
         self.port_stats_previous = {}
-        # Recent endpoint traffic, separate from inter-switch utilization.
-        # Host activity is keyed by (dpid, access_port); switch activity is
-        # aggregated separately for the switch-level API.
+        # Recent endpoint activity and per-switch forwarding-flow counters.
+        # Flow counters exclude LLDP/controller traffic and include path hops.
         self.host_traffic_last_seen = {}
         self.switch_traffic_last_seen = {}
+        self.flow_stats_previous = {}
 
         # Topology state.
         self.topology_signature = None
@@ -675,6 +675,39 @@ class TopologyMonitor(app_manager.RyuApp):
                 rate_bps / 1_000_000.0,
                 utilization * 100.0,
             )
+
+    @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
+    def flow_stats_reply_handler(self, ev):
+        """Mark switches active only when forwarding-flow counters increase."""
+        dpid = int(ev.msg.datapath.id)
+        now = time.time()
+        for stat in ev.msg.body:
+            priority = int(getattr(stat, "priority", 0))
+            if priority <= NORMAL_PRIORITY:
+                continue
+            key = (
+                dpid,
+                int(getattr(stat, "table_id", 0)),
+                priority,
+                int(getattr(stat, "cookie", 0)),
+                str(getattr(stat, "match", "")),
+            )
+            packets = int(getattr(stat, "packet_count", 0))
+            byte_count = int(getattr(stat, "byte_count", 0))
+            previous = self.flow_stats_previous.get(key)
+            self.flow_stats_previous[key] = (packets, byte_count, now)
+            if (previous is not None
+                    and packets >= previous[0]
+                    and byte_count >= previous[1]
+                    and (packets > previous[0] or byte_count > previous[1])):
+                self.switch_traffic_last_seen[dpid] = now
+
+        # OpenFlow rules expire, so discard snapshots for rules not observed
+        # recently to keep this map bounded during long-running experiments.
+        cutoff = now - 60.0
+        for key, sample in list(self.flow_stats_previous.items()):
+            if key[0] == dpid and sample[2] < cutoff:
+                self.flow_stats_previous.pop(key, None)
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
     def port_status_handler(self, ev):
@@ -2258,6 +2291,7 @@ class TopologyMonitor(app_manager.RyuApp):
                             ofproto.OFPP_ANY
                         )
                     )
+                    datapath.send_msg(parser.OFPFlowStatsRequest(datapath))
             except Exception as exc:
                 self.logger.debug("PortStats loop error: %s", exc)
 

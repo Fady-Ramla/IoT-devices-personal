@@ -50,11 +50,11 @@ EXPECTED_INTER_SWITCH_LINKS = len(_topology_config.INTER_SWITCH_LINKS)
 LOAD_BALANCER_CONFIG = dict(_topology_config.LOAD_BALANCER)
 SERVICE_PAIRS = dict(_topology_config.SERVICE_PAIRS)
 LOAD_BALANCER_IP = HOST_IPS.get(LOAD_BALANCER_CONFIG.get("host"), "unknown")
-# A switch is active only briefly after a real data-plane counter increase.
-# The previous 15-second window made a 5-second IoT polling cycle look like
-# every switch was permanently active.
+# Forwarding-flow counters are sampled every five seconds. Keep activity
+# visible across one sample interval and short scheduling jitter; expire it
+# after eight quiet seconds, not at exact OpenFlow rule deletion time.
 TRAFFIC_ACTIVE_WINDOW = max(
-    1.0, float(os.getenv("SECUREIOT_TRAFFIC_ACTIVE_WINDOW", "3"))
+    8.0, float(os.getenv("SECUREIOT_TRAFFIC_ACTIVE_WINDOW", "8"))
 )
 
 
