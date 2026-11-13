@@ -1417,8 +1417,10 @@ class TopologyMonitor(app_manager.RyuApp):
         self._rebuild_operational_graph()
         self._flush_forwarding_flows()
         self._refresh_clff()
-        # Reinstall only affected normal flows on the operational backup path.
-        self.reroute_active_flows(failed_links={edge})
+        # ResilienceEngine owns recovery execution and its result history.
+        # Do not reroute here as well: the topology-change event below would
+        # otherwise invoke recovery a second time and overwrite a successful
+        # reroute count with zero after the flow has already moved.
 
         self.logger.warning(
             "Link PHYSICALLY ISOLATED: %s ports=%s", edge, endpoints)
