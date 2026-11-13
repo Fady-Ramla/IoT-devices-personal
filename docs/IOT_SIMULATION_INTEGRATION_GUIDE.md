@@ -142,9 +142,11 @@ The poller performs the following loop:
 1. Connect to each sensor privately over TCP/8081.
 2. GET `/sensor/readings`.
 3. Validate the response and preserve the fresh reading.
-4. Write the reading to the local telemetry store.
-5. POST the same fresh payload to `IOT_TELEMETRY_POST_URL`.
-6. Repeat according to `IOT_POLL_INTERVAL`.
+4. Write the reading directly to the shared SQLite telemetry store.
+5. Repeat according to `IOT_POLL_INTERVAL`.
+
+Ryu reads the same SQLite file, and WebTrack reads Ryu through authenticated
+GET endpoints. There is no outbound telemetry POST or mutating GET request.
 
 Private sensor reads use a direct `http.client.HTTPConnection`. This intentionally bypasses inherited HTTP proxy settings and avoids proxy DNS resolution for Mininet IP addresses.
 
@@ -167,7 +169,9 @@ default via 172.31.255.1 dev sio-wan-gw
 
 The Ubuntu host routes the Mininet networks through the gateway and applies MASQUERADE on the external interface, normally `enp0s3` in VirtualBox.
 
-Only Services VLAN 20 is allowed to use this WAN egress for the server-side ngrok POST. The IoT VLAN remains private.
+The telemetry polling path does not require WAN egress from Mininet. The IoT
+VLAN remains private; the VM's separately installed read-only gateway is the
+only service exposed through ngrok.
 
 The WAN setup is implemented in:
 
@@ -195,11 +199,12 @@ export START_IOT_SIMULATORS=1
 export IOT_POLLING_ENABLED=1
 export IOT_POLL_INTERVAL=5
 export IOT_SENSOR_PORT=8081
-export IOT_TELEMETRY_POST_URL='https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry'
-export IOT_TELEMETRY_POST_TOKEN=''
+export SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3
+unset IOT_TELEMETRY_GET_URL IOT_TELEMETRY_POST_URL
 ```
 
-The ngrok hostname is dynamic. If ngrok gives a new hostname, update only `IOT_TELEMETRY_POST_URL` before starting the topology.
+Do not configure a telemetry delivery URL. The Web/API poller and Ryu share
+the local database; WebTrack performs read-only GETs through the gateway.
 
 ## 8. Startup sequence
 
@@ -208,13 +213,11 @@ The ngrok hostname is dynamic. If ngrok gives a new hostname, update only `IOT_T
 ```bash
 cd ~/Graduation_Project/IoT-devices
 
-sudo env \
-  SECUREIOT_DISABLE_API_AUTH=1 \
-  SECUREIOT_API_TOKEN='secureiot-local-demo-token-2026-abcdef' \
-  SECUREIOT_CONTROL_TOKEN='secureiot-local-demo-token-2026-abcdef' \
+source ~/.secureiot_api_token
+sudo --preserve-env=SECUREIOT_API_TOKEN env \
+  SECUREIOT_API_TOKEN="$SECUREIOT_API_TOKEN" \
   SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3 \
   SECUREIOT_LB_STATS_FILE=/var/tmp/secureiot-lb-stats.json \
-  SECUREIOT_ALLOWED_ORIGIN='https://uneasy-cobweb-headdress.ngrok-free.dev' \
   "$PWD/ryu_env/bin/ryu-manager" \
   --observe-links \
   --ofp-tcp-listen-port 6633 \
@@ -236,13 +239,15 @@ It allows Ryu to discover the inter-switch links and install the required forwar
 
 ### 8.2 Start ngrok
 
-The ngrok tunnel should forward to the Ryu runtime API:
+Keep Ryu authentication enabled. Do not set `SECUREIOT_DISABLE_API_AUTH=1` or use a hard-coded token. The ngrok tunnel should forward only to the installed read-only gateway:
 
 ```text
-https://uneasy-cobweb-headdress.ngrok-free.dev -> http://127.0.0.1:8080
+https://<your-ngrok-host> -> http://127.0.0.1:8090
 ```
 
-Do not point this telemetry tunnel at `h2:5000`. The final poller posts to the Ryu runtime endpoint on port 8080 through the host WAN/NAT path.
+Do not point ngrok directly at Ryu `:8080` or Flask `h2:5000`. The gateway
+allows only authenticated, read-only GET routes; the poller writes to SQLite
+locally and does not use the tunnel.
 
 ### 8.3 Start Mininet
 
@@ -287,13 +292,16 @@ Expected gateway address and route:
  default via 172.31.255.1 dev sio-wan-gw
 ```
 
-### 9.4 Verify public HTTPS access
+### 9.4 Verify the WebTrack read-only tunnel
 
-```text
-mininet> h2 curl --noproxy '*' -v --max-time 10 https://uneasy-cobweb-headdress.ngrok-free.dev/health
+From a normal VM terminal, call the public read-only gateway without a client token:
+
+```bash
+BASE_URL='https://<your-ngrok-host>'
+curl -fsS "$BASE_URL/dashboard/snapshot"
 ```
 
-A DNS timeout means the WAN path is not ready. Do not troubleshoot the sensor VLAN in that case.
+This GET check is independent from Mininet's private sensor polling path.
 
 ### 9.5 Verify the Web/API process
 
@@ -304,24 +312,25 @@ mininet> h2 head -n 15 /tmp/web_api_h2_iot_live.log
 
 The poller is inside `web_api_server.py`; it is not a separate process named `iot_poller`.
 
-### 9.6 Verify ngrok POST traffic
+### 9.6 Verify SQLite and the authenticated GET reads
 
-The ngrok inspector should show repeated requests:
+The database should receive a new row after each successful polling interval:
 
-```text
-POST /api/iot/telemetry 201
+```bash
+sqlite3 /var/lib/secureiot/iot-telemetry.sqlite3 \
+  'SELECT device_id, timestamp, sequence, readings_json FROM iot_telemetry ORDER BY id DESC LIMIT 5;'
 ```
 
-The `201 Created` response is a success response from the Ryu runtime API.
+The ngrok inspector should show dashboard GET requests, for example
+`GET /dashboard/snapshot`; it should not show telemetry POSTs or writes.
 
 ### 9.7 Verify the public API data
 
-Use the ngrok URL for the no-token lab runtime API:
+Use the ngrok URL for the public read-only gateway; no client bearer token is required:
 
 ```bash
-curl -sS https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/devices
-curl -sS https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/sensors
-curl -sS https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry
+BASE_URL='https://<your-ngrok-host>'
+curl -sS "$BASE_URL/dashboard/snapshot"
 ```
 
 The result should contain h5-h16 with increasing `sample_count`, recent `last_seen` timestamps, and `status: online`.
@@ -331,9 +340,10 @@ The result should contain h5-h16 with increasing `sample_count`, recent `last_se
 Run the following twice, at least six seconds apart:
 
 ```bash
-curl -sS 'https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry?device_id=h16&limit=1'
+BASE_URL='https://<your-ngrok-host>'
+curl -sS "$BASE_URL/dashboard/snapshot"
 sleep 6
-curl -sS 'https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry?device_id=h16&limit=1'
+curl -sS "$BASE_URL/dashboard/snapshot"
 ```
 
 The two responses should show newer:
@@ -349,15 +359,16 @@ The observed data already demonstrated sequences 38, 39, 40, 41, 42, 43, 44, and
 
 There are two API surfaces:
 
-### Public ngrok/Ryu runtime API
+### Public ngrok/read-only gateway
 
-The lab Ryu process is started with:
+The tunnel must terminate at the read-only proxy, not at Ryu directly. Public
+clients need no bearer token. The gateway supplies its private Ryu API token
+upstream and exposes only allowlisted GET routes; mutating methods and
+ingestion routes are not exposed. Anyone with the public URL can read those
+allowlisted network and telemetry fields.
 
-```text
-SECUREIOT_DISABLE_API_AUTH=1
-```
-
-Therefore the runtime GET routes used by the dashboard can be called without a Bearer token during this lab run. The telemetry POST returns `201` when accepted.
+WebTrack uses GET requests without a client token. The gateway's GET reads the
+current snapshot; it does not trigger sensor polling or change database state.
 
 ### Local Flask Web/API on h2:5000
 
@@ -369,7 +380,8 @@ http://10.10.20.2:5000/api/iot/sensors
 http://10.10.20.2:5000/api/iot/telemetry
 ```
 
-This is expected and does not mean that polling or ngrok ingestion failed. The dashboard should use the public runtime API URL in this lab configuration.
+This is expected and does not mean that polling failed. The dashboard should
+use the public read-only gateway URL; Ryu's internal token stays on the VM.
 
 ## 12. Troubleshooting
 
@@ -392,21 +404,14 @@ The old urllib/proxy path was removed. Pull the latest commit and restart the We
 
 ### ngrok hostname resolution timeout
 
-Check:
-
-```text
-gw ip addr show sio-wan-gw
-gw ip route
-```
-
-Then check host forwarding/NAT:
+The ngrok tunnel runs on the VM host, not inside the Mininet gateway. Check the host-side services:
 
 ```bash
-sudo iptables -L FORWARD -n -v --line-numbers
-sudo iptables -t nat -L POSTROUTING -n -v --line-numbers
+systemctl is-active secureiot-webtrack-readonly.service ngrok-webtrack-readonly.service
+curl -fsS http://127.0.0.1:8090/health
 ```
 
-The counters for `sio-wan-host -> enp0s3` and `MASQUERADE` should increase while testing from h2.
+Check the VM's Internet connection and the ngrok service logs. This is separate from private sensor polling.
 
 ### `/tmp/web_api_h2_iot_live.log` does not exist
 
@@ -422,15 +427,15 @@ Ensure `START_DEMO_SERVICES=1` was exported before running:
 sudo -E python3 mininet/Real_network_topology.py
 ```
 
-### `telemetry POST accepted` is absent from the Flask log
+### `IoT telemetry stored` is absent from the Flask log
 
-The final POST goes to ngrok and then Ryu on port 8080, not to the Flask service on h2:5000. Verify the ngrok inspector and query the public runtime API instead.
+Check that the h5-h16 sensor endpoints answer GET requests and that Web/API and Ryu use the same `SECUREIOT_IOT_DB` path. Telemetry is stored locally; it is not sent through ngrok.
 
 ## 13. Security note
 
-The no-token runtime mode is intended for this local graduation-project lab demonstration. For production or public deployment:
+Keep authentication enabled on the Ryu runtime API and read-only gateway. For production or public deployment:
 
-- do not disable API authentication;
+- do not expose Ryu directly through ngrok;
 - configure a strong runtime token and JWT secret;
 - keep IoT VLAN Internet egress disabled;
 - allow only the required Services-to-IoT TCP/8081 path;

@@ -220,7 +220,7 @@ def admin(**kwargs: Any):
 
 @app.route("/api/iot/telemetry", methods=["POST"])
 def receive_iot_telemetry():
-    """Persist readings only from their expected IoT-host source address."""
+    """Private legacy lab ingress; not exposed by the public GET-only gateway."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"status": "rejected", "message": "JSON object required"}), 400

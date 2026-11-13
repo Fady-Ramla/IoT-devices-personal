@@ -93,11 +93,13 @@ sensor value
 last_seen
 ```
 
-وفي ngrok inspector يجب أن تري تقريبًا:
+وفي ngrok inspector يجب أن تري dashboard GET requests مثل:
 
 ```text
-POST /api/iot/telemetry 201
+GET /dashboard/snapshot 200
 ```
+
+لا يُتوقع telemetry POST عبر ngrok؛ الـ Web/API poller يكتب القراءات مباشرةً إلى SQLite المشتركة.
 
 ## 3. Flow stats: pending ثم ready
 

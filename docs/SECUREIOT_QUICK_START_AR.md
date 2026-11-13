@@ -13,17 +13,18 @@ IoT hosts h5..h16
 Web/API server h2:5000
   background poller every 5 seconds
           |
-          | POST /api/iot/telemetry
+          | local SQLite write
           v
-ngrok -> Ryu Runtime API :8080
+shared SQLite: /var/lib/secureiot/iot-telemetry.sqlite3
+          ^
+          | Ryu reads the same database
           |
-          +--> SQLite telemetry store
-          +--> dashboard/API GET endpoints
+read-only gateway :8090 <- ngrok <- WebTrack authenticated GET
 
 Firewall: Ryu TopologyMonitor -> OpenFlow DROP rule on switches
 ```
 
-الـ IoT devices لا ترسل مباشرة إلى ngrok. الـ Web/API server هو الذي يعمل polling داخليًا، ثم يرسل القراءة الجديدة إلى Ryu عبر ngrok.
+الـ Web/API server يعمل polling للـ sensors باستخدام GET ويحفظ القراءات محليًا في SQLite. الـ Dashboard يستخدم GET لقراءة الـ snapshot عبر read-only gateway. لا يوجد telemetry POST أو GET يغيّر قاعدة البيانات عبر ngrok.
 
 ## 2. Update the project
 
@@ -34,26 +35,17 @@ git pull --ff-only origin api-runtime-latest-20261111
 git log -1 --oneline
 ```
 
-آخر إصلاح للـ firewall يجب أن يظهر كالتالي:
-
-```text
-9f80235 Expose live firewall rules and events
-```
-
 ## 3. Start Ryu — Terminal 1
 
 شغّلي Ryu أولًا واتركي الـ terminal مفتوحًا:
 
 ```bash
 cd ~/Graduation_Project/IoT-devices
-
-sudo env \
-  SECUREIOT_DISABLE_API_AUTH=1 \
-  SECUREIOT_API_TOKEN='secureiot-local-demo-token-2026-abcdef' \
-  SECUREIOT_CONTROL_TOKEN='secureiot-local-demo-token-2026-abcdef' \
+source ~/.secureiot_api_token
+sudo --preserve-env=SECUREIOT_API_TOKEN env \
+  SECUREIOT_API_TOKEN="$SECUREIOT_API_TOKEN" \
   SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3 \
   SECUREIOT_LB_STATS_FILE=/var/tmp/secureiot-lb-stats.json \
-  SECUREIOT_ALLOWED_ORIGIN='https://uneasy-cobweb-headdress.ngrok-free.dev' \
   SECUREIOT_TRAFFIC_ACTIVE_WINDOW=3 \
   "$PWD/ryu_env/bin/ryu-manager" \
   --observe-links \
@@ -66,29 +58,33 @@ sudo env \
   runtime_network_api.py
 ```
 
+يجب إبقاء مصادقة Ryu مفعّلة؛ لا تضعي `SECUREIOT_DISABLE_API_AUTH=1` ولا تستخدمي token ثابتًا داخل الأمر.
+
 اختبار سريع من Terminal 2:
 
 ```bash
-curl -i http://127.0.0.1:8080/firewall/status
+source ~/.secureiot_api_token
+curl -i -H "Authorization: Bearer $SECUREIOT_API_TOKEN" \
+  http://127.0.0.1:8080/firewall/status
 ```
 
 المتوقع `HTTP/1.1 200 OK` و`"status":"active"`.
 
 ## 4. Start ngrok — Terminal 2
 
-ngrok يجب أن يوجه إلى Ryu على port `8080`، وليس إلى `h2:5000`:
+ngrok يجب أن يوجه إلى read-only gateway المحلي على port `8090`، وليس مباشرةً إلى Ryu `8080` أو Flask `h2:5000`. استخدمي الخدمات المثبتة على الـVM:
 
 ```bash
-ngrok http 127.0.0.1:8080
+sudo systemctl is-active secureiot-webtrack-readonly.service ngrok-webtrack-readonly.service
 ```
 
-احتفظي بالـ public URL، مثال:
+استخدمي الـ public URL الحالي للخدمة. لا تشغّلي tunnel إضافيًا إلى Ryu مباشرةً.
 
 ```text
-https://uneasy-cobweb-headdress.ngrok-free.dev -> http://127.0.0.1:8080
+https://<your-ngrok-host> -> http://127.0.0.1:8090
 ```
 
-إذا أعطى ngrok hostname جديدًا، غيّري `IOT_TELEMETRY_POST_URL` في خطوة Mininet قبل التشغيل.
+لو تغيّر hostname، حدّثيه عند فريق WebTrack فقط؛ لا تضعيه في إعدادات IoT poller.
 
 لرؤية الطلبات:
 
@@ -115,16 +111,10 @@ export START_IOT_SIMULATORS=1
 export IOT_POLLING_ENABLED=1
 export IOT_POLL_INTERVAL=5
 export IOT_SENSOR_PORT=8081
-export IOT_TELEMETRY_POST_URL='https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry'
-export IOT_TELEMETRY_POST_TOKEN=''
+export SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3
+unset IOT_TELEMETRY_GET_URL IOT_TELEMETRY_POST_URL
 
 sudo -E python3 mininet/Real_network_topology.py
-```
-
-لو تغير hostname الخاص بـ ngrok، عدّلي هذا السطر فقط:
-
-```bash
-export IOT_TELEMETRY_POST_URL='https://NEW-NGROK-HOST/api/iot/telemetry'
 ```
 
 ## 6. Verify polling inside Mininet
@@ -135,9 +125,6 @@ export IOT_TELEMETRY_POST_URL='https://NEW-NGROK-HOST/api/iot/telemetry'
 h2 ping -c 2 10.10.20.1
 h2 curl --noproxy '*' -sS http://10.10.10.16:8081/health
 h2 curl --noproxy '*' -sS http://10.10.10.16:8081/sensor/readings
-gw ip addr show sio-wan-gw
-gw ip route
-h2 curl --noproxy '*' -sS --max-time 10 https://uneasy-cobweb-headdress.ngrok-free.dev/health
 h2 ps -ef | grep -E 'web_api_server|iot_poller' | grep -v grep
 h2 head -n 20 /tmp/web_api_h2_iot_live.log
 ```
@@ -145,28 +132,26 @@ h2 head -n 20 /tmp/web_api_h2_iot_live.log
 المتوقع:
 
 - `h2` يستطيع قراءة sensor endpoint على `h16:8081`.
-- log يحتوي على polling ناجح.
-- ngrok inspector يعرض `POST /api/iot/telemetry` تقريبًا كل 5 ثوانٍ.
-- الرد الناجح يكون غالبًا `201 Created`.
+- log يحتوي على `IoT telemetry stored` تقريبًا كل 5 ثوانٍ.
+- قاعدة SQLite تتحدث محليًا؛ لا تنتظري POST من Mininet إلى ngrok.
 
 ## 7. Verify changing telemetry
 
 من Terminal 2 أو أي terminal خارج Mininet:
 
 ```bash
-curl -sS 'https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry?device_id=h16&limit=1'
+BASE_URL='https://<your-ngrok-host>'
+curl -sS "$BASE_URL/dashboard/snapshot"
 sleep 6
-curl -sS 'https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry?device_id=h16&limit=1'
+curl -sS "$BASE_URL/dashboard/snapshot"
 ```
 
-يجب أن يتغير `sequence` و`timestamp` وقيمة sensor.
+افحصي `iot_telemetry` داخل JSON؛ يجب أن يتغير `sequence` و`timestamp` وقيمة sensor. الـ GET يقرأ فقط ولا يبدأ poll جديدًا؛ الـ poller يعمل تلقائيًا بالخلفية.
 
-Endpoints مفيدة:
+Endpoints مفيدة للـ Dashboard عبر الـ gateway:
 
 ```bash
-curl -sS https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/devices
-curl -sS https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/sensors
-curl -sS https://uneasy-cobweb-headdress.ngrok-free.dev/api/iot/telemetry
+curl -sS "$BASE_URL/dashboard/snapshot"
 ```
 
 ## 8. Test the firewall dynamically
@@ -279,13 +264,10 @@ mininet> h2 curl --noproxy '*' -v --max-time 10 https://<ngrok-host>/health
 
 ### ngrok يعرض `401`
 
-في lab mode يجب تشغيل Ryu مع:
-
-```bash
-SECUREIOT_DISABLE_API_AUTH=1
-```
-
-أما `/network/action` فيظل يحتاج `SECUREIOT_CONTROL_TOKEN` حتى مع تعطيل API auth.
+الـ public gateway لا يحتاج client bearer token. تأكدي أن نسخة الـ proxy المحدّثة
+هي المثبتة، وأنها تحتفظ بـ Ryu token داخليًا في ملف الخدمة. لا تعالجي `401`
+بتعطيل مصادقة Ryu أو بفتح منفذ Ryu مباشرةً على الإنترنت. أما أوامر التحكم فتظل
+محلية ومحمية بتوكن التحكم.
 
 ## 10. Stop and clean up
 
