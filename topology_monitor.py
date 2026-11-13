@@ -2713,6 +2713,25 @@ class TopologyMonitor(app_manager.RyuApp):
         }
 
     def register_active_flow(self, flow_id, flow_data):
+        # The same packet can be observed by the IPv4 observer and by the
+        # known-destination forwarding path. Keep one logical host flow, not
+        # two records with different internal keys.
+        src_ip = flow_data.get("src_ip") if isinstance(flow_data, dict) else None
+        dst_ip = flow_data.get("dst_ip") if isinstance(flow_data, dict) else None
+        vlan_id = flow_data.get("vlan_id") if isinstance(flow_data, dict) else None
+        if src_ip and dst_ip and vlan_id is not None:
+            for existing_id, existing in list(self.active_flows.items()):
+                if existing_id == flow_id or not isinstance(existing, dict):
+                    continue
+                if (existing.get("src_ip") == src_ip
+                        and existing.get("dst_ip") == dst_ip
+                        and existing.get("vlan_id") == vlan_id):
+                    # Prefer the richer gateway-aware IPv4 observation when
+                    # the forwarding path reports the same packet afterward.
+                    if (existing.get("destination_type") == "gateway"
+                            and flow_data.get("destination_type") != "gateway"):
+                        return
+                    self.active_flows.pop(existing_id, None)
         self.active_flows[flow_id] = flow_data
 
     def remove_active_flow(self, flow_id):
