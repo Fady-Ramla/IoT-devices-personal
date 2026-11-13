@@ -188,8 +188,11 @@ def _graph_path(topology, source, destination):
                           and int(row.get("dst_dpid", -1)) == left), None)
         if match is not None:
             path_links.append(match)
+    isolated = getattr(topology, "isolated_links", set())
+    isolated_links = [list(edge) for edge in sorted(isolated)] if isinstance(isolated, (set, list, tuple)) else []
     return {"source": source, "destination": destination, "nodes": path_nodes,
-            "status": "active", "links": path_links, "computed": True, "last_updated": now_utc()}
+            "status": "active", "links": path_links, "isolated_links": isolated_links,
+            "computed": True, "last_updated": now_utc()}
 
 
 class StatsCache:
