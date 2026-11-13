@@ -417,7 +417,6 @@ class RuntimeNetworkController(ControllerBase):
 
     @api_auth_required
     @route("runtime_controller", "/controller/state", methods=["GET"])
-    @route("runtime_controller_legacy", "/runtime/controller", methods=["GET"])
     def controller(self, req, **kwargs):
         topology, status = self._topology_status()
         switches = status.get("switches") or []
@@ -434,6 +433,12 @@ class RuntimeNetworkController(ControllerBase):
                    "resilience_status": "ready" if ready else "degraded",
                    "last_seen": now_utc(), "last_error": None if topology else "TopologyMonitor unavailable"}
         return json_response(payload, status=200 if topology else 503)
+
+    @api_auth_required
+    @route("runtime_controller_legacy", "/runtime/controller", methods=["GET"])
+    def controller_legacy(self, req, **kwargs):
+        """Compatibility alias for clients using the original runtime path."""
+        return self.controller(req, **kwargs)
 
     @api_auth_required
     @route("runtime_topology", "/runtime/topology", methods=["GET"])
@@ -794,7 +799,6 @@ class RuntimeNetworkController(ControllerBase):
 
     @api_auth_required
     @route("runtime_clff", "/controller/clff", methods=["GET"])
-    @route("runtime_clff_legacy", "/runtime/clff", methods=["GET"])
     def clff(self, req, **kwargs):
         topology, status = self._topology_status()
         ready = bool(topology is not None and status.get("clff_ready", True))
@@ -810,8 +814,13 @@ class RuntimeNetworkController(ControllerBase):
         return json_response(result)
 
     @api_auth_required
+    @route("runtime_clff_legacy", "/runtime/clff", methods=["GET"])
+    def clff_legacy(self, req, **kwargs):
+        """Compatibility alias for clients using the original runtime path."""
+        return self.clff(req, **kwargs)
+
+    @api_auth_required
     @route("runtime_resilience", "/controller/resilience", methods=["GET"])
-    @route("runtime_resilience_legacy", "/runtime/resilience", methods=["GET"])
     def resilience(self, req, **kwargs):
         service = self._resilience()
         result = _call(service, ["get_status"], {}) or {}
@@ -820,6 +829,12 @@ class RuntimeNetworkController(ControllerBase):
                               "recovery_count": result.get("recovery_count", 0),
                               "last_event_at": result.get("last_event_at"), "last_recovery": result.get("last_recovery"),
                               "last_event": result.get("last_event"), "last_error": None if service else "ResilienceEngine unavailable"})
+
+    @api_auth_required
+    @route("runtime_resilience_legacy", "/runtime/resilience", methods=["GET"])
+    def resilience_legacy(self, req, **kwargs):
+        """Compatibility alias for clients using the original runtime path."""
+        return self.resilience(req, **kwargs)
 
 
 class RuntimeNetworkApi(app_manager.RyuApp):
