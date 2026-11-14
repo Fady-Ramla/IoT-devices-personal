@@ -467,7 +467,16 @@ curl -s "$API/topology/paths?source=h21&destination=h2"
 curl -s "$API/topology/hosts/h2/path?source=h21"
 ```
 
-بعد link isolation كرري نفس الأمر وقارني `nodes` و`links`. يجب أن يتغير المسار إذا كان الـ failed link مستخدمًا في المسار الأصلي.
+اتركي traffic مستمرًا قبل العزل، ثم افحصي المسار على نفس endpoint:
+
+```bash
+curl -s "$API/topology/paths?source=h27&destination=h28" | python3 -m json.tool
+curl -s "$API/topology/hosts/h28/path?source=h27" | python3 -m json.tool
+```
+
+الرد قد يحتوي `path_source=installed_flow` عندما يكون المسار مأخوذًا من flow فعلي، أو `computed=true` عندما لا يوجد flow متتبع. حقل `history` داخل نفس الرد يعرض المسار الأول، تغييرات المسار، وأحداث link down/restore مع الوقت والسبب. لا يوجد endpoint جديد.
+
+بعد link isolation ثم restore كرري الأمرين نفسيهما وقارني `nodes` و`history`. يجب أن يسجل التاريخ حالة الرابط وقت التغيير، والمسار الجديد إذا أعاد الـcontroller توجيه flow متأثرًا. قد يظل flow صحيحًا على مسار backup بعد restore؛ لذلك لا يُشترط الرجوع فورًا إلى أقصر مسار.
 
 ---
 
@@ -562,3 +571,18 @@ recovery event
 | Resilience | TC-12 |
 | Real reroute | TC-14 وTC-15 |
 | Event history | TC-16 |
+
+---
+
+## الحقول الثابتة مقابل المتغيرة
+
+| الحقل / المجموعة | التصنيف | التوضيح |
+|---|---|---|
+| `host_id`, `switch_id`, `dpid`, `ipv4`, `vlan_id` | ثابت/مهيأ | مصدره إعدادات Mininet والطوبولوجيا؛ لا يتغير أثناء التجربة العادية. |
+| `port_no` | مهيأ مع احتمال اختلاف البيئة | قيمة منفذ host من إعدادات/اكتشاف الـcontroller، وليست counter للمرور. |
+| `status`, `controller_seen`, `traffic_active`, `last_seen` | ديناميكي | يعكس حالة الاتصال وآخر رصد حقيقي. `traffic_active` خاص بزيادة عدادات ICMP ping أو نجاح قراءة telemetry، ويعود إلى false بعد انتهاء نافذة النشاط. |
+| `path`, `path_source`, `history`, `active_flows` | ديناميكي | يتأثر بالـflow الفعلي، وتغيّر الروابط، وإعادة التوجيه. `history` يظل داخل الاستجابة الحالية لـ`/topology/paths` أو `/topology/hosts/{host_id}/path`، وليس endpoint منفصلًا. |
+| OpenFlow packet/byte counters | ديناميكي تراكمي | تتغير مع المرور حتى تنتهي/تحذف القاعدة أو يعاد تشغيل الـswitch/controller. |
+| topology links و`isolated_links` | ديناميكي | تتغير عند link down/restore أو العزل/الاستعادة. |
+| telemetry readings و`sequence` و`timestamp` | ديناميكي | تتغير مع كل قراءة جديدة محفوظة؛ طلبات GET تقرأ المخزن ولا تبدأ polling أو ingestion. |
+| resilience events/counters, firewall events, load-balancer counters | ديناميكي | تتغير عند recovery أو security action أو طلب خدمة جديد، على الترتيب. |

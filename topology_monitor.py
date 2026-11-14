@@ -247,6 +247,10 @@ class TopologyMonitor(app_manager.RyuApp):
 
         # Active host-to-host flows (for rerouting).
         self.active_flows = {}
+        # Data-plane path timeline for the dashboard; retained for this
+        # controller run and bounded so repeated experiments cannot grow it forever.
+        self.path_history = []
+        self.path_history_sequence = 0
         self.topology_events = []
         self.congestion_last_reroute = {}
 
@@ -1152,6 +1156,23 @@ class TopologyMonitor(app_manager.RyuApp):
             # Rules built on the old topology may point to dead ports.
             if removed:
                 self._flush_forwarding_flows()
+
+            # Preserve the active data-plane path alongside every link-state
+            # transition. A restore can change the available topology without
+            # moving an already-installed flow back to its former route.
+            link_change = {
+                "added": [list(edge) for edge in sorted(added)],
+                "removed": [list(edge) for edge in sorted(removed)],
+            }
+            for flow_id, flow in list(self.active_flows.items()):
+                if not isinstance(flow, dict) or not flow.get("path"):
+                    continue
+                current_path = list(flow.get("path") or [])
+                self._record_path_history(
+                    flow_id, flow, current_path, current_path,
+                    "link_failure" if removed else "link_restore",
+                    force=True, topology_change=link_change,
+                )
 
         if real_change or became_ready:
             self._refresh_clff()
@@ -2767,7 +2788,10 @@ class TopologyMonitor(app_manager.RyuApp):
                 installed = False
 
             if installed:
-                old_path = flow.get("path")
+                old_path = list(flow.get("path") or [])
+                self._record_path_history(
+                    flow_id, flow, old_path, list(new_path), "link_failure"
+                )
                 flow["path"] = list(new_path)
                 rerouted += 1
                 self.logger.info(
@@ -2793,6 +2817,32 @@ class TopologyMonitor(app_manager.RyuApp):
             "failed": failed
         }
 
+    def _record_path_history(self, flow_id, flow, old_path, new_path, reason,
+                             force=False, topology_change=None):
+        """Append a JSON-safe path observation or route transition."""
+        old_nodes = list(old_path or [])
+        new_nodes = list(new_path or [])
+        if not force and old_nodes == new_nodes:
+            return
+        if not new_nodes and not old_nodes:
+            return
+        self.path_history_sequence += 1
+        entry = {
+            "event_id": "path_%06d" % self.path_history_sequence,
+            "timestamp": time.time(),
+            "source_ip": flow.get("src_ip") if isinstance(flow, dict) else None,
+            "destination_ip": flow.get("dst_ip") if isinstance(flow, dict) else None,
+            "vlan_id": flow.get("vlan_id") if isinstance(flow, dict) else None,
+            "old_path": old_nodes,
+            "new_path": new_nodes,
+            "reason": reason,
+            "path_status": flow.get("path_status", "active") if isinstance(flow, dict) else "active",
+        }
+        if topology_change is not None:
+            entry["topology_change"] = topology_change
+        self.path_history.append(entry)
+        self.path_history[:] = self.path_history[-500:]
+
     def register_active_flow(self, flow_id, flow_data):
         # Attach activity to the logical host flow rather than generic switch
         # counters; the dashboard uses this timestamp with the flow path.
@@ -2804,6 +2854,7 @@ class TopologyMonitor(app_manager.RyuApp):
         src_ip = flow_data.get("src_ip") if isinstance(flow_data, dict) else None
         dst_ip = flow_data.get("dst_ip") if isinstance(flow_data, dict) else None
         vlan_id = flow_data.get("vlan_id") if isinstance(flow_data, dict) else None
+        previous_flow = self.active_flows.get(flow_id)
         if src_ip and dst_ip and vlan_id is not None:
             for existing_id, existing in list(self.active_flows.items()):
                 if existing_id == flow_id or not isinstance(existing, dict):
@@ -2819,7 +2870,16 @@ class TopologyMonitor(app_manager.RyuApp):
                     for field in ("ip_proto", "icmp_type"):
                         if field not in flow_data and field in existing:
                             flow_data[field] = existing[field]
+                    if previous_flow is None:
+                        previous_flow = existing
                     self.active_flows.pop(existing_id, None)
+        old_path = list(previous_flow.get("path") or []) if isinstance(previous_flow, dict) else []
+        new_path = list(flow_data.get("path") or []) if isinstance(flow_data, dict) else []
+        if new_path:
+            self._record_path_history(
+                flow_id, flow_data, old_path, new_path,
+                "forwarding_update" if old_path else "flow_observed",
+            )
         self.active_flows[flow_id] = flow_data
 
     def remove_active_flow(self, flow_id):
@@ -2911,6 +2971,10 @@ class TopologyMonitor(app_manager.RyuApp):
             item.pop("dst_mac", None)
             result.append(item)
         return result
+
+    def get_path_history(self):
+        """Return the bounded, chronological path and topology-change history."""
+        return [dict(event) for event in self.path_history]
 
     def get_graph(self):
         return self.graph.copy()

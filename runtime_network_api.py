@@ -236,6 +236,84 @@ def _graph_path(topology, source, destination):
             "computed": True, "last_updated": now_utc()}
 
 
+def _active_flow_path(topology, source, destination):
+    """Return the installed route for a matching flow, if it is tracked."""
+    if topology is None or not source or not destination:
+        return None
+    source_ip = HOST_IPS.get(source, source)
+    destination_ip = HOST_IPS.get(destination, destination)
+    flows = _call(topology, ["get_active_flow_paths"], []) or []
+    if not isinstance(flows, list):
+        return None
+    for flow in flows:
+        if not isinstance(flow, dict):
+            continue
+        if (str(flow.get("src_ip", "")) != str(source_ip)
+                or str(flow.get("dst_ip", "")) != str(destination_ip)):
+            continue
+        nodes = flow.get("path")
+        if not isinstance(nodes, (list, tuple)) or not nodes:
+            continue
+        try:
+            path_nodes = [int(node) for node in nodes]
+        except (TypeError, ValueError):
+            continue
+        observed_links = _call(topology, ["get_links"], []) or []
+        path_links = []
+        for left, right in zip(path_nodes, path_nodes[1:]):
+            link = next((row for row in observed_links
+                         if isinstance(row, dict)
+                         and int(row.get("src_dpid", -1)) == left
+                         and int(row.get("dst_dpid", -1)) == right), None)
+            if link is None:
+                link = next((row for row in observed_links
+                             if isinstance(row, dict)
+                             and int(row.get("src_dpid", -1)) == right
+                             and int(row.get("dst_dpid", -1)) == left), None)
+            if link is not None:
+                path_links.append(link)
+        return {
+            "source": source,
+            "destination": destination,
+            "source_ip": source_ip,
+            "destination_ip": destination_ip,
+            "nodes": path_nodes,
+            "status": flow.get("path_status", "active"),
+            "links": path_links,
+            "isolated_links": [],
+            "computed": False,
+            "path_source": "installed_flow",
+            "last_updated": now_utc(),
+        }
+    return None
+
+
+def _path_history(topology, source=None, destination=None, host_id=None, limit=50):
+    """Select history records for an existing path/host response."""
+    records = _call(topology, ["get_path_history"], []) if topology is not None else []
+    if not isinstance(records, list):
+        return []
+    source_ip = HOST_IPS.get(source, source) if source else None
+    destination_ip = HOST_IPS.get(destination, destination) if destination else None
+    host_ip = HOST_IPS.get(host_id, host_id) if host_id else None
+    selected = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        if source_ip and str(record.get("source_ip", "")) != str(source_ip):
+            continue
+        if destination_ip and str(record.get("destination_ip", "")) != str(destination_ip):
+            continue
+        if host_ip and host_ip not in (record.get("source_ip"), record.get("destination_ip")):
+            continue
+        item = dict(record)
+        stamp = _parse_utc_timestamp(item.get("timestamp"))
+        if stamp is not None:
+            item["timestamp"] = stamp.isoformat().replace("+00:00", "Z")
+        selected.append(item)
+    return selected[-max(1, min(500, int(limit))):]
+
+
 class StatsCache:
     """Non-blocking OpenFlow stats cache.
 
@@ -600,6 +678,19 @@ class RuntimeNetworkController(ControllerBase):
             telemetry_active = telemetry_record is not None
             host_active = bool(telemetry_active or ping_active)
             raw_flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
+            raw_flows = list(raw_flows)
+            tracked_flows = _call(topology, ["get_active_flow_paths"], []) if topology else []
+            if isinstance(tracked_flows, list):
+                for flow in tracked_flows:
+                    if not isinstance(flow, dict):
+                        continue
+                    if HOST_IPS[host_id] not in (flow.get("src_ip"), flow.get("dst_ip")):
+                        continue
+                    if not any(existing.get("src_ip") == flow.get("src_ip")
+                               and existing.get("dst_ip") == flow.get("dst_ip")
+                               and existing.get("vlan_id") == flow.get("vlan_id")
+                               for existing in raw_flows if isinstance(existing, dict)):
+                        raw_flows.append(flow)
             flows = []
             if ping_active:
                 for flow in raw_flows:
@@ -656,6 +747,7 @@ class RuntimeNetworkController(ControllerBase):
                            "last_seen": item.get("last_seen"),
                            "last_traffic_at": last_traffic_at,
                            "active_flows": flows,
+                           "path_history": _path_history(topology, host_id=host_id, limit=20),
                            "path": primary_flow.get("path", telemetry_path_nodes or fallback_path.get("nodes", [])),
                            "path_type": (primary_flow.get("path_type")
                                          or fallback_path.get("path_type")
@@ -834,18 +926,52 @@ class RuntimeNetworkController(ControllerBase):
         topology, _ = self._topology_status()
         source = req.GET.get("source") or req.GET.get("src")
         destination = req.GET.get("destination") or req.GET.get("dst")
+        active_path = _active_flow_path(topology, source, destination)
+        if active_path is not None:
+            active_path["history"] = _path_history(topology, source, destination)
+            return json_response([active_path])
         computed = _graph_path(topology, source, destination)
         if computed is not None:
+            computed["history"] = _path_history(topology, source, destination)
             return json_response([computed])
         provider_paths = _call(topology, ["get_host_paths", "get_paths"], None) if topology is not None else None
         if isinstance(provider_paths, dict):
-            return json_response(list(provider_paths.values()))
+            provider_paths = list(provider_paths.values())
         if isinstance(provider_paths, list):
-            return json_response(provider_paths)
+            enriched = []
+            for record in provider_paths:
+                if not isinstance(record, dict):
+                    continue
+                item = dict(record)
+                item["history"] = _path_history(
+                    topology,
+                    source or item.get("source") or item.get("src_ip"),
+                    destination or item.get("destination") or item.get("dst_ip"),
+                )
+                enriched.append(item)
+            return json_response(enriched)
         active_flow_paths = _call(topology, ["get_active_flow_paths"], None) if topology is not None else None
         if isinstance(active_flow_paths, list) and active_flow_paths:
-            return json_response(active_flow_paths)
-        return json_response(list(self.paths.values()))
+            enriched = []
+            for record in active_flow_paths:
+                if not isinstance(record, dict):
+                    continue
+                item = dict(record)
+                item["history"] = _path_history(
+                    topology,
+                    source or item.get("source") or item.get("src_ip"),
+                    destination or item.get("destination") or item.get("dst_ip"),
+                )
+                enriched.append(item)
+            return json_response(enriched)
+        saved_paths = []
+        for record in self.paths.values():
+            if not isinstance(record, dict):
+                continue
+            item = dict(record)
+            item["history"] = _path_history(topology, source, destination)
+            saved_paths.append(item)
+        return json_response(saved_paths)
 
     @api_auth_required
     @route("host_path", "/topology/hosts/{host_id}/path", methods=["GET"])
@@ -853,15 +979,25 @@ class RuntimeNetworkController(ControllerBase):
         topology, _ = self._topology_status()
         source = req.GET.get("source") or req.GET.get("src")
         destination = req.GET.get("destination") or req.GET.get("dst") or host_id
+        active_path = _active_flow_path(topology, source, destination)
+        if active_path is not None:
+            active_path["host_id"] = host_id
+            active_path["history"] = _path_history(topology, source, destination)
+            return json_response(active_path)
         computed = _graph_path(topology, source, destination)
         if computed is not None:
+            computed["history"] = _path_history(topology, source, destination)
             return json_response(computed)
         provider_paths = _call(topology, ["get_host_paths", "get_paths"], None) if topology is not None else None
         if isinstance(provider_paths, dict) and host_id in provider_paths:
-            return json_response(provider_paths[host_id])
+            record = dict(provider_paths[host_id])
+            record["history"] = _path_history(topology, source, destination, host_id)
+            return json_response(record)
         if host_id in self.paths:
-            return json_response(self.paths[host_id])
-        return json_response({"host_id": host_id, "path": [], "status": "not_observed"})
+            record = dict(self.paths[host_id])
+            record["history"] = _path_history(topology, source, destination, host_id)
+            return json_response(record)
+        return json_response({"host_id": host_id, "path": [], "history": _path_history(topology, host_id=host_id), "status": "not_observed"})
 
     @api_auth_required
     @route("network_events", "/network/events", methods=["GET"])
