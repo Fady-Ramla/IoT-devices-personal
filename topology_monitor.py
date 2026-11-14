@@ -95,6 +95,7 @@ VLAN_PORT_MAP_FILE = Path(os.getenv(
     str(Path(__file__).resolve().parent / "New_Datasets" / "config" / "vlan_port_map.json"),
 ))
 OFPVID_PRESENT = 0x1000
+OFPVID_NONE = 0x0000
 VLAN_PORT_MAP_POLL_INTERVAL = 1
 
 NORMAL_PRIORITY = 10
@@ -2178,6 +2179,7 @@ class TopologyMonitor(app_manager.RyuApp):
     def _install_direction(self, path, eth_src, eth_dst, final_port, vlan_id,
                            extra_match=None, priority=REROUTE_PRIORITY,
                            track_key=None):
+        """Match untagged access ingress and VLAN-tagged trunk ingress."""
 
         hops = []
         src_loc = self.host_location.get(eth_src)
@@ -2217,7 +2219,11 @@ class TopologyMonitor(app_manager.RyuApp):
                 "in_port": in_port,
                 "eth_src": eth_src,
                 "eth_dst": eth_dst,
-                "vlan_vid": OFPVID_PRESENT | vlan_id,
+                "vlan_vid": (
+                    OFPVID_PRESENT | vlan_id
+                    if self.vlan_port_map[(int(dpid), int(in_port))]["kind"] == "trunk"
+                    else OFPVID_NONE
+                ),
             }
             match_fields.update(extra_match or {})
             match = parser.OFPMatch(**match_fields)
