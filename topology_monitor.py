@@ -47,6 +47,7 @@ from ryu.lib.packet import (
     packet,
     ethernet,
     arp,
+    icmp,
     ipv4,
     ipv6,
     tcp,
@@ -98,6 +99,7 @@ VLAN_PORT_MAP_POLL_INTERVAL = 1
 
 NORMAL_PRIORITY = 10
 REROUTE_PRIORITY = 100
+ACTIVITY_TRACK_PRIORITY = 110
 DEVICE_BLOCK_PRIORITY = 50000
 
 HOST_FLOW_IDLE_TIMEOUT = 30
@@ -209,12 +211,11 @@ class TopologyMonitor(app_manager.RyuApp):
         # edge -> ((dpid_a, port_a), (dpid_b, port_b))
         self.isolated_link_ports = {}
 
-        # PortStats samples used by traffic-aware path selection.
+        # PortStats samples used by link-utilization path selection.
         self.port_stats_previous = {}
-        # Recent endpoint activity and per-switch forwarding-flow counters.
-        # Flow counters exclude LLDP/controller traffic and include path hops.
-        self.host_traffic_last_seen = {}
+        # Recent ICMP echo counters for the public traffic_active signal.
         self.switch_traffic_last_seen = {}
+        self.ping_traffic_last_seen = {}
         self.flow_stats_previous = {}
 
         # Topology state.
@@ -623,7 +624,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPPortStatsReply, MAIN_DISPATCHER)
     def port_stats_reply_handler(self, ev):
-        """Track endpoint traffic and convert link deltas to utilization."""
+        """Convert inter-switch port counter deltas to link utilization."""
         dpid = ev.msg.datapath.id
         now = time.time()
 
@@ -633,15 +634,6 @@ class TopologyMonitor(app_manager.RyuApp):
             key = (dpid, port_no)
             previous = self.port_stats_previous.get(key)
             self.port_stats_previous[key] = (counter, now)
-
-            entry = self.vlan_port_map.get(key, {})
-            if (previous is not None
-                    and entry.get("kind") == "access"
-                    and entry.get("role") == "endpoint"):
-                old_counter, old_time = previous
-                if counter > old_counter and now > old_time:
-                    self.switch_traffic_last_seen[dpid] = now
-                    self.host_traffic_last_seen[key] = now
 
             peer = self.port_to_link.get((dpid, port_no))
 
@@ -678,12 +670,12 @@ class TopologyMonitor(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def flow_stats_reply_handler(self, ev):
-        """Mark switches active only when forwarding-flow counters increase."""
+        """Mark switches active only when tracked ICMP echo counters increase."""
         dpid = int(ev.msg.datapath.id)
         now = time.time()
         for stat in ev.msg.body:
             priority = int(getattr(stat, "priority", 0))
-            if priority <= NORMAL_PRIORITY:
+            if priority != ACTIVITY_TRACK_PRIORITY:
                 continue
             key = (
                 dpid,
@@ -701,6 +693,15 @@ class TopologyMonitor(app_manager.RyuApp):
                     and byte_count >= previous[1]
                     and (packets > previous[0] or byte_count > previous[1])):
                 self.switch_traffic_last_seen[dpid] = now
+                match = getattr(stat, "match", {})
+                try:
+                    src_ip = match.get("ipv4_src")
+                    dst_ip = match.get("ipv4_dst")
+                except (AttributeError, TypeError):
+                    src_ip = dst_ip = None
+                for host_ip in (src_ip, dst_ip):
+                    if host_ip:
+                        self.ping_traffic_last_seen[str(host_ip)] = now
 
         # OpenFlow rules expire, so discard snapshots for rules not observed
         # recently to keep this map bounded during long-running experiments.
@@ -1698,15 +1699,15 @@ class TopologyMonitor(app_manager.RyuApp):
         return True
 
     def _observe_ipv4_flow(self, dpid, in_port, src_mac, pkt, vlan_id):
-        """Register source-host IPv4 traffic, excluding LB health probes."""
+        """Register ordinary IPv4 paths and install ICMP activity rules."""
         ip_pkt = pkt.get_protocol(ipv4.ipv4)
         if ip_pkt is None:
             return
 
         tcp_pkt = pkt.get_protocol(tcp.tcp)
-        # The topology's backend health checker probes every IoT endpoint on
-        # TCP/8081 from the services host. It is operational monitoring, not
-        # application traffic, so it must not activate the probed host.
+        # Do not register the Web/API sensor poll as a generic reroute flow.
+        # Successful telemetry is surfaced from SQLite by the API; this avoids
+        # treating an unclassified TCP/8081 connection as arbitrary activity.
         if (ip_pkt.src == "10.10.20.2" and tcp_pkt is not None
                 and int(tcp_pkt.dst_port) == 8081):
             return
@@ -1737,8 +1738,20 @@ class TopologyMonitor(app_manager.RyuApp):
 
         if dst_dpid is None:
             for (candidate_dpid, candidate_port), entry in self.vlan_port_map.items():
-                if (isinstance(entry, dict) and entry.get("role") == "gateway"
-                        and int(entry.get("vlan_id", -1)) == int(vlan_id)):
+                if not isinstance(entry, dict) or entry.get("role") != "gateway":
+                    continue
+                if entry.get("kind") == "trunk":
+                    allowed_vlans = {
+                        int(value) for value in entry.get("allowed_vlans", ())
+                    }
+                    gateway_matches_vlan = int(vlan_id) in allowed_vlans
+                else:
+                    entry_vlan = entry.get("vlan_id")
+                    gateway_matches_vlan = (
+                        entry_vlan is not None
+                        and int(entry_vlan) == int(vlan_id)
+                    )
+                if gateway_matches_vlan:
                     dst_dpid = int(candidate_dpid)
                     gateway_loc = (int(candidate_dpid), int(candidate_port))
                     break
@@ -1752,6 +1765,25 @@ class TopologyMonitor(app_manager.RyuApp):
                 path_type = (
                     "gateway" if gateway_loc is not None
                     else ("same_switch" if len(path) == 1 else "inter_switch")
+                )
+
+        icmp_pkt = pkt.get_protocol(icmp.icmp)
+        icmp_type = getattr(icmp_pkt, "type", None) if icmp_pkt is not None else None
+        if icmp_type is not None and int(icmp_pkt.type) == 8 and path:
+            destination_location = gateway_loc or dst_loc
+            if destination_location is not None:
+                self._install_direction(
+                    path, src_mac, dst_mac, destination_location[1], vlan_id,
+                    extra_match={
+                        "eth_type": 0x0800,
+                        "ip_proto": 1,
+                        "ipv4_src": ip_pkt.src,
+                        "ipv4_dst": ip_pkt.dst,
+                        "icmpv4_type": 8,
+                    },
+                    priority=ACTIVITY_TRACK_PRIORITY,
+                    track_key=("activity-icmp-echo", int(vlan_id), src_mac,
+                               dst_mac, ip_pkt.src, ip_pkt.dst),
                 )
 
         if any(isinstance(flow, dict) and flow.get("src_mac") == src_mac
@@ -1770,6 +1802,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 "vlan_id": int(vlan_id),
                 "src_ip": ip_pkt.src,
                 "dst_ip": ip_pkt.dst,
+                "ip_proto": int(ip_pkt.proto),
+                "icmp_type": int(icmp_pkt.type) if icmp_pkt is not None else None,
                 "path": path,
                 "path_type": path_type,
                 "path_status": "active",
@@ -2141,7 +2175,9 @@ class TopologyMonitor(app_manager.RyuApp):
 
         return True
 
-    def _install_direction(self, path, eth_src, eth_dst, final_port, vlan_id):
+    def _install_direction(self, path, eth_src, eth_dst, final_port, vlan_id,
+                           extra_match=None, priority=REROUTE_PRIORITY,
+                           track_key=None):
 
         hops = []
         src_loc = self.host_location.get(eth_src)
@@ -2177,17 +2213,22 @@ class TopologyMonitor(app_manager.RyuApp):
                     "Cannot install VLAN %d path on s%d:%d -> %d",
                     vlan_id, dpid, in_port, out_port)
                 return False
-            match = parser.OFPMatch(
-                in_port=in_port, eth_src=eth_src, eth_dst=eth_dst,
-                vlan_vid=OFPVID_PRESENT | vlan_id)
+            match_fields = {
+                "in_port": in_port,
+                "eth_src": eth_src,
+                "eth_dst": eth_dst,
+                "vlan_vid": OFPVID_PRESENT | vlan_id,
+            }
+            match_fields.update(extra_match or {})
+            match = parser.OFPMatch(**match_fields)
             flow_rules.append((datapath, match, actions))
 
         for datapath, match, actions in flow_rules:
             self._add_flow(
-                datapath, REROUTE_PRIORITY, match, actions,
+                datapath, priority, match, actions,
                 idle_timeout=HOST_FLOW_IDLE_TIMEOUT,
                 hard_timeout=HOST_FLOW_HARD_TIMEOUT,
-                track_key=("path", vlan_id, eth_src, eth_dst))
+                track_key=track_key or ("path", vlan_id, eth_src, eth_dst))
 
         return True
 
@@ -2769,6 +2810,9 @@ class TopologyMonitor(app_manager.RyuApp):
                     if (existing.get("destination_type") == "gateway"
                             and flow_data.get("destination_type") != "gateway"):
                         return
+                    for field in ("ip_proto", "icmp_type"):
+                        if field not in flow_data and field in existing:
+                            flow_data[field] = existing[field]
                     self.active_flows.pop(existing_id, None)
         self.active_flows[flow_id] = flow_data
 

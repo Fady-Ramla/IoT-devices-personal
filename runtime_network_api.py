@@ -50,16 +50,39 @@ EXPECTED_INTER_SWITCH_LINKS = len(_topology_config.INTER_SWITCH_LINKS)
 LOAD_BALANCER_CONFIG = dict(_topology_config.LOAD_BALANCER)
 SERVICE_PAIRS = dict(_topology_config.SERVICE_PAIRS)
 LOAD_BALANCER_IP = HOST_IPS.get(LOAD_BALANCER_CONFIG.get("host"), "unknown")
-# Forwarding-flow counters are sampled every five seconds. Keep activity
-# visible across one sample interval and short scheduling jitter; expire it
-# after eight quiet seconds, not at exact OpenFlow rule deletion time.
+# ICMP activity counters are sampled every five seconds. Keep activity visible
+# across one sample interval and short scheduling jitter; expire after eight
+# quiet seconds, not at exact OpenFlow rule deletion time.
 TRAFFIC_ACTIVE_WINDOW = max(
     8.0, float(os.getenv("SECUREIOT_TRAFFIC_ACTIVE_WINDOW", "8"))
 )
+TELEMETRY_ACTIVE_WINDOW = max(15.0, TRAFFIC_ACTIVE_WINDOW)
 
 
 def now_utc():
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc_timestamp(value):
+    try:
+        text = str(value).strip()
+        try:
+            stamp = datetime.fromtimestamp(float(text), tz=timezone.utc)
+        except ValueError:
+            stamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+        return stamp.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _timestamp_is_recent(value, max_age_seconds, now=None):
+    stamp = _parse_utc_timestamp(value)
+    if stamp is None:
+        return False
+    age = ((now or datetime.now(timezone.utc)) - stamp).total_seconds()
+    return 0 <= age <= float(max_age_seconds)
 
 
 def json_response(payload, status=200):
@@ -165,10 +188,28 @@ def _graph_path(topology, source, destination):
     graph = _call(topology, ["get_operational_graph", "get_graph"], None)
     if src is None or dst is None or graph is None:
         return None
+    cross_vlan = HOST_VLANS.get(source) != HOST_VLANS.get(destination)
     try:
         import networkx as nx
-        nodes = nx.shortest_path(graph, src, dst)
+        if cross_vlan:
+            port_map = getattr(topology, "vlan_port_map", {})
+            gateway_dpids = {
+                int(key[0]) for key, entry in port_map.items()
+                if isinstance(key, tuple) and len(key) == 2
+                and isinstance(entry, dict) and entry.get("role") == "gateway"
+            } if isinstance(port_map, dict) else set()
+            gateway = next(iter(gateway_dpids)) if len(gateway_dpids) == 1 else SWITCH_DPIDS.get("s3")
+            if gateway is not None and gateway not in (src, dst):
+                left = nx.shortest_path(graph, src, gateway)
+                right = nx.shortest_path(graph, gateway, dst)
+                nodes = left[:-1] + right
+            else:
+                nodes = nx.shortest_path(graph, src, dst)
+        else:
+            nodes = nx.shortest_path(graph, src, dst)
     except Exception:
+        if cross_vlan:
+            return None
         try:
             nodes = graph.shortest_path(src, dst)
         except Exception:
@@ -315,28 +356,52 @@ class RuntimeNetworkController(ControllerBase):
         topology = self._topology()
         return topology, (_call(topology, ["get_topology_status"], {}) or {})
 
-    def _traffic_dpids(self):
-        """Return switches on recently observed host-to-host flow paths.
-
-        Do not use switch-wide counters here: LLDP, gateway traffic, and
-        controller housekeeping can make every switch look active.
-        """
-        active = set()
+    def _traffic_activity(self):
+        """Map active switch DPIDs to the latest ping/poll timestamp."""
+        activity = {}
         topology = self._topology()
-        now = time.time()
-        flows = getattr(topology, "active_flows", {}) if topology is not None else {}
-        if isinstance(flows, dict):
-            for flow in flows.values():
-                if not isinstance(flow, dict) or flow.get("path_status", "active") != "active":
-                    continue
+        ping_activity = getattr(topology, "switch_traffic_last_seen", {}) if topology is not None else {}
+        if isinstance(ping_activity, dict):
+            now = time.time()
+            for dpid, observed_at in ping_activity.items():
                 try:
-                    if now - float(flow.get("last_seen", 0)) > TRAFFIC_ACTIVE_WINDOW:
-                        continue
-                    active.update(int(dpid) for dpid in (flow.get("path") or []))
-                except (TypeError, ValueError):
+                    if now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW:
+                        activity[int(dpid)] = datetime.fromtimestamp(
+                            float(observed_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                except (TypeError, ValueError, OSError):
                     continue
-            return active
-        return active
+
+        # A fresh SQLite sample proves that the private sensor GET succeeded.
+        # Mark only the current operational path from the polling API host to
+        # that sensor; generic flows and unrelated counters do not qualify.
+        try:
+            devices = self.iot_store.devices()
+        except Exception:
+            devices = []
+        for device in devices:
+            if not isinstance(device, dict):
+                continue
+            host_id = str(device.get("device_id", ""))
+            if host_id not in HOSTS or HOST_VLANS.get(host_id) != 10:
+                continue
+            if not _timestamp_is_recent(device.get("last_seen"), TELEMETRY_ACTIVE_WINDOW):
+                continue
+            path = _graph_path(topology, "h2", host_id)
+            if isinstance(path, dict):
+                seen = _parse_utc_timestamp(device.get("last_seen"))
+                if seen is None:
+                    continue
+                timestamp = seen.isoformat().replace("+00:00", "Z")
+                for dpid in path.get("nodes", []):
+                    dpid = int(dpid)
+                    current = _parse_utc_timestamp(activity.get(dpid))
+                    if current is None or seen > current:
+                        activity[dpid] = timestamp
+        return activity
+
+    def _traffic_dpids(self):
+        """Compatibility helper returning switches with scoped recent activity."""
+        return set(self._traffic_activity())
 
     def _collect_active_dpids(self, value, active):
         if isinstance(value, dict):
@@ -437,7 +502,8 @@ class RuntimeNetworkController(ControllerBase):
         by_dpid = {int(x.get("dpid")): x for x in observed if isinstance(x, dict) and str(x.get("dpid", "")).isdigit()}
         datapaths = getattr(topology, "datapaths", {}) if topology is not None else {}
         port_desc = getattr(topology, "port_desc", {}) if topology is not None else {}
-        active_dpids = self._traffic_dpids()
+        activity = self._traffic_activity()
+        active_dpids = set(activity)
         result = []
         for name, dpid in SWITCH_DPIDS.items():
             item = dict(by_dpid.get(dpid, {}))
@@ -455,8 +521,7 @@ class RuntimeNetworkController(ControllerBase):
                            "status": item.get("status", "up" if provider_dp is not None else "unknown"),
                            "controller_connected": bool(item.get("controller_connected", provider_dp is not None)),
                            "traffic_active": dpid in active_dpids,
-                           "last_traffic_at": (item.get("last_traffic_at")
-                                                if dpid in active_dpids else None)}))
+                           "last_traffic_at": activity.get(dpid)}))
         return result
 
     @api_auth_required
@@ -505,17 +570,19 @@ class RuntimeNetworkController(ControllerBase):
             for ports in access_ports.values():
                 ports.sort()
         datapaths = getattr(topology, "datapaths", {}) if topology is not None else {}
-        host_activity = getattr(topology, "host_traffic_last_seen", {}) if topology is not None else {}
+        ping_activity = getattr(topology, "ping_traffic_last_seen", {}) if topology is not None else {}
         now = time.time()
-        telemetry_online = set()
+        telemetry_by_device = {}
         try:
-            telemetry_online = {
-                str(device.get("device_id"))
-                for device in self.iot_store.devices()
-                if isinstance(device, dict) and device.get("status") == "online"
-            }
+            for device in self.iot_store.devices():
+                if not isinstance(device, dict):
+                    continue
+                device_id = str(device.get("device_id", ""))
+                if (device_id in HOSTS and HOST_VLANS.get(device_id) == 10
+                        and _timestamp_is_recent(device.get("last_seen"), TELEMETRY_ACTIVE_WINDOW)):
+                    telemetry_by_device[device_id] = device
         except Exception:
-            telemetry_online = set()
+            telemetry_by_device = {}
         for host_id in sorted(HOST_SWITCHES, key=lambda x: int(x[1:])):
             observed_row = observed_by_ip.get(HOST_IPS[host_id])
             item = dict(observed_row[1]) if observed_row else {}
@@ -524,26 +591,59 @@ class RuntimeNetworkController(ControllerBase):
             host_index = sum(1 for h in HOST_SWITCHES if HOST_SWITCHES[h] == HOST_SWITCHES[host_id] and int(h[1:]) < int(host_id[1:]))
             provider_port = (access_ports.get(dpid) or [])[host_index % len(access_ports.get(dpid, [1]))] if access_ports.get(dpid) else 1 + (host_index % 48)
             port_no = int(item.get("port") or item.get("port_no") or provider_port)
-            observed_at = host_activity.get((dpid, port_no)) if isinstance(host_activity, dict) else None
-            host_active = False
-            if observed_at is not None:
-                try:
-                    host_active = now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW
-                except (TypeError, ValueError):
-                    host_active = False
-            flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
-            if not host_active:
-                flows = []
-            flow_active = bool(flows)
-            telemetry_active = host_id in telemetry_online
-            # Port counters alone include ARP and load-balancer health checks.
-            # A host is active for this endpoint only when that recent traffic
-            # is corroborated by fresh telemetry or a registered flow.
-            host_active = bool(host_active and (telemetry_active or flow_active))
-            if not host_active:
-                flows = []
+            ping_seen = ping_activity.get(HOST_IPS[host_id]) if isinstance(ping_activity, dict) else None
+            try:
+                ping_active = ping_seen is not None and 0 <= now - float(ping_seen) <= TRAFFIC_ACTIVE_WINDOW
+            except (TypeError, ValueError):
+                ping_active = False
+            telemetry_record = telemetry_by_device.get(host_id)
+            telemetry_active = telemetry_record is not None
+            host_active = bool(telemetry_active or ping_active)
+            raw_flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
+            flows = []
+            if ping_active:
+                for flow in raw_flows:
+                    if not isinstance(flow, dict):
+                        continue
+                    try:
+                        is_icmp = int(flow.get("ip_proto", -1)) == 1
+                    except (TypeError, ValueError):
+                        is_icmp = False
+                    if not is_icmp:
+                        continue
+                    if HOST_IPS[host_id] not in (flow.get("src_ip"), flow.get("dst_ip")):
+                        continue
+                    ping_flow = dict(flow)
+                    ping_flow["traffic_category"] = "ping"
+                    ping_flow["last_seen"] = datetime.fromtimestamp(
+                        float(ping_seen), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                    flows.append(ping_flow)
+            telemetry_path = _graph_path(topology, "h2", host_id) if telemetry_active else None
+            if telemetry_active:
+                flows.append({
+                    "traffic_category": "telemetry",
+                    "source_host_id": "h2",
+                    "destination_host_id": host_id,
+                    "source_ip": HOST_IPS.get("h2"),
+                    "destination_ip": HOST_IPS.get(host_id),
+                    "protocol": "TCP",
+                    "destination_port": 8081,
+                    "path": telemetry_path.get("nodes", []) if isinstance(telemetry_path, dict) else [],
+                    "path_type": "inter_switch",
+                    "path_status": "active",
+                    "last_seen": telemetry_record.get("last_seen"),
+                    "activity_source": "successful_sensor_poll",
+                })
             primary_flow = flows[0] if flows else {}
             fallback_path = self.paths.get(host_id, {}) if host_active else {}
+            last_traffic_at = (telemetry_record.get("last_seen") if telemetry_active else None)
+            if ping_active:
+                ping_timestamp = datetime.fromtimestamp(
+                    float(ping_seen), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                if (last_traffic_at is None
+                        or _parse_utc_timestamp(ping_timestamp) > _parse_utc_timestamp(last_traffic_at)):
+                    last_traffic_at = ping_timestamp
+            telemetry_path_nodes = telemetry_path.get("nodes", []) if isinstance(telemetry_path, dict) else []
             result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": port_no,
                            # Mininet creates gw before h1, so the default
                            # fallback MAC for h16 is ...:11, not ...:10.
@@ -554,9 +654,9 @@ class RuntimeNetworkController(ControllerBase):
                            "traffic_active": host_active,
                            "telemetry_active": telemetry_active,
                            "last_seen": item.get("last_seen"),
-                           "last_traffic_at": observed_at,
+                           "last_traffic_at": last_traffic_at,
                            "active_flows": flows,
-                           "path": primary_flow.get("path", fallback_path.get("nodes", [])),
+                           "path": primary_flow.get("path", telemetry_path_nodes or fallback_path.get("nodes", [])),
                            "path_type": (primary_flow.get("path_type")
                                          or fallback_path.get("path_type")
                                          or "none"),

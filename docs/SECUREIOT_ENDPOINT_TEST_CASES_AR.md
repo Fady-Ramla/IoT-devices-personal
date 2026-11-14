@@ -122,10 +122,10 @@ HTTP 200
 
 ---
 
-## TC-04 — Flow counters وSwitch traffic activity
+## TC-04 — Telemetry / ICMP-only Switch traffic activity
 
 ### الهدف
-التأكد أن counters و`traffic_active` تتغير مع traffic حقيقي.
+التأكد أن `traffic_active` يعكس نجاح telemetry وICMP ping فقط، ولا يتفعّل بسبب TCP/HTTP عادي أو port counters عامة.
 
 ### التنفيذ
 
@@ -147,10 +147,10 @@ curl -s "$API/topology/switches"
 
 ### النجاح المتوقع
 
-- `packet_count` أو `byte_count` يزيدان.
-- `timestamp` جديد.
-- أثناء استمرار الـping وزيادة counters، تعرض switches الموجودة على المسار `traffic_active: true`.
-- بعد توقف الـtraffic وعدم زيادة counters لمدة 8 ثوانٍ، يرجع `traffic_active: false`.
+- للـping، يزيد عداد قاعدة ICMP echo المخصصة، وتظهر السويتشات على المسار `traffic_active: true` بعد وصول عيّنتين من flow stats (تُطلب كل 5 ثوانٍ).
+- بعد إيقاف ping، ترجع حالة ping إلى `false` خلال 8 ثوانٍ تقريبًا من آخر زيادة مرصودة في العداد.
+- عندما ينجح poller في قراءة حساس IoT، تظهر السويتشات على المسار التشغيلي من h2 عبر الـgateway إلى الحساس `traffic_active: true`. تنتهي الحالة خلال 15 ثانية من آخر قراءة ناجحة.
+- تجربة HTTP عادية لا تفعّل `traffic_active` بمفردها. وطلبات `GET` إلى telemetry endpoints للداشبورد تقرأ SQLite فقط؛ لا تشغّل polling جديدًا.
 
 ---
 
