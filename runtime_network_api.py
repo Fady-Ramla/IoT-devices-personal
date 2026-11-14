@@ -245,19 +245,29 @@ def _active_flow_path(topology, source, destination):
     flows = _call(topology, ["get_active_flow_paths"], []) or []
     if not isinstance(flows, list):
         return None
+    exact_flow = None
+    reverse_flow = None
     for flow in flows:
         if not isinstance(flow, dict):
             continue
-        if (str(flow.get("src_ip", "")) != str(source_ip)
-                or str(flow.get("dst_ip", "")) != str(destination_ip)):
-            continue
+        flow_source = str(flow.get("src_ip", ""))
+        flow_destination = str(flow.get("dst_ip", ""))
+        if flow_source == str(source_ip) and flow_destination == str(destination_ip):
+            exact_flow = exact_flow or flow
+        elif flow_source == str(destination_ip) and flow_destination == str(source_ip):
+            reverse_flow = reverse_flow or flow
+    flow = exact_flow or reverse_flow
+    if flow is not None:
+        is_reverse = exact_flow is None
         nodes = flow.get("path")
         if not isinstance(nodes, (list, tuple)) or not nodes:
-            continue
+            return None
         try:
             path_nodes = [int(node) for node in nodes]
         except (TypeError, ValueError):
-            continue
+            return None
+        if is_reverse:
+            path_nodes.reverse()
         observed_links = _call(topology, ["get_links"], []) or []
         path_links = []
         for left, right in zip(path_nodes, path_nodes[1:]):
@@ -283,6 +293,7 @@ def _active_flow_path(topology, source, destination):
             "isolated_links": [],
             "computed": False,
             "path_source": "installed_flow",
+            "flow_direction": "reverse_observation" if is_reverse else "forward_observation",
             "last_updated": now_utc(),
         }
     return None
@@ -300,13 +311,32 @@ def _path_history(topology, source=None, destination=None, host_id=None, limit=5
     for record in records:
         if not isinstance(record, dict):
             continue
-        if source_ip and str(record.get("source_ip", "")) != str(source_ip):
-            continue
-        if destination_ip and str(record.get("destination_ip", "")) != str(destination_ip):
-            continue
+        reverse_observation = False
+        if source_ip and destination_ip:
+            exact = (str(record.get("source_ip", "")) == str(source_ip)
+                     and str(record.get("destination_ip", "")) == str(destination_ip))
+            reverse_observation = (
+                str(record.get("source_ip", "")) == str(destination_ip)
+                and str(record.get("destination_ip", "")) == str(source_ip)
+            )
+            if not exact and not reverse_observation:
+                continue
+        else:
+            if source_ip and str(record.get("source_ip", "")) != str(source_ip):
+                continue
+            if destination_ip and str(record.get("destination_ip", "")) != str(destination_ip):
+                continue
         if host_ip and host_ip not in (record.get("source_ip"), record.get("destination_ip")):
             continue
         item = dict(record)
+        if reverse_observation:
+            item["observed_source_ip"] = item.get("source_ip")
+            item["observed_destination_ip"] = item.get("destination_ip")
+            item["source_ip"] = source_ip
+            item["destination_ip"] = destination_ip
+            item["old_path"] = list(reversed(item.get("old_path") or []))
+            item["new_path"] = list(reversed(item.get("new_path") or []))
+            item["direction_reversed"] = True
         stamp = _parse_utc_timestamp(item.get("timestamp"))
         if stamp is not None:
             item["timestamp"] = stamp.isoformat().replace("+00:00", "Z")

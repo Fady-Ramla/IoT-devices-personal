@@ -474,7 +474,7 @@ curl -s "$API/topology/paths?source=h27&destination=h28" | python3 -m json.tool
 curl -s "$API/topology/hosts/h28/path?source=h27" | python3 -m json.tool
 ```
 
-الرد قد يحتوي `path_source=installed_flow` عندما يكون المسار مأخوذًا من flow فعلي، أو `computed=true` عندما لا يوجد flow متتبع. حقل `history` داخل نفس الرد يعرض المسار الأول، تغييرات المسار، وأحداث link down/restore مع الوقت والسبب. لا يوجد endpoint جديد.
+الرد قد يحتوي `path_source=installed_flow` عندما يكون المسار مأخوذًا من flow فعلي، أو `computed=true` عندما لا يوجد flow متتبع. إذا كان الـflow المرصود عكس اتجاه الاستعلام، يعكس الـAPI ترتيب الـnodes ويضع `flow_direction=reverse_observation`؛ كما يعرض سجل الحدث `direction_reversed=true` مع حقول توضح الاتجاه المرصود. حقل `history` داخل نفس الرد يعرض المسار الأول، تغييرات المسار، وأحداث link down/restore مع الوقت والسبب. لا يوجد endpoint جديد.
 
 بعد link isolation ثم restore كرري الأمرين نفسيهما وقارني `nodes` و`history`. يجب أن يسجل التاريخ حالة الرابط وقت التغيير، والمسار الجديد إذا أعاد الـcontroller توجيه flow متأثرًا. قد يظل flow صحيحًا على مسار backup بعد restore؛ لذلك لا يُشترط الرجوع فورًا إلى أقصر مسار.
 
