@@ -189,6 +189,10 @@ class TopologyMonitor(app_manager.RyuApp):
 
         # Physical links, sorted tuples.
         self.edges = set()
+        # Recently disconnected links retained for /topology/links.  This is
+        # API history only; routing continues to use graph/operational_graph.
+        self.disconnected_links = set()
+        self.known_link_to_port = {}
 
         # (dpid, port) -> (remote_dpid, remote_port)
         self.port_to_link = {}
@@ -1138,6 +1142,16 @@ class TopologyMonitor(app_manager.RyuApp):
 
         added = new_edges - old_edges
         removed = old_edges - new_edges
+
+        # Keep a disconnected link visible to the runtime API as isolated
+        # until LLDP observes the same physical link again.  Do not add these
+        # links back to either routing graph.
+        for (src, dst), ports in new_link_to_port.items():
+            if src < dst:
+                self.known_link_to_port[(src, dst)] = ports
+        if real_change:
+            self.disconnected_links.update(removed)
+            self.disconnected_links.difference_update(added)
 
         if became_ready and not was_discovered:
             self.logger.info(
@@ -2985,16 +2999,38 @@ class TopologyMonitor(app_manager.RyuApp):
     def get_links(self):
 
         result = []
+        # Keep isolated physical links visible in the API.  They are removed
+        # from the operational graph for CLFF/routing, but remain part of the
+        # discovered physical topology and must be reported as isolated=true.
+        discovered_edges = {
+            tuple(sorted((int(a), int(b))))
+            for a, b in self.graph.edges()
+        }
+        physical_edges = {
+            tuple(sorted((int(a), int(b))))
+            for a, b in self.edges
+        }
+        physical_edges.update(self.disconnected_links)
+        physical_edges.update(discovered_edges)
+        physical_edges.update(self.isolated_links)
 
-        for a, b in self.graph.edges():
+        for a, b in sorted(physical_edges):
             ports = self.link_to_port.get((a, b))
+            if ports is None:
+                ports = self.known_link_to_port.get((a, b))
+            if ports is None:
+                ports = self.isolated_link_ports.get((a, b))
+            isolated = (
+                (a, b) in self.isolated_links
+                or (a, b) in self.disconnected_links
+            )
 
             result.append({
                 "src_dpid": a,
                 "dst_dpid": b,
                 "src_port": ports[0] if ports else None,
                 "dst_port": ports[1] if ports else None,
-                "isolated": tuple(sorted((a, b))) in self.isolated_links,
+                "isolated": isolated,
             })
 
         # LLDP removes administratively isolated links from the physical graph
