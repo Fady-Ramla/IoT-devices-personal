@@ -547,3 +547,172 @@ for dpid in 1 2 3 4 5 6; do
 | IoT | devices, sensors, telemetry | changing readings and last_seen |
 
 `/dataset/run` وAI/trust-score endpoints ليست ضمن Contract Version 2.0-final، لذلك لا تدخل في dashboard network endpoint checklist.
+
+## 16. نتائج الـ audit الفعلية — 16 November 2026
+
+تم التحقق من الـ endpoints المتبقية على branch:
+
+```text
+api-runtime-latest-20261111
+```
+
+### OpenFlow DESC
+
+كل الـ datapaths من `1` إلى `6` أعادوا أولًا:
+
+```text
+HTTP 202
+{"status":"pending","dpid":N}
+```
+
+ثم بعد وصول OpenFlow reply أعادوا:
+
+```text
+HTTP 200
+status = ready
+of_version = 1.3
+```
+
+الـ fallback metadata ظهرت كما هو متوقع للـ virtual datapaths:
+
+```text
+mfr_desc = OpenFlow switch
+hw_desc = virtual-datapath
+sw_desc = Ryu/OpenFlow 1.3
+serial_num = dpid-N
+```
+
+النتيجة: `/stats/desc/{dpid}` من 1 إلى 6 = **PASS**.
+
+### OpenFlow Port Stats
+
+كل الـ datapaths من `1` إلى `6` أعادوا:
+
+```text
+HTTP 200
+status = ready
+```
+
+والـ records تضمنت counters حقيقية:
+
+```text
+port_no
+rx_packets / tx_packets
+rx_bytes / tx_bytes
+rx_dropped / tx_dropped
+rx_errors / tx_errors
+duration_sec
+timestamp
+```
+
+وجود port رقم `4294967294` طبيعي؛ هذا هو OpenFlow `OFPP_LOCAL` pseudo-port ويمكن للـ dashboard إخفاؤه من physical/access-port view.
+
+النتيجة: `/stats/port/{dpid}` من 1 إلى 6 = **PASS**.
+
+### VLAN inventory
+
+من Ubuntu terminal يمكن تنفيذ:
+
+```bash
+curl -sS http://127.0.0.1:8080/network/vlans
+```
+
+أما من داخل Mininet CLI فيجب استخدام `sh`:
+
+```text
+mininet> sh curl -sS http://127.0.0.1:8080/network/vlans
+```
+
+الـ VLANs المرصودة كلها active:
+
+```text
+VLAN 10 — 10.10.10.0/24 — gateway 10.10.10.1
+VLAN 20 — 10.10.20.0/24 — gateway 10.10.20.1
+VLAN 30 — 10.10.30.0/24 — gateway 10.10.30.1
+VLAN 40 — 10.10.40.0/24 — gateway 10.10.40.1
+VLAN 50 — 10.10.50.0/24 — gateway 10.10.50.1
+```
+
+النتيجة: `/network/vlans` = **PASS**.
+
+### VLAN port map
+
+من Mininet:
+
+```text
+mininet> sh curl -sS http://127.0.0.1:8080/network/vlan-ports
+```
+
+تم التحقق من وجود concrete access-port records، مثل:
+
+```json
+{
+  "vlan_id": 10,
+  "switch_id": "s4",
+  "dpid": 4,
+  "port_no": 1,
+  "host_id": "h5",
+  "mode": "access",
+  "status": "configured"
+}
+```
+
+والـ map شمل hosts والبورتات التالية:
+
+```text
+h1-h2 على s1
+h3-h4 وh38 على s2
+h5-h16 على s4
+h17-h27 على s5
+h28-h37 على s6
+```
+
+النتيجة: `/network/vlan-ports` = **PASS**؛ البورتات ليست placeholders أو zero values.
+
+### Dynamic path history
+
+الطلب:
+
+```text
+GET /topology/paths
+```
+
+أعاد active flows مع `path`, `path_type`, `path_status`, `last_seen`, و`history`. الـ history المرصودة تضمنت:
+
+```text
+flow_observed
+link_failure
+forwarding_update
+link_restore
+```
+
+مثال موثق لـ IoT flow:
+
+```text
+قبل failure: [4,3]
+بعد فشل s4-s3: [4,5,3]
+بعد forwarding update أو فشل s4-s5: [4,3]
+بعد restore: path يبقى active مع event link_restore
+```
+
+وجود `old_path`, `new_path`, `reason`, و`topology_change.removed/added` يثبت أن endpoint يعرض path history ديناميكية وليس قيمة ثابتة.
+
+النتيجة: `/topology/paths` وpath history = **PASS**.
+
+### ملاحظة تشغيلية مهمة
+
+الرسالة التالية ليست API failure:
+
+```text
+mininet> curl ...
+*** Unknown command: curl ...
+```
+
+السبب أن Mininet CLI لا ينفذ shell commands مباشرة. استخدمي أحد الشكلين:
+
+```text
+mininet> sh curl -sS http://127.0.0.1:8080/network/vlans
+mininet> h2 curl -sS http://127.0.0.1:8080/network/vlans
+```
+
+أو شغلي `curl` مباشرة من Ubuntu terminal خارج `mininet>`.
