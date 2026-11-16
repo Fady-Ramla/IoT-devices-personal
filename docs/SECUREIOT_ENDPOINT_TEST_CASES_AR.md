@@ -129,28 +129,28 @@ HTTP 200
 
 ### التنفيذ
 
-داخل Mininet:
+داخل Mininet، h27 على s5 وh28 على s6 وفي نفس VLAN. ابدئي ping محدودًا بالخلفية حتى يبقى traffic جاريًا أثناء GET checks:
 
 ```text
-h16 ping -i 0.5 10.10.10.1
+h27 sh -c 'ping -n -i 0.5 -c 40 10.10.50.28 >/tmp/h27_to_h28_ping.log 2>&1 &'
 ```
 
-اتركي الـping مستمرًا أثناء فحص الـendpoints، ثم أوقفيه بـ`Ctrl+C` بعد تسجيل النتيجة.
-
-ثم خارج Mininet:
+من Terminal عادي خارج Mininet، أثناء استمرار الـping:
 
 ```bash
-curl -s "$API/stats/flow/1"
-curl -s "$API/stats/port/1"
-curl -s "$API/topology/switches"
+BASE_URL='https://<your-current-ngrok-host>'
+python3 webtrack_gateway/check_dynamic_endpoints.py "$BASE_URL"
 ```
 
 ### النجاح المتوقع
 
-- للـping، يزيد عداد قاعدة ICMP echo المخصصة، وتظهر السويتشات على المسار `traffic_active: true` بعد وصول عيّنتين من flow stats (تُطلب كل 5 ثوانٍ).
+- للـping، يزيد عداد قاعدة ICMP echo المخصصة، ويظهر h27/h28 والسويتشات على المسار `traffic_active: true` بعد عيّنتي flow stats تقريبًا (poll كل 5 ثوانٍ).
+- `/topology/paths?source=h27&destination=h28` و`/topology/hosts/h28/path?source=h27` يعرضان المسار؛ مع flow فعلي متتبع يظهر `path_source: installed_flow` و`nodes` من DPID 5 إلى DPID 6. رد `computed: true` وحده يثبت graph route ممكنًا، وليس flow متثبتًا.
 - بعد إيقاف ping، ترجع حالة ping إلى `false` خلال 8 ثوانٍ تقريبًا من آخر زيادة مرصودة في العداد.
 - عندما ينجح poller في قراءة حساس IoT، تظهر السويتشات على المسار التشغيلي من h2 عبر الـgateway إلى الحساس `traffic_active: true`. تنتهي الحالة خلال 15 ثانية من آخر قراءة ناجحة.
 - تجربة HTTP عادية لا تفعّل `traffic_active` بمفردها. وطلبات `GET` إلى telemetry endpoints للداشبورد تقرأ SQLite فقط؛ لا تشغّل polling جديدًا.
+
+بعد انتهاء ping المحدود، انتظري 10 ثوانٍ ثم أعيدي `GET /topology/hosts`; ينبغي أن تنتهي حالة `traffic_active` الخاصة بـh27/h28 بعد نافذة النشاط (نحو 8 ثوانٍ بعد آخر delta مرصود). لم يتغير أي VLAN أو link في هذا الاختبار.
 
 ---
 

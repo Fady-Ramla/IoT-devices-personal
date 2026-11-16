@@ -93,13 +93,13 @@ sensor value
 last_seen
 ```
 
-وفي ngrok inspector يجب أن تري dashboard GET requests مثل:
+وفي ngrok inspector يجب أن تري contract GET requests مثل:
 
 ```text
-GET /dashboard/snapshot 200
+GET /api/iot/telemetry?device_id=h16&limit=1 200
 ```
 
-لا يُتوقع telemetry POST عبر ngrok؛ الـ Web/API poller يكتب القراءات مباشرةً إلى SQLite المشتركة.
+لا يُتوقع telemetry POST عبر ngrok؛ الـ Web/API poller يقرأ الحساس عبر GET ويكتب القراءات مباشرةً إلى SQLite المشتركة. عقد الشبكة لا يعرّف `/dashboard/snapshot`.
 
 ## 3. Flow stats: pending ثم ready
 

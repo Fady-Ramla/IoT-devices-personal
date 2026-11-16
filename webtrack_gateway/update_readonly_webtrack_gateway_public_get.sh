@@ -38,8 +38,8 @@ fi
 /usr/bin/python3 -m py_compile "$PROXY_SOURCE"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-PROXY_BACKUP="$INSTALLED_PROXY.before_public_get_$STAMP"
-ENV_BACKUP="$ENV_FILE.before_public_get_$STAMP"
+PROXY_BACKUP="$INSTALLED_PROXY.before_contract_get_$STAMP"
+ENV_BACKUP="$ENV_FILE.before_contract_get_$STAMP"
 cp -a "$INSTALLED_PROXY" "$PROXY_BACKUP"
 cp -a "$ENV_FILE" "$ENV_BACKUP"
 
@@ -63,24 +63,34 @@ if ! systemctl restart "$SERVICE"; then
 fi
 
 sleep 1
-SNAPSHOT_CODE="$(curl -sS -o /tmp/webtrack-public-get-snapshot.json -w '%{http_code}' \
-  --max-time 10 http://127.0.0.1:8090/dashboard/snapshot || true)"
+RUNTIME_CODE="$(curl -sS -o /tmp/webtrack-contract-runtime-health.json -w '%{http_code}' \
+  --max-time 10 http://127.0.0.1:8090/runtime/health || true)"
+IOT_CODE="$(curl -sS -o /tmp/webtrack-contract-iot-telemetry.json -w '%{http_code}' \
+  --max-time 10 'http://127.0.0.1:8090/api/iot/telemetry?limit=1' || true)"
+SNAPSHOT_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+  http://127.0.0.1:8090/dashboard/snapshot || true)"
 POST_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
-  -X POST http://127.0.0.1:8090/dashboard/snapshot || true)"
+  -X POST http://127.0.0.1:8090/api/iot/telemetry || true)"
 CONTROL_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
   http://127.0.0.1:8090/network/action || true)"
+OPTIONS_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 \
+  -X OPTIONS http://127.0.0.1:8090/runtime/health || true)"
 
-if [[ "$SNAPSHOT_CODE" != "200" && "$SNAPSHOT_CODE" != "502" ]] \
-  || [[ "$POST_CODE" != "405" ]] || [[ "$CONTROL_CODE" != "404" ]]; then
-  echo "Gateway contract check failed (snapshot=$SNAPSHOT_CODE POST=$POST_CODE control_GET=$CONTROL_CODE); rolling back." >&2
+if [[ "$RUNTIME_CODE" != "200" && "$RUNTIME_CODE" != "502" ]] \
+  || [[ "$IOT_CODE" != "200" && "$IOT_CODE" != "502" ]] \
+  || [[ "$SNAPSHOT_CODE" != "404" ]] || [[ "$POST_CODE" != "405" ]] \
+  || [[ "$CONTROL_CODE" != "404" ]] || [[ "$OPTIONS_CODE" != "204" ]]; then
+  echo "Gateway contract check failed (runtime=$RUNTIME_CODE IoT=$IOT_CODE snapshot=$SNAPSHOT_CODE POST=$POST_CODE control_GET=$CONTROL_CODE OPTIONS=$OPTIONS_CODE); rolling back." >&2
   rollback
   exit 7
 fi
 
-printf 'Public GET gateway update applied. No client bearer token is required.\n'
-printf 'Checks: GET /dashboard/snapshot HTTP %s; POST snapshot HTTP %s; GET /network/action HTTP %s.\n' \
+printf 'Contract GET gateway update applied. Public clients do not need a bearer token.\n'
+printf 'Checks: GET /runtime/health HTTP %s; GET /api/iot/telemetry HTTP %s; OPTIONS /runtime/health HTTP %s.\n' \
+  "$RUNTIME_CODE" "$IOT_CODE" "$OPTIONS_CODE"
+printf 'Boundary checks: undocumented /dashboard/snapshot HTTP %s; public POST /api/iot/telemetry HTTP %s; GET /network/action HTTP %s.\n' \
   "$SNAPSHOT_CODE" "$POST_CODE" "$CONTROL_CODE"
-printf 'Internal Ryu API token remains private in the mode-0600 gateway environment file.\n'
+printf 'Private Ryu API token remains in the mode-0600 gateway environment file.\n'
 printf 'Backups: %s and %s\n' "$PROXY_BACKUP" "$ENV_BACKUP"
 printf 'Only %s was restarted; Ryu, Mininet, ngrok, SQLite, and datasets were not changed.\n' "$SERVICE"
-printf 'If snapshot returned 502, Ryu may be stopped; start Ryu and rerun the GET verification.\n'
+printf 'Ryu may be stopped if runtime/IoT GET returned 502; start Ryu and recheck the public routes.\n'

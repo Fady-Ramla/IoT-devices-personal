@@ -294,11 +294,14 @@ Expected gateway address and route:
 
 ### 9.4 Verify the WebTrack read-only tunnel
 
-From a normal VM terminal, call the public read-only gateway without a client token:
+From a normal VM terminal, call individual contract read endpoints through the public gateway without a client token. The accepted contract has no aggregate `/dashboard/snapshot` route:
 
 ```bash
 BASE_URL='https://<your-ngrok-host>'
-curl -fsS "$BASE_URL/dashboard/snapshot"
+curl -fsS "$BASE_URL/runtime/health"
+curl -fsS "$BASE_URL/topology/hosts"
+curl -fsS "$BASE_URL/topology/switches"
+curl -fsS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=5"
 ```
 
 This GET check is independent from Mininet's private sensor polling path.
@@ -321,29 +324,31 @@ sqlite3 /var/lib/secureiot/iot-telemetry.sqlite3 \
   'SELECT device_id, timestamp, sequence, readings_json FROM iot_telemetry ORDER BY id DESC LIMIT 5;'
 ```
 
-The ngrok inspector should show dashboard GET requests, for example
-`GET /dashboard/snapshot`; it should not show telemetry POSTs or writes.
+The ngrok inspector should show contract GET requests such as
+`GET /api/iot/telemetry?device_id=h16&limit=5`; it should not show telemetry POSTs or writes.
 
 ### 9.7 Verify the public API data
 
-Use the ngrok URL for the public read-only gateway; no client bearer token is required:
+Use the ngrok URL for individual public contract GETs; no client bearer token is required:
 
 ```bash
 BASE_URL='https://<your-ngrok-host>'
-curl -sS "$BASE_URL/dashboard/snapshot"
+curl -sS "$BASE_URL/api/iot/devices"
+curl -sS "$BASE_URL/api/iot/sensors"
+curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
 The result should contain h5-h16 with increasing `sample_count`, recent `last_seen` timestamps, and `status: online`.
 
 ## 10. Proving that values are dynamic
 
-Run the following twice, at least six seconds apart:
+Run the telemetry GET twice, at least six seconds apart. Background polling stores fresh samples; these GETs only read the store:
 
 ```bash
 BASE_URL='https://<your-ngrok-host>'
-curl -sS "$BASE_URL/dashboard/snapshot"
+curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 sleep 6
-curl -sS "$BASE_URL/dashboard/snapshot"
+curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
 The two responses should show newer:

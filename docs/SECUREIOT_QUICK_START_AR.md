@@ -141,17 +141,21 @@ h2 head -n 20 /tmp/web_api_h2_iot_live.log
 
 ```bash
 BASE_URL='https://<your-ngrok-host>'
-curl -sS "$BASE_URL/dashboard/snapshot"
+curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 sleep 6
-curl -sS "$BASE_URL/dashboard/snapshot"
+curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
-افحصي `iot_telemetry` داخل JSON؛ يجب أن يتغير `sequence` و`timestamp` وقيمة sensor. الـ GET يقرأ فقط ولا يبدأ poll جديدًا؛ الـ poller يعمل تلقائيًا بالخلفية.
+قارني `sequence` و`timestamp` وقيمة sensor. الـ GET يقرأ فقط ولا يبدأ poll جديدًا؛ الـ poller يعمل تلقائيًا بالخلفية. العقد لا يحتوي على `/dashboard/snapshot`؛ استخدمي الـ endpoints الفردية المعتمدة.
 
 Endpoints مفيدة للـ Dashboard عبر الـ gateway:
 
 ```bash
-curl -sS "$BASE_URL/dashboard/snapshot"
+curl -sS "$BASE_URL/runtime/health"
+curl -sS "$BASE_URL/topology/hosts"
+curl -sS "$BASE_URL/topology/switches"
+curl -sS "$BASE_URL/api/iot/devices"
+curl -sS "$BASE_URL/api/iot/sensors"
 ```
 
 ## 8. Test the firewall dynamically
