@@ -2,57 +2,52 @@
 
 ## 1. Purpose
 
-This document describes the final IoT simulation and telemetry integration used by the SecureIoT graduation project.
+This document describes the IoT telemetry and dashboard API path for the SecureIoT graduation project. Keep the API/gateway worktree separate from the IoT topology worktree; the latter's VLAN and link configuration is not changed by the API update.
 
-The final design keeps IoT sensors inside the Mininet private network. The Web/API server on the Services VLAN polls the sensors every five seconds, receives fresh readings, and posts each reading through the configured ngrok URL to the Ryu runtime API. The WebTrack/dashboard reads the changing data through the public ngrok API.
-
-The IoT devices do **not** post directly to ngrok.
+The currently verified IoT integration branch runs benign simulators on h5-h16. Each simulator sends authenticated telemetry to the private Flask Web/API on h2:5000. Flask stores accepted readings in SQLite shared with Ryu. WebTrack calls individual contract GET routes through the public read-only gateway; no simulator POST passes through ngrok and the gateway blocks public POST/control requests.
 
 ```text
-IoT sensor h5-h16
+IoT simulators h5-h16
         |
-        | private HTTP GET :8081
+        | private authenticated POST :5000
         v
-Web/API server h2 (Services VLAN 20)
+Flask Web/API h2 (Services VLAN 20)
         |
-        | HTTPS POST through WAN/NAT and ngrok
+        | write sample to shared SQLite
         v
-ngrok public URL -> Ryu runtime API :8080
-        |
-        | dashboard GET requests
-        v
-WebTrack / dashboard
+Ryu API :8080 <- private bearer token <- read-only gateway :8090 <- ngrok
+        ^                                                        |
+        |                                                        | public GET only
+        +---------------------------------------------------- WebTrack
 ```
 
 ## 2. Repository and branch
 
-The implementation is on:
+The read-only API and gateway implementation is on:
 
 ```text
 Branch: api-runtime-latest-20261111
-Latest commit: e25331d Match WAN forwarding rule to veth name
+Latest relevant commit: 383d760 Align public gateway with API contract
 ```
 
-The earlier reusable network implementation was found on:
+The Mininet IoT topology is kept in a separate worktree based on:
 
 ```text
-iot-simulator-integration
+Branch: iot-simulator-integration (VM worktree base: 905b454; remote inspected: ed69ca6)
 ```
 
-The current branch contains the required polling implementation plus the ported WAN/NAT setup.
+The API branch may contain an optional GET-based sensor poller, but the verified
+simulator on the IoT topology branch is a POST client and does not serve a
+sensor endpoint on TCP/8081. For this topology, keep the optional poller
+disabled unless such a sensor service is separately installed.
 
 Important commits:
 
 | Commit | Change |
 |---|---|
-| `bd2a0fd` | Implement contract-preserving IoT server polling |
-| `428425e` | Post polled IoT readings through ngrok |
-| `e92743a` | Bypass host proxy behavior for private sensor polling |
-| `5a51833` | Use direct sockets for Mininet sensor reads |
-| `7d170be` | Start sensors before the IoT poller and wait for readiness |
-| `cbc0b89` | Add Services VLAN WAN/NAT connectivity |
-| `f0f9076` | Use Linux-compatible WAN interface names |
-| `e25331d` | Match the WAN firewall rule to the actual veth name |
+| `4474b30` | Latest API/path dynamic activity fixes reviewed before the gateway update |
+| `383d760` | Contract GET-only public gateway and dynamic endpoint checker |
+| `905b454` | Existing VM IoT topology worktree base (topology configuration unchanged) |
 
 ## 3. VLAN layout
 
@@ -83,74 +78,27 @@ h16 = 10.10.10.16
 
 All h5-h16 devices are in the same IoT VLAN 10. They are not in separate VLANs.
 
-## 4. Sensor services
+## 4. Simulator ingestion and shared persistence
 
-Each IoT host runs a private HTTP sensor service on TCP port `8081`:
+On the inspected IoT integration branch, `mininet/iot_device_simulator.py`
+generates benign, role-specific values on h5-h16 and sends an authenticated
+HTTP POST to `http://10.10.20.2:5000/api/iot/telemetry`. The topology starts
+the Flask Web/API on h2:5000 with a temporary ingest token and configures each
+simulator with that token. The request is private to Mininet; it is not sent to
+ngrok. The Web/API returns HTTP 202 for an accepted reading and stores it in
+`/var/lib/secureiot/iot-telemetry.sqlite3`.
 
-```text
-http://10.10.10.X:8081/health
-http://10.10.10.X:8081/sensor/readings
-```
+The SQLite file is shared by Flask inside the h2 network namespace and the
+Ryu API on the VM filesystem. Ryu's accepted GET routes read the same store;
+the public gateway attaches its private Ryu bearer token upstream. WebTrack
+needs no public client token and can call only the contract's GET routes.
 
-Example:
-
-```bash
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/health
-```
-
-Expected response:
-
-```json
-{"status":"healthy","device_id":"h16","service":"iot-sensor"}
-```
-
-The readings endpoint returns changing simulated values, a sequence number, timestamp, device ID, and device role. Example fields include:
-
-```json
-{
-  "device_id": "h16",
-  "device_role": "vibration_sensor",
-  "readings": {
-    "vibration_mm_s": 1.807,
-    "machine_status": "normal"
-  },
-  "sequence": 44,
-  "status": "online",
-  "simulation": true,
-  "source": "mininet"
-}
-```
-
-The gateway allows only the Web/API Services VLAN to access IoT TCP/8081. IoT devices do not initiate telemetry POSTs.
-
-## 5. Polling flow
-
-The poller is implemented in:
-
-```text
-mininet/servers/iot_poller.py
-```
-
-It runs inside the Web/API process:
-
-```text
-mininet/servers/web_api_server.py
-```
-
-The poller performs the following loop:
-
-1. Connect to each sensor privately over TCP/8081.
-2. GET `/sensor/readings`.
-3. Validate the response and preserve the fresh reading.
-4. Write the reading directly to the shared SQLite telemetry store.
-5. Repeat according to `IOT_POLL_INTERVAL`.
-
-Ryu reads the same SQLite file, and WebTrack reads Ryu through authenticated
-GET endpoints. There is no outbound telemetry POST or mutating GET request.
-
-Private sensor reads use a direct `http.client.HTTPConnection`. This intentionally bypasses inherited HTTP proxy settings and avoids proxy DNS resolution for Mininet IP addresses.
-
-The final topology starts sensors first, waits for every `/health` endpoint to become ready, and only then starts the Web/API poller. This prevents startup `Connection refused` races.
+The API worktree also contains an optional `mininet/servers/iot_poller.py`
+that expects each h5-h16 host to serve GET `/sensor/readings` on TCP/8081.
+That service is **not** provided by the verified simulator on the IoT topology
+branch. Keep `IOT_POLLING_ENABLED=0` for this demo unless a separate GET sensor
+service is installed and verified. The working simulator POST + Flask storage
+path is sufficient for fresh dashboard GET responses.
 
 ## 6. WAN, NAT, and ngrok
 
@@ -169,9 +117,10 @@ default via 172.31.255.1 dev sio-wan-gw
 
 The Ubuntu host routes the Mininet networks through the gateway and applies MASQUERADE on the external interface, normally `enp0s3` in VirtualBox.
 
-The telemetry polling path does not require WAN egress from Mininet. The IoT
-VLAN remains private; the VM's separately installed read-only gateway is the
-only service exposed through ngrok.
+IoT simulator ingestion does not require WAN egress from Mininet. The IoT VLAN
+remains private; simulators send authenticated POSTs only to the private Web/API
+on h2:5000. The VM's separately installed read-only gateway is the only service
+exposed through ngrok.
 
 The WAN setup is implemented in:
 
@@ -196,15 +145,15 @@ export RYU_IP=127.0.0.1
 export RYU_PORT=6633
 export START_DEMO_SERVICES=1
 export START_IOT_SIMULATORS=1
-export IOT_POLLING_ENABLED=1
-export IOT_POLL_INTERVAL=5
-export IOT_SENSOR_PORT=8081
+export IOT_POLLING_ENABLED=0
 export SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3
 unset IOT_TELEMETRY_GET_URL IOT_TELEMETRY_POST_URL
 ```
 
-Do not configure a telemetry delivery URL. The Web/API poller and Ryu share
-the local database; WebTrack performs read-only GETs through the gateway.
+The IoT simulators POST to the local Web/API; Flask persists accepted readings
+to SQLite, which Ryu reads for the contract GETs. Do not set an external
+telemetry URL or enable the optional sensor GET poller unless h5-h16 actually
+serve `/sensor/readings` on port 8081.
 
 ## 8. Startup sequence
 
@@ -246,17 +195,19 @@ https://<your-ngrok-host> -> http://127.0.0.1:8090
 ```
 
 Do not point ngrok directly at Ryu `:8080` or Flask `h2:5000`. The gateway
-allows only authenticated, read-only GET routes; the poller writes to SQLite
-locally and does not use the tunnel.
+allows only contract GET routes. The IoT simulator's private POST to h2:5000
+never uses the tunnel.
 
 ### 8.3 Start Mininet
 
 ```bash
-cd ~/Graduation_Project/IoT-devices
-git pull --ff-only origin api-runtime-latest-20261111
-sudo mn -c
+cd ~/Graduation_Project/IoT-devices_GITHUB_iot_20261103
 sudo -E python3 mininet/Real_network_topology.py
 ```
+
+Use the API worktree for Ryu and gateway code; keep Mininet on the existing
+IoT integration worktree so this test does not change the topology. Do not run
+the known-broken `iot_test` CLI command; use the GET and log checks below.
 
 The topology should print a WAN setup message similar to:
 
@@ -272,11 +223,17 @@ The topology should print a WAN setup message similar to:
 mininet> h2 ping -c 2 10.10.20.1
 ```
 
-### 9.2 Verify the private sensor path
+### 9.2 Verify private simulator ingestion
 
 ```text
-mininet> h2 curl --noproxy '*' -sS http://10.10.10.16:8081/health
+mininet> h2 curl --noproxy '*' -sS http://127.0.0.1:5000/health
+mininet> h16 tail -n 15 /tmp/secureiot-h16-iot.log
+mininet> h2 tail -n 20 /tmp/web_api_h2_iot_live.log
 ```
+
+The h16 log should show `telemetry sent ... http_status=202` roughly every
+nine seconds by default. Flask accepts the authenticated internal POST and
+writes the sample to shared SQLite.
 
 ### 9.3 Verify WAN interface and default route
 
@@ -304,20 +261,22 @@ curl -fsS "$BASE_URL/topology/switches"
 curl -fsS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=5"
 ```
 
-This GET check is independent from Mininet's private sensor polling path.
+This GET reads the stored database row; it does not trigger sample generation
+or ingestion.
 
 ### 9.5 Verify the Web/API process
 
 ```text
-mininet> h2 ps -ef | grep -E 'web_api_server|iot_poller' | grep -v grep
+mininet> h2 ps -ef | grep '[w]eb_api_server.py'
 mininet> h2 head -n 15 /tmp/web_api_h2_iot_live.log
 ```
 
-The poller is inside `web_api_server.py`; it is not a separate process named `iot_poller`.
+The Web/API access log should show private telemetry POSTs from IoT simulator
+hosts. The simulator POST must never go through ngrok.
 
 ### 9.6 Verify SQLite and the authenticated GET reads
 
-The database should receive a new row after each successful polling interval:
+The database should receive a new row after each successful simulator POST:
 
 ```bash
 sqlite3 /var/lib/secureiot/iot-telemetry.sqlite3 \
@@ -325,7 +284,8 @@ sqlite3 /var/lib/secureiot/iot-telemetry.sqlite3 \
 ```
 
 The ngrok inspector should show contract GET requests such as
-`GET /api/iot/telemetry?device_id=h16&limit=5`; it should not show telemetry POSTs or writes.
+`GET /api/iot/telemetry?device_id=h16&limit=5`. Private simulator POSTs to h2
+must not appear in the public ngrok inspector.
 
 ### 9.7 Verify the public API data
 
@@ -342,12 +302,13 @@ The result should contain h5-h16 with increasing `sample_count`, recent `last_se
 
 ## 10. Proving that values are dynamic
 
-Run the telemetry GET twice, at least six seconds apart. Background polling stores fresh samples; these GETs only read the store:
+Run the telemetry GET twice at least eleven seconds apart (h16's default
+simulator interval is about nine seconds). The GETs only read the store:
 
 ```bash
 BASE_URL='https://<your-ngrok-host>'
 curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
-sleep 6
+sleep 11
 curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
@@ -356,7 +317,7 @@ The two responses should show newer:
 - telemetry `id`;
 - timestamp;
 - sequence number; and usually
-- sensor values such as `vibration_mm_s`.
+- sensor values such as `vibration_rms`.
 
 The observed data already demonstrated sequences 38, 39, 40, 41, 42, 43, 44, and 45, with changing values for h6, h16, and the other devices.
 
@@ -372,12 +333,15 @@ upstream and exposes only allowlisted GET routes; mutating methods and
 ingestion routes are not exposed. Anyone with the public URL can read those
 allowlisted network and telemetry fields.
 
-WebTrack uses GET requests without a client token. The gateway's GET reads the
-current snapshot; it does not trigger sensor polling or change database state.
+WebTrack uses GET requests without a client token. Each GET reads the current
+API/database state; it does not trigger sample generation or change database
+state.
 
 ### Local Flask Web/API on h2:5000
 
-The Flask routes are separately protected by the Web/API authentication decorator. Therefore these requests return `Valid Bearer token required` unless a valid token is supplied:
+The local Flask Web/API is not the public dashboard endpoint. Its telemetry
+ingestion route accepts the private token injected for the simulator by the
+topology startup; the public gateway does not forward any client POST.
 
 ```text
 http://10.10.20.2:5000/api/iot/devices
@@ -385,27 +349,32 @@ http://10.10.20.2:5000/api/iot/sensors
 http://10.10.20.2:5000/api/iot/telemetry
 ```
 
-This is expected and does not mean that polling failed. The dashboard should
-use the public read-only gateway URL; Ryu's internal token stays on the VM.
+The dashboard should use the public read-only gateway URL; Ryu's internal
+token stays on the VM. Do not place either private ingestion or Ryu tokens in
+browser JavaScript.
 
 ## 12. Troubleshooting
 
-### `No route to host` for `10.10.10.X:8081`
+### IoT simulator POST does not return HTTP 202
 
-Check that Ryu is running and that Mininet was started after Ryu. Confirm:
+Check that Mininet is connected to Ryu and that h2's private Web/API is healthy:
 
 ```text
 h2 ping -c 2 10.10.20.1
-h2 curl --noproxy '*' http://10.10.10.16:8081/health
+h2 curl --noproxy '*' -fsS http://127.0.0.1:5000/health
+h16 tail -n 20 /tmp/secureiot-h16-iot.log
+h2 tail -n 30 /tmp/web_api_h2_iot_live.log
 ```
 
-### `Connection refused` on sensor port 8081
+Verify the h16 log reports HTTP 202 and the Web/API uses
+`SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3`.
 
-This is normally a startup race. Restart from the latest branch. The final topology starts h5-h16 first and waits for their health endpoints before starting Web/API.
+### Dashboard GET is empty or its sequence does not advance
 
-### `Temporary failure in name resolution` for the sensor IP URLs
-
-The old urllib/proxy path was removed. Pull the latest commit and restart the Web/API process; a running Python process does not reload changed files.
+Check that the IoT simulators are running on h5-h16, inspect their
+`/tmp/secureiot-h*-iot.log` output, verify the private ingestion token is
+accepted by h2, and query the shared SQLite file. A public GET cannot create a
+missing sample.
 
 ### ngrok hostname resolution timeout
 
@@ -416,7 +385,7 @@ systemctl is-active secureiot-webtrack-readonly.service ngrok-webtrack-readonly.
 curl -fsS http://127.0.0.1:8090/health
 ```
 
-Check the VM's Internet connection and the ngrok service logs. This is separate from private sensor polling.
+Check the VM's Internet connection and the ngrok service logs. This is separate from private simulator-to-Web/API ingestion.
 
 ### `/tmp/web_api_h2_iot_live.log` does not exist
 
@@ -432,9 +401,11 @@ Ensure `START_DEMO_SERVICES=1` was exported before running:
 sudo -E python3 mininet/Real_network_topology.py
 ```
 
-### `IoT telemetry stored` is absent from the Flask log
+### IoT telemetry is absent from the Flask log
 
-Check that the h5-h16 sensor endpoints answer GET requests and that Web/API and Ryu use the same `SECUREIOT_IOT_DB` path. Telemetry is stored locally; it is not sent through ngrok.
+Check the simulator logs for `telemetry sent ... http_status=202`, the Web/API
+log for the private POST, and confirm Web/API and Ryu share the same
+`SECUREIOT_IOT_DB` path. Telemetry is stored locally; it is not sent through ngrok.
 
 ## 13. Security note
 
@@ -443,5 +414,5 @@ Keep authentication enabled on the Ryu runtime API and read-only gateway. For pr
 - do not expose Ryu directly through ngrok;
 - configure a strong runtime token and JWT secret;
 - keep IoT VLAN Internet egress disabled;
-- allow only the required Services-to-IoT TCP/8081 path;
+- keep the IoT VLAN private and allow only the required IoT-to-Web/API service path;
 - protect the ngrok hostname and avoid exposing administrative routes.

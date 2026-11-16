@@ -51,13 +51,13 @@ connected_switches = 6
 ## TC-02 — IoT telemetry dynamic
 
 ### الهدف
-التأكد أن polling يجيب readings جديدة وليست قيمة ثابتة.
+التأكد أن simulator اله5-h16 يرسل readings جديدة إلى Web/API الخاص داخل Mininet، وأن contract GET يقرأ آخر sample من SQLite المشتركة.
 
 ### التنفيذ
 
 ```bash
 curl -s "$API/api/iot/telemetry?device_id=h16&limit=1"
-sleep 6
+sleep 11
 curl -s "$API/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
@@ -68,7 +68,7 @@ curl -s "$API/api/iot/telemetry?device_id=h16&limit=1"
 ```text
 sequence
 timestamp
-vibration_mm_s أو sensor value
+vibration_rms أو sensor value
 ```
 
 ولفحص الـ inventory:
@@ -78,14 +78,17 @@ curl -s "$API/api/iot/devices"
 curl -s "$API/api/iot/sensors"
 ```
 
-### فحص sensor الداخلي من Mininet
+### فحص simulator وWeb/API الداخليين من Mininet
 
 داخل Mininet فقط:
 
 ```text
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/health
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/sensor/readings
+h2 curl --noproxy '*' -sS http://127.0.0.1:5000/health
+h16 tail -n 15 /tmp/secureiot-h16-iot.log
+h2 tail -n 25 /tmp/web_api_h2_iot_live.log
 ```
+
+يُتوقع `telemetry sent ... http_status=202` في log الخاص بـh16. الـPOST داخلي فقط من simulator إلى h2:5000؛ الـDashboard يستخدم GET عبر الـgateway لقراءة SQLite.
 
 ---
 
@@ -132,7 +135,7 @@ HTTP 200
 داخل Mininet، h27 على s5 وh28 على s6 وفي نفس VLAN. ابدئي ping محدودًا بالخلفية حتى يبقى traffic جاريًا أثناء GET checks:
 
 ```text
-h27 sh -c 'ping -n -i 0.5 -c 40 10.10.50.28 >/tmp/h27_to_h28_ping.log 2>&1 &'
+h27 sh -c 'ping -n -i 0.5 -c 60 10.10.50.28 >/tmp/h27_to_h28_ping.log 2>&1 &'
 ```
 
 من Terminal عادي خارج Mininet، أثناء استمرار الـping:
@@ -147,8 +150,8 @@ python3 webtrack_gateway/check_dynamic_endpoints.py "$BASE_URL"
 - للـping، يزيد عداد قاعدة ICMP echo المخصصة، ويظهر h27/h28 والسويتشات على المسار `traffic_active: true` بعد عيّنتي flow stats تقريبًا (poll كل 5 ثوانٍ).
 - `/topology/paths?source=h27&destination=h28` و`/topology/hosts/h28/path?source=h27` يعرضان المسار؛ مع flow فعلي متتبع يظهر `path_source: installed_flow` و`nodes` من DPID 5 إلى DPID 6. رد `computed: true` وحده يثبت graph route ممكنًا، وليس flow متثبتًا.
 - بعد إيقاف ping، ترجع حالة ping إلى `false` خلال 8 ثوانٍ تقريبًا من آخر زيادة مرصودة في العداد.
-- عندما ينجح poller في قراءة حساس IoT، تظهر السويتشات على المسار التشغيلي من h2 عبر الـgateway إلى الحساس `traffic_active: true`. تنتهي الحالة خلال 15 ثانية من آخر قراءة ناجحة.
-- تجربة HTTP عادية لا تفعّل `traffic_active` بمفردها. وطلبات `GET` إلى telemetry endpoints للداشبورد تقرأ SQLite فقط؛ لا تشغّل polling جديدًا.
+- يجب أن يتغير sequence/timestamp الخاص بقراءة h16 بين عينتين يفصل بينهما 11 ثانية تقريبًا طالما simulator يعمل. الـGET يقرأ SQLite ولا يبدأ توليد أو ingestion جديدًا.
+- الـPOST من IoT simulator إلى Web/API خاص ولا يمر عبر ngrok؛ `traffic_active` للـhost-pair في هذا الاختبار يُثبت بزيادة ICMP flow stats، لا بمجرد GET للداشبورد.
 
 بعد انتهاء ping المحدود، انتظري 10 ثوانٍ ثم أعيدي `GET /topology/hosts`; ينبغي أن تنتهي حالة `traffic_active` الخاصة بـh27/h28 بعد نافذة النشاط (نحو 8 ثوانٍ بعد آخر delta مرصود). لم يتغير أي VLAN أو link في هذا الاختبار.
 

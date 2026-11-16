@@ -1,17 +1,17 @@
 # SecureIoT — طريقة التشغيل السريعة
 
-هذا المستند يشرح تشغيل النظام من البداية، وتشغيل Mininet وIoT server polling وngrok، ثم اختبار الـ API والـ firewall.
+هذا المستند يشرح تشغيل النظام من البداية، وتشغيل Mininet وIoT simulators وngrok، ثم اختبار الـ API والـ firewall.
 
 ## 1. Architecture
 
 ```text
 IoT hosts h5..h16
-  GET /sensor/readings:8081
+  authenticated POST /api/iot/telemetry
           |
-          | private polling through Mininet
+          | private Mininet path; never ngrok
           v
 Web/API server h2:5000
-  background poller every 5 seconds
+  validates and persists accepted readings
           |
           | local SQLite write
           v
@@ -19,12 +19,12 @@ shared SQLite: /var/lib/secureiot/iot-telemetry.sqlite3
           ^
           | Ryu reads the same database
           |
-read-only gateway :8090 <- ngrok <- WebTrack authenticated GET
+read-only gateway :8090 <- ngrok <- WebTrack public GET (no client token)
 
 Firewall: Ryu TopologyMonitor -> OpenFlow DROP rule on switches
 ```
 
-الـ Web/API server يعمل polling للـ sensors باستخدام GET ويحفظ القراءات محليًا في SQLite. الـ Dashboard يستخدم GET لقراءة الـ snapshot عبر read-only gateway. لا يوجد telemetry POST أو GET يغيّر قاعدة البيانات عبر ngrok.
+الـIoT simulators ترسل POST داخليًا إلى Web/API على h2:5000، الذي يحفظ القراءات في SQLite المشتركة. الـDashboard يستخدم GET للقراءة عبر read-only gateway. الـGET العام لا يولّد بيانات؛ والـPOST الخاص بالحساسات لا يمر عبر ngrok. المسار `/dashboard/snapshot` غير موجود في العقد؛ استخدمي endpoints الفردية المعتمدة.
 
 ## 2. Update the project
 
@@ -84,7 +84,7 @@ sudo systemctl is-active secureiot-webtrack-readonly.service ngrok-webtrack-read
 https://<your-ngrok-host> -> http://127.0.0.1:8090
 ```
 
-لو تغيّر hostname، حدّثيه عند فريق WebTrack فقط؛ لا تضعيه في إعدادات IoT poller.
+لو تغيّر hostname، حدّثيه عند فريق WebTrack فقط؛ لا تضعيه كوجهة لرسائل IoT.
 
 لرؤية الطلبات:
 
@@ -101,39 +101,39 @@ http://127.0.0.1:4040
 ## 5. Start Mininet — Terminal 3
 
 ```bash
-cd ~/Graduation_Project/IoT-devices
+cd ~/Graduation_Project/IoT-devices_GITHUB_iot_20261103
 sudo mn -c
 
 export RYU_IP=127.0.0.1
 export RYU_PORT=6633
 export START_DEMO_SERVICES=1
 export START_IOT_SIMULATORS=1
-export IOT_POLLING_ENABLED=1
-export IOT_POLL_INTERVAL=5
-export IOT_SENSOR_PORT=8081
+export IOT_POLLING_ENABLED=0
 export SECUREIOT_IOT_DB=/var/lib/secureiot/iot-telemetry.sqlite3
 unset IOT_TELEMETRY_GET_URL IOT_TELEMETRY_POST_URL
 
 sudo -E python3 mininet/Real_network_topology.py
 ```
 
-## 6. Verify polling inside Mininet
+شغّلي Mininet من worktree الخاص بفرع IoT، وليس من worktree الـAPI. لا تشغّلي
+`iot_test` في هذا commit؛ الـCLI command المعروف فيه formatting bug وقد يوقف
+الـtopology. استخدمي فحوصات GET والـlogs بالأسفل.
+
+## 6. Verify simulator ingestion inside Mininet
 
 الأوامر التالية تُنفّذ داخل prompt الخاص بـ Mininet، بدون كتابة `mininet>` يدويًا داخل الأمر:
 
 ```text
 h2 ping -c 2 10.10.20.1
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/health
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/sensor/readings
-h2 ps -ef | grep -E 'web_api_server|iot_poller' | grep -v grep
+h2 curl --noproxy '*' -sS http://127.0.0.1:5000/health
+h16 tail -n 15 /tmp/secureiot-h16-iot.log
 h2 head -n 20 /tmp/web_api_h2_iot_live.log
 ```
 
 المتوقع:
 
-- `h2` يستطيع قراءة sensor endpoint على `h16:8081`.
-- log يحتوي على `IoT telemetry stored` تقريبًا كل 5 ثوانٍ.
-- قاعدة SQLite تتحدث محليًا؛ لا تنتظري POST من Mininet إلى ngrok.
+- log الخاص بـh16 يحتوي على `telemetry sent ... http_status=202` كل نحو 9 ثوانٍ افتراضيًا.
+- Web/API المحلي يستقبل POST ويكتب القراءات إلى SQLite؛ لا يوجد POST إلى ngrok.
 
 ## 7. Verify changing telemetry
 
@@ -142,11 +142,11 @@ h2 head -n 20 /tmp/web_api_h2_iot_live.log
 ```bash
 BASE_URL='https://<your-ngrok-host>'
 curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
-sleep 6
+sleep 11
 curl -sS "$BASE_URL/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
-قارني `sequence` و`timestamp` وقيمة sensor. الـ GET يقرأ فقط ولا يبدأ poll جديدًا؛ الـ poller يعمل تلقائيًا بالخلفية. العقد لا يحتوي على `/dashboard/snapshot`؛ استخدمي الـ endpoints الفردية المعتمدة.
+قارني `sequence` و`timestamp` وقيمة sensor. الـ GET يقرأ فقط ولا يولّد reading جديدة؛ الـsimulator يرسلها دوريًا إلى Web/API الداخلي. العقد لا يحتوي على `/dashboard/snapshot`؛ استخدمي الـ endpoints الفردية المعتمدة.
 
 Endpoints مفيدة للـ Dashboard عبر الـ gateway:
 
@@ -246,17 +246,19 @@ sudo ss -ltnp | grep -E ':8080|:6633'
 
 أغلقي process القديم أو استخدميه بدل تشغيل Ryu مرة ثانية.
 
-### Poller يعرض `Temporary failure in name resolution`
+### IoT simulator لا يسجل HTTP 202
 
 تحققي من:
 
 ```text
-mininet> gw ip route
-mininet> h2 cat /etc/resolv.conf
-mininet> h2 curl --noproxy '*' -v --max-time 10 https://<ngrok-host>/health
+mininet> h2 curl --noproxy '*' -fsS http://127.0.0.1:5000/health
+mininet> h16 tail -n 20 /tmp/secureiot-h16-iot.log
+mininet> h2 tail -n 30 /tmp/web_api_h2_iot_live.log
 ```
 
-المشكلة غالبًا في WAN/NAT أو DNS من Services VLAN، وليست في sensor endpoint.
+المتوقع `telemetry sent ... http_status=202`. لو ظهر خطأ auth، لا تطبعي أو تشاركي
+الـtoken؛ أعيدي تشغيل topology flags التي تنشئ ingest token تلقائيًا، ثم افحصي
+سجل Web/API وقاعدة SQLite. لا توجهي simulator إلى ngrok.
 
 ### `/firewall/events` يرجع `[]`
 

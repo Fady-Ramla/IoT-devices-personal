@@ -64,13 +64,13 @@ load balancer backends configured/healthy
 firewall default-deny موجود
 ```
 
-## 2. IoT polling and changing telemetry
+## 2. IoT simulator ingestion and changing telemetry
 
 من داخل Mininet CLI:
 
 ```text
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/health
-h2 curl --noproxy '*' -sS http://10.10.10.16:8081/sensor/readings
+h2 curl --noproxy '*' -sS http://127.0.0.1:5000/health
+h16 tail -n 15 /tmp/secureiot-h16-iot.log
 h2 head -n 20 /tmp/web_api_h2_iot_live.log
 ```
 
@@ -80,7 +80,7 @@ h2 head -n 20 /tmp/web_api_h2_iot_live.log
 curl -s "$API/api/iot/devices"
 curl -s "$API/api/iot/sensors"
 curl -s "$API/api/iot/telemetry?device_id=h16&limit=1"
-sleep 6
+sleep 11
 curl -s "$API/api/iot/telemetry?device_id=h16&limit=1"
 ```
 
@@ -99,7 +99,7 @@ last_seen
 GET /api/iot/telemetry?device_id=h16&limit=1 200
 ```
 
-لا يُتوقع telemetry POST عبر ngrok؛ الـ Web/API poller يقرأ الحساس عبر GET ويكتب القراءات مباشرةً إلى SQLite المشتركة. عقد الشبكة لا يعرّف `/dashboard/snapshot`.
+يُتوقع أن يسجل simulator داخليًا `telemetry sent ... http_status=202` إلى Web/API على h2:5000، ثم تُكتب القراءات في SQLite المشتركة. لا يُتوقع POST عبر ngrok؛ WebTrack يستخدم GET فقط. عقد الشبكة لا يعرّف `/dashboard/snapshot`.
 
 ## 3. Flow stats: pending ثم ready
 

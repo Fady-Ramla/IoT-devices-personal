@@ -4,7 +4,7 @@ This bundle installs a local reverse proxy on `127.0.0.1:8090`, with ngrok forwa
 
 The public gateway exposes only the **GET routes listed in `SECUREIOT_NETWORK_API_CONTRACT_FINAL`**. It does not add an aggregate endpoint: **`/dashboard/snapshot` is not in the contract and returns 404**. Stats responses preserve the contract's `202 pending` and `200 ready` HTTP statuses. CORS is enabled for allowed contract paths.
 
-The IoT demo data path is GET-based: the Web/API poller privately GETs sensor readings from h5-h16 and writes the samples directly to shared SQLite; WebTrack reads them with `GET /api/iot/devices`, `GET /api/iot/sensors`, or `GET /api/iot/telemetry`. The contract's `POST /api/iot/telemetry` is **not used by this demo and is blocked through the public tunnel**. No sensor or poller sends a POST to ngrok. Mininet and Ryu remain independently managed; when Ryu is stopped, the gateway can return HTTP 502.
+The IoT demo simulator generates samples on h5-h16 and sends them by authenticated HTTP POST to the **private** Web/API on h2:5000. Flask stores each accepted sample in shared SQLite; the Ryu API reads that same database for contract `GET /api/iot/devices`, `/api/iot/sensors`, and `/api/iot/telemetry`. WebTrack uses public GET only through the gateway; public POST is blocked, and dashboard GETs do not themselves generate or ingest readings. Do not enable the optional HTTP sensor poller unless separate GET sensor services on h5-h16 port 8081 are running. Mininet and Ryu remain independently managed; when Ryu is stopped, the gateway can return HTTP 502.
 
 ## Contract GET routes available through the public gateway
 
@@ -63,7 +63,7 @@ The OpenFlow stats endpoints may return HTTP 202 `pending` on their first reques
 The latest topology maps h27 to s5 and h28 to s6 on the same employee VLAN. Start a bounded ping from h27 to h28 inside the Mininet prompt:
 
 ```text
-h27 sh -c 'ping -n -i 0.5 -c 40 10.10.50.28 >/tmp/h27_to_h28_ping.log 2>&1 &'
+h27 sh -c 'ping -n -i 0.5 -c 60 10.10.50.28 >/tmp/h27_to_h28_ping.log 2>&1 &'
 ```
 
 While it runs, use a regular VM terminal:
@@ -72,7 +72,7 @@ While it runs, use a regular VM terminal:
 python3 webtrack_gateway/check_dynamic_endpoints.py 'https://<your-current-ngrok-host>'
 ```
 
-The read-only script samples contract host/switch inventory, flow and port statistics, both path routes, IoT telemetry, load-balancer counters, event history, and resilience twice six seconds apart. During the ping, expect h27/h28 and switches on the installed path to become `traffic_active: true`; the host-pair path should report `path_source: installed_flow` and traverse DPID 5 to DPID 6. The relevant ICMP counters should increase. After ping ends, the two host activity flags should expire after the controller's activity window. Empty event arrays are normal without a failure/action; load-balancer counters change only after requests reach its VIP. This test sends GETs only and does not alter VLANs or links.
+The read-only script samples contract host/switch inventory, flow and port statistics, both path routes, IoT telemetry, load-balancer counters, event history, and resilience twice eleven seconds apart. During the ping, expect h27/h28 and switches on the installed path to become `traffic_active: true`; the host-pair path should report `path_source: installed_flow` and traverse DPID 5 to DPID 6. The relevant ICMP counters should increase. The h16 telemetry sequence should usually advance as well. After ping ends, the two host activity flags should expire after the controller's activity window. Empty event arrays are normal without a failure/action; load-balancer counters change only after requests reach its VIP. This test sends GETs only and does not alter VLANs or links.
 
 ## Fresh gateway installation
 
