@@ -1947,7 +1947,10 @@ class TopologyMonitor(app_manager.RyuApp):
             ))
         elif egress["kind"] == "access" and data_has_vlan:
             actions.append(parser.OFPActionPopVlan())
-        if PACKETIN_COLLECTION_MIRROR:
+        # Mirror only at the source access ingress. Mirroring trunk hops would
+        # multiply every packet by the path length and can overwhelm Ryu during
+        # a collection run, while the source copy is sufficient for features.
+        if PACKETIN_COLLECTION_MIRROR and not data_has_vlan:
             actions.append(parser.OFPActionOutput(
                 datapath.ofproto.OFPP_CONTROLLER,
                 datapath.ofproto.OFPCML_NO_BUFFER,
