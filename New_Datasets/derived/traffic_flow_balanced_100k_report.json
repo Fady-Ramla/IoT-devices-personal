@@ -1,0 +1,64 @@
+{
+  "input": "labeled_traffic_features.csv",
+  "seed": 20261117,
+  "rows_per_class": 25000,
+  "total_output_train_rows": 100000,
+  "total_test_rows_untouched": 89623,
+  "source_total_rows": 448103,
+  "source_unique_rows": 448103,
+  "train_source_rows": 358480,
+  "test_source_rows": 89623,
+  "train_test_source_row_overlap": 0,
+  "output_duplicate_rows": 28322,
+  "labels_output": {
+    "Malicious_POST": 25000,
+    "Normal": 25000,
+    "SYN_Flood": 25000,
+    "Port_Scan": 25000
+  },
+  "labels_test": {
+    "Normal": 74539,
+    "Port_Scan": 8752,
+    "SYN_Flood": 3593,
+    "Malicious_POST": 2739
+  },
+  "per_class": {
+    "Normal": {
+      "available_train_rows": 298152,
+      "requested_output_rows": 25000,
+      "output_rows": 25000,
+      "replacement_used": false,
+      "unique_source_rows_in_output": 25000,
+      "reused_rows_in_output": 0,
+      "available_unique_train_rows": 298152
+    },
+    "Port_Scan": {
+      "available_train_rows": 35006,
+      "requested_output_rows": 25000,
+      "output_rows": 25000,
+      "replacement_used": false,
+      "unique_source_rows_in_output": 25000,
+      "reused_rows_in_output": 0,
+      "available_unique_train_rows": 35006
+    },
+    "SYN_Flood": {
+      "available_train_rows": 14370,
+      "requested_output_rows": 25000,
+      "output_rows": 25000,
+      "replacement_used": true,
+      "unique_source_rows_in_output": 11862,
+      "reused_rows_in_output": 13138,
+      "available_unique_train_rows": 14370
+    },
+    "Malicious_POST": {
+      "available_train_rows": 10952,
+      "requested_output_rows": 25000,
+      "output_rows": 25000,
+      "replacement_used": true,
+      "unique_source_rows_in_output": 9816,
+      "reused_rows_in_output": 15184,
+      "available_unique_train_rows": 10952
+    }
+  },
+  "warning": "The 100k training view uses replacement for minority classes; it contains 100k rows but not 100k unique observations."
+}
