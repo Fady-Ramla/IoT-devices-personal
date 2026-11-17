@@ -112,6 +112,12 @@ HOST_FLOW_HARD_TIMEOUT = int(os.getenv(
 ))
 if HOST_FLOW_HARD_TIMEOUT < 0:
     raise RuntimeError("SECUREIOT_PACKETIN_COLLECTION_HARD_TIMEOUT must be >= 0")
+# In collection mode, mirror forwarded packets to the controller while still
+# sending them to their normal output port. This preserves application traffic
+# and lets TrafficMonitorMerged build genuine packet-in windows.
+PACKETIN_COLLECTION_MIRROR = os.getenv(
+    "SECUREIOT_PACKETIN_COLLECTION_MIRROR", "0"
+) == "1"
 
 ETH_TYPE_LLDP = 0x88CC
 ETH_TYPE_ARP = 0x0806
@@ -1941,6 +1947,11 @@ class TopologyMonitor(app_manager.RyuApp):
             ))
         elif egress["kind"] == "access" and data_has_vlan:
             actions.append(parser.OFPActionPopVlan())
+        if PACKETIN_COLLECTION_MIRROR:
+            actions.append(parser.OFPActionOutput(
+                datapath.ofproto.OFPP_CONTROLLER,
+                datapath.ofproto.OFPCML_NO_BUFFER,
+            ))
         actions.append(parser.OFPActionOutput(int(out_port)))
         return actions
 
