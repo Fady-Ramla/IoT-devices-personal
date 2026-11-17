@@ -104,7 +104,14 @@ ACTIVITY_TRACK_PRIORITY = 110
 DEVICE_BLOCK_PRIORITY = 50000
 
 HOST_FLOW_IDLE_TIMEOUT = 30
-HOST_FLOW_HARD_TIMEOUT = 0
+# Production behavior remains unchanged when this is unset. During a
+# packet-in dataset collection run, a small positive hard timeout makes
+# learned forwarding rules expire and lets subsequent packets reach Ryu again.
+HOST_FLOW_HARD_TIMEOUT = int(os.getenv(
+    "SECUREIOT_PACKETIN_COLLECTION_HARD_TIMEOUT", "0"
+))
+if HOST_FLOW_HARD_TIMEOUT < 0:
+    raise RuntimeError("SECUREIOT_PACKETIN_COLLECTION_HARD_TIMEOUT must be >= 0")
 
 ETH_TYPE_LLDP = 0x88CC
 ETH_TYPE_ARP = 0x0806
