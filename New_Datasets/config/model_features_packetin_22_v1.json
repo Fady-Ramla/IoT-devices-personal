@@ -1,0 +1,83 @@
+{
+  "version": "packetin-flow-22-v1",
+  "target": "label",
+  "group_column": "run_id",
+  "observation_id_column": "observation_id",
+  "source_filter": {
+    "column": "source",
+    "equals": "packetin_window"
+  },
+  "excluded_holdout_generation_range": [550, 709],
+  "flow_features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "priority",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction",
+    "source"
+  ],
+  "categorical_features": [
+    "protocol",
+    "source"
+  ],
+  "numeric_features": [
+    "src_port",
+    "dst_port",
+    "priority",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction"
+  ],
+  "excluded_columns": [
+    "run_id",
+    "observation_id",
+    "timestamp",
+    "src_ip",
+    "dst_ip",
+    "src_mac",
+    "dst_mac",
+    "switch_dpid",
+    "label"
+  ],
+  "labels": [
+    "Normal",
+    "Malicious_POST",
+    "Port_Scan",
+    "SYN_Flood"
+  ],
+  "notes": [
+    "This is a versioned contract; the existing 20-feature model_features.json remains unchanged.",
+    "source is retained as required by the Ryu packetin_window feature contract; after filtering, its value is expected to be constant.",
+    "run_id and observation_id remain in CSV for audit and run-group splitting, not as model inputs."
+  ]
+}
