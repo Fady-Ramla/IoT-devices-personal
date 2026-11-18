@@ -1,8 +1,3 @@
-# Generated sequential Packet-In collection batch
-# Source host: h5 (MAC 00:00:00:00:00:06)
-# Each normal/attack command blocks until its run completes.
-# Do not edit labels or mix switch_flow_stats into the final dataset.
-
 normal h5 http_api h2 10 0.5
 attack h5 port_scan h2 1-1000 25 10
 attack h5 syn_flood h2 5000 25 10
@@ -52,4 +47,3 @@ normal h5 http_api h2 20 1.4
 attack h5 port_scan h2 250-1750 140 20
 attack h5 syn_flood h2 5000 160 20
 attack h5 malicious_post h2 /api/iot/telemetry 160 160 1 20
-
