@@ -1933,7 +1933,8 @@ class TopologyMonitor(app_manager.RyuApp):
             return vlan_id in entry["allowed_vlans"]
         return entry["vlan_id"] == vlan_id
 
-    def _flow_output_actions(self, datapath, in_port, out_port, vlan_id):
+    def _flow_output_actions(self, datapath, in_port, out_port, vlan_id,
+                             source_mac=None):
         """Build fail-closed VLAN-aware actions for one installed flow hop."""
         dpid = int(datapath.id)
         ingress = self.vlan_port_map.get((dpid, int(in_port)))
@@ -1958,7 +1959,7 @@ class TopologyMonitor(app_manager.RyuApp):
         # a collection run, while the source copy is sufficient for features.
         if (PACKETIN_COLLECTION_MIRROR and not data_has_vlan
                 and (not PACKETIN_COLLECTION_SOURCE_MACS
-                     or str(eth_src).lower() in PACKETIN_COLLECTION_SOURCE_MACS)):
+                     or str(source_mac).lower() in PACKETIN_COLLECTION_SOURCE_MACS)):
             actions.append(parser.OFPActionOutput(
                 datapath.ofproto.OFPP_CONTROLLER,
                 datapath.ofproto.OFPCML_NO_BUFFER,
@@ -2273,7 +2274,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
             parser = datapath.ofproto_parser
             actions = self._flow_output_actions(
-                datapath, in_port, out_port, vlan_id)
+                datapath, in_port, out_port, vlan_id, source_mac=eth_src)
             if actions is None:
                 self.logger.warning(
                     "Cannot install VLAN %d path on s%d:%d -> %d",
@@ -2318,7 +2319,7 @@ class TopologyMonitor(app_manager.RyuApp):
             vlan_vid=OFPVID_PRESENT | vlan_id)
 
         actions = self._flow_output_actions(
-            datapath, in_port, out_port, vlan_id)
+            datapath, in_port, out_port, vlan_id, source_mac=src_mac)
         if actions is None:
             self.logger.warning(
                 "Cannot install VLAN %d output flow on s%d:%d -> %d",
