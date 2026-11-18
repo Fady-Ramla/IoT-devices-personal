@@ -149,7 +149,7 @@ from zero_trust.zero_trust_decision import ZeroTrustDecision
 # REROUTE EVENT
 # =============================================================
 
-from topology_monitor import EventRerouteHost
+from topology_monitor import EventRerouteHost, EventPacketInObserved
 
 
 # =============================================================
@@ -1470,7 +1470,7 @@ class TrafficMonitorMerged(
     # =========================================================
 
     @handler.set_ev_cls(
-        ofp_event.EventOFPPacketIn
+        EventPacketInObserved
     )
     def packet_in_handler(
         self,

@@ -179,6 +179,14 @@ class EventTopologyChanged(controller_event.EventBase):
         self.topology_ready = topology_ready
 
 
+class EventPacketInObserved(controller_event.EventBase):
+    """Packet-In observed by the forwarding owner for telemetry collection."""
+
+    def __init__(self, msg):
+        super(EventPacketInObserved, self).__init__()
+        self.msg = msg
+
+
 # ================================================================
 # Topology Monitor
 # ================================================================
@@ -189,7 +197,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
     _CONTEXTS = {}
 
-    _EVENTS = [EventTopologyChanged]
+    _EVENTS = [EventTopologyChanged, EventPacketInObserved]
 
     def __init__(self, *args, **kwargs):
         super(TopologyMonitor, self).__init__(*args, **kwargs)
@@ -796,6 +804,11 @@ class TopologyMonitor(app_manager.RyuApp):
         msg = ev.msg
         datapath = msg.datapath
         dpid = datapath.id
+
+        # Forward a telemetry-only copy to TrafficMonitorMerged. The topology
+        # app remains the sole forwarding owner; this event carries the same
+        # OpenFlow message without emitting another PacketOut.
+        self.send_event_to_observers(EventPacketInObserved(msg))
 
         if "in_port" not in msg.match:
             return
