@@ -1470,8 +1470,7 @@ class TrafficMonitorMerged(
     # =========================================================
 
     @handler.set_ev_cls(
-        ofp_event.EventOFPPacketIn,
-        MAIN_DISPATCHER
+        ofp_event.EventOFPPacketIn
     )
     def packet_in_handler(
         self,
