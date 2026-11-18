@@ -105,9 +105,11 @@ class LocalRunController:
     """Fixed literal loopback HTTP: no proxy, DNS, redirect or remote fallback."""
 
     def __init__(self, action_path=None, status_path=None, request_timeout=3.0,
-                 drain_timeout=30.0, poll_interval=0.25):
+                 drain_timeout=None, poll_interval=0.25):
         self.action_path = action_path or os.environ.get("SECUREIOT_RUN_ACTION_PATH", "/dataset/run")
         self.status_path = status_path or os.environ.get("SECUREIOT_RUN_STATUS_PATH", "/dataset/run/status")
+        if drain_timeout is None:
+            drain_timeout = float(os.environ.get("SECUREIOT_RUN_DRAIN_TIMEOUT", "60"))
         for path in (self.action_path, self.status_path):
             if (not path.startswith("/") or path.startswith("//")
                     or any(char in path for char in "?#\r\n")
