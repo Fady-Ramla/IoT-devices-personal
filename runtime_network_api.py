@@ -88,16 +88,23 @@ def _timestamp_is_recent(value, max_age_seconds, now=None):
 def json_response(payload, status=200):
     response = Response(status=status, content_type="application/json", charset="utf-8",
                         body=json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    # CORS is opt-in and limited to the one explicitly configured dashboard origin.
+    # CORS is limited by default; wildcard mode is explicit for the local lab only.
     allowed_origin = os.environ.get("SECUREIOT_ALLOWED_ORIGIN", "").strip().rstrip("/")
     parsed_origin = urlsplit(allowed_origin)
-    if (parsed_origin.scheme in ("https", "http") and parsed_origin.netloc
-            and parsed_origin.username is None and parsed_origin.password is None
-            and parsed_origin.path == "" and not parsed_origin.query and not parsed_origin.fragment):
-        response.headers["Access-Control-Allow-Origin"] = allowed_origin
+    allow_all = os.environ.get("SECUREIOT_CORS_ALLOW_ALL", "0").strip().lower() in {"1", "true", "yes"}
+    valid_origin = (
+        parsed_origin.scheme in ("https", "http") and parsed_origin.netloc
+        and parsed_origin.username is None and parsed_origin.password is None
+        and parsed_origin.path == "" and not parsed_origin.query and not parsed_origin.fragment
+    )
+    if allow_all or valid_origin:
+        response.headers["Access-Control-Allow-Origin"] = "*" if allow_all else allowed_origin
         response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
-        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Headers"] = (
+            "Accept,Content-Type,Authorization,ngrok-skip-browser-warning"
+        )
+        if not allow_all:
+            response.headers["Vary"] = "Origin"
     response.headers["Cache-Control"] = "no-store"
     return response
 

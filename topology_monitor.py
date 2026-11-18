@@ -2991,6 +2991,12 @@ class TopologyMonitor(app_manager.RyuApp):
         self._flush_forwarding_flows()
         self.congestion_last_reroute.clear()
 
+    def reset_for_dataset_collection(self):
+        """Start a collection run with no stale reactive forwarding rules."""
+        self._clear_tracked_forwarding_state()
+        self.congestion_last_reroute.clear()
+        self.logger.info("Reset tracked forwarding state for dataset collection")
+
     # ============================================================
     # Status / queries
     # ============================================================

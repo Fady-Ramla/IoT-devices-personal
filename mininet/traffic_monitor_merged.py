@@ -811,6 +811,16 @@ class TrafficMonitorMerged(
                 return 409, {"success": False, "message": "Insufficient connected datapaths",
                              "connected_switches": len(datapaths),
                              "expected_switches": expected_switches}
+            topology_monitor = self._get_topology_monitor()
+            if topology_monitor is None:
+                return 503, {"success": False,
+                             "message": "TopologyMonitor unavailable for collection reset"}
+            try:
+                topology_monitor.reset_for_dataset_collection()
+            except Exception as exc:
+                self.logger.exception("Dataset collection forwarding reset failed")
+                return 503, {"success": False,
+                             "message": "Collection forwarding reset failed: %s" % exc}
             try:
                 self._reset_topology_forwarding_flows()
             except Exception as exc:
