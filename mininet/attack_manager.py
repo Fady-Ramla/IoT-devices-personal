@@ -43,6 +43,7 @@ MIN_RATE_PPS, MAX_RATE_PPS = 10, 200
 MIN_DURATION_SEC, MAX_DURATION_SEC = 5, 20
 MAX_NORMAL_DURATION_SEC = 45
 EXPECTED_SWITCHES = 6
+HOST_COMMAND_EXIT_GRACE_SEC = 10
 ATTACK_LABELS = {"syn_flood": "SYN_Flood", "port_scan": "Port_Scan",
                  "malicious_post": "Malicious_POST"}
 
@@ -236,7 +237,9 @@ def execute_host_command(host, command, run_id, generation, duration_sec):
     process = host.popen(["/bin/sh", "-c", command], stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, start_new_session=True, env=env)
     try:
-        output, _ = process.communicate(timeout=duration_sec + 3.0)
+        output, _ = process.communicate(
+            timeout=duration_sec + HOST_COMMAND_EXIT_GRACE_SEC
+        )
     except BaseException:
         _terminate_process_group(process)
         raise
@@ -256,7 +259,8 @@ def run_experiment(host, command, *, run_type, label="", attack_type="",
 
     Any failure is persisted as failed and raised, so a batch cannot continue.
     An in-flight latch survives SIGKILL/reboots and blocks later runs unless
-    this SAME identity is positively confirmed drained. Recovery is manual.
+    this SAME identity is positively confirmed drained. Until then, preserve
+    active_run.json as active so the collector can finish writing/draining.
     """
     duration = validate_duration(duration_sec, MAX_NORMAL_DURATION_SEC if run_type == "normal" else MAX_DURATION_SEC)
     target_ip = validate_ipv4(target_ip)
@@ -343,9 +347,14 @@ def run_experiment(host, command, *, run_type, label="", attack_type="",
                 current = json.loads(ACTIVE_RUN_FILE.read_text(encoding="utf-8"))
                 if current.get("run_id") != run_id or current.get("generation") != generation:
                     raise RunLifecycleError("active_run.json identity changed during run")
+                final_status = (
+                    "inactive" if drained and not problems
+                    else "failed" if drained
+                    else "active"
+                )
                 _manifest.atomic_text(ACTIVE_RUN_FILE, json.dumps({
                     "run_id": run_id, "generation": generation,
-                    "status": "inactive" if drained and not problems else "failed",
+                    "status": final_status,
                     "ended_at": get_timestamp(),
                 }, sort_keys=True) + "\n", mode=0o600)
             except Exception as exc:
