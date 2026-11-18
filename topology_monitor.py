@@ -930,7 +930,9 @@ class TopologyMonitor(app_manager.RyuApp):
                 # overwrite the source flow with a false same-switch path.
                 return
 
-            self._install_output_flow(datapath, in_port, dst_mac, dst_port, vlan_id)
+            self._install_output_flow(
+                datapath, in_port, dst_mac, dst_port, vlan_id,
+                extra_match=self._ipv4_flow_match_fields(pkt))
             self.register_active_flow(
                 ("vlan_mac", vlan_id, src_mac, dst_mac),
                 {
@@ -970,7 +972,9 @@ class TopologyMonitor(app_manager.RyuApp):
                 "No forwarding port on s%d towards s%d", dpid, dst_dpid)
             return
 
-        self._install_path(path, src_mac, dst_mac, vlan_id)
+        self._install_path(
+            path, src_mac, dst_mac, vlan_id,
+            extra_match=self._ipv4_flow_match_fields(pkt))
 
         self.register_active_flow(
             ("vlan_mac", vlan_id, src_mac, dst_mac),
@@ -2227,8 +2231,34 @@ class TopologyMonitor(app_manager.RyuApp):
     # Flow installation
     # ============================================================
 
+    @staticmethod
+    def _ipv4_flow_match_fields(pkt):
+        """Return exact L3/L4 fields for a real IPv4 packet, if available."""
+        ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        if ip_pkt is None:
+            return {}
+        fields = {
+            "eth_type": 0x0800,
+            "ip_proto": int(ip_pkt.proto),
+            "ipv4_src": ip_pkt.src,
+            "ipv4_dst": ip_pkt.dst,
+        }
+        tcp_pkt = pkt.get_protocol(tcp.tcp)
+        udp_pkt = pkt.get_protocol(udp.udp)
+        if tcp_pkt is not None:
+            fields.update({
+                "tcp_src": int(tcp_pkt.src_port),
+                "tcp_dst": int(tcp_pkt.dst_port),
+            })
+        elif udp_pkt is not None:
+            fields.update({
+                "udp_src": int(udp_pkt.src_port),
+                "udp_dst": int(udp_pkt.dst_port),
+            })
+        return fields
+
     def _install_path(self, path, src_mac, dst_mac, vlan_id=None,
-                      dst_location=None):
+                      dst_location=None, extra_match=None):
         """
         Install priority-100 rules along `path`, INCLUDING the last hop
         to the destination host port. The reverse direction is installed
@@ -2251,7 +2281,9 @@ class TopologyMonitor(app_manager.RyuApp):
         if path[-1] != dst_dpid:
             return False
 
-        self._install_direction(path, src_mac, dst_mac, dst_port, vlan_id)
+        self._install_direction(
+            path, src_mac, dst_mac, dst_port, vlan_id,
+            extra_match=extra_match)
 
         if (src_loc is not None and src_loc[0] == path[0]
                 and self.host_location.get(dst_mac) is not None):
@@ -2322,7 +2354,8 @@ class TopologyMonitor(app_manager.RyuApp):
 
         return True
 
-    def _install_output_flow(self, datapath, in_port, dst_mac, out_port, vlan_id):
+    def _install_output_flow(self, datapath, in_port, dst_mac, out_port, vlan_id,
+                             extra_match=None):
 
         parser = datapath.ofproto_parser
 
@@ -2333,9 +2366,12 @@ class TopologyMonitor(app_manager.RyuApp):
                 break
         if src_mac is None:
             return
-        match = parser.OFPMatch(
-            in_port=in_port, eth_src=src_mac, eth_dst=dst_mac,
-            vlan_vid=OFPVID_PRESENT | vlan_id)
+        match_fields = {
+            "in_port": in_port, "eth_src": src_mac, "eth_dst": dst_mac,
+            "vlan_vid": OFPVID_PRESENT | vlan_id,
+        }
+        match_fields.update(extra_match or {})
+        match = parser.OFPMatch(**match_fields)
 
         actions = self._flow_output_actions(
             datapath, in_port, out_port, vlan_id, source_mac=src_mac)
