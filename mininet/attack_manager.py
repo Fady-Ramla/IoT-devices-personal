@@ -131,13 +131,19 @@ class LocalRunController:
             connection.request(method, path, body=body,
                                headers={"Content-Type": "application/json", "Accept": "application/json"})
             response = connection.getresponse()
-            if not 200 <= response.status < 300:
-                raise ControllerProtocolError("controller HTTP " + str(response.status))
-            if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
-                raise ControllerProtocolError("controller response is not JSON")
             raw = response.read(65537)
             if len(raw) > 65536:
                 raise ControllerProtocolError("controller response exceeds 64 KiB")
+            if not 200 <= response.status < 300:
+                detail = raw.decode("utf-8", errors="replace").strip()
+                try:
+                    detail = json.loads(detail).get("message", detail)
+                except (TypeError, ValueError):
+                    pass
+                suffix = ": " + str(detail) if detail else ""
+                raise ControllerProtocolError("controller HTTP " + str(response.status) + suffix)
+            if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                raise ControllerProtocolError("controller response is not JSON")
             try:
                 data = json.loads(raw.decode("utf-8"))
             except (UnicodeError, ValueError) as exc:
