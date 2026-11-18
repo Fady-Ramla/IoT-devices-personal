@@ -761,11 +761,13 @@ class TrafficMonitorMerged(
             return {"success": not bool(self.dataset_error), "state": "idle",
                     "run_id": None, "generation": None,
                     "connected_switches": len(self._ready_datapaths_locked()),
+                    "forwarding_flows_reset": False,
                     "error": self.dataset_error, "closed": self.dataset_closed}
         return {
             "success": not bool(self.dataset_error or run["drain_errors"]),
             "state": run["state"], "run_id": run["run_id"],
             "generation": run["generation"],
+            "forwarding_flows_reset": run["forwarding_flows_reset"],
             "expected_switches": run["expected_switches"],
             "connected_switches": len(self._ready_datapaths_locked()),
             "switches": sorted(run["datapaths"]),
@@ -780,6 +782,14 @@ class TrafficMonitorMerged(
     def dataset_run_status(self):
         with self.dataset_lock:
             return self._dataset_status_locked()
+
+    def _reset_topology_forwarding_flows(self):
+        """Delete only forwarding rules tracked by TopologyMonitor."""
+        topology = self._get_topology_monitor()
+        clear_flows = getattr(topology, "clear_all_flows", None)
+        if not callable(clear_flows):
+            raise RuntimeError("TopologyMonitor.clear_all_flows is unavailable")
+        clear_flows()
 
     def start_dataset_run(self, run_id, generation, expected_switches=6):
         if (not self._valid_run_identity(run_id, generation)
@@ -801,6 +811,13 @@ class TrafficMonitorMerged(
                 return 409, {"success": False, "message": "Insufficient connected datapaths",
                              "connected_switches": len(datapaths),
                              "expected_switches": expected_switches}
+            try:
+                self._reset_topology_forwarding_flows()
+            except Exception as exc:
+                message = "Forwarding-flow reset failed before dataset run: %s" % exc
+                self.logger.exception(message)
+                return 503, {"success": False, "message": message,
+                             "forwarding_flows_reset": False}
             try:
                 packet_handle, flow_handle, packet_path, flow_path = self._open_run_csvs_locked(run_id)
                 with open(DATASET_RUN_LEDGER, "a", encoding="utf-8") as ledger:
@@ -836,6 +853,7 @@ class TrafficMonitorMerged(
             self.dataset_run = {
                 "run_id": run_id, "generation": generation, "state": "active",
                 "expected_switches": expected_switches, "datapaths": datapaths,
+                "forwarding_flows_reset": True,
                 "pending_final": {}, "final_done": set(), "last_sequence": {},
                 "drain_errors": {}, "issuing_final": False,
                 "started_at": time.time(), "stopped_at": None,

@@ -29,6 +29,23 @@ source=switch_flow_stats
 
 في packet-in path، يتم حساب `syn_count`, `ack_count`, `rst_count`, `fin_count`, `unique_dst_ports`, و`failed_connection_count` من Packet-In windows. هذه ليست قيمًا حقيقية في صفوف `switch_flow_stats` القديمة.
 
+## إعداد Ryu لوضع جمع Packet-In
+
+شغّلي Ryu في بيئة المختبر المعزولة مع تفعيل mirror للـpackets عند source access ingress، حتى تصل packets الحقيقية إلى الـcontroller حتى بعد تركيب forwarding flow. لا تفعّلي هذا الإعداد على شبكة إنتاج:
+
+```bash
+SECUREIOT_PACKETIN_COLLECTION_MIRROR=1 \
+SECUREIOT_PACKETIN_COLLECTION_HARD_TIMEOUT=30 \
+```
+
+يمكن تقييد الـmirror إلى مجموعة hosts محددة باستخدام `SECUREIOT_PACKETIN_COLLECTION_SOURCE_MACS` (قائمة MAC مفصولة بفواصل). عند بدء كل dataset run، يمسح collector قواعد الـforwarding التي يملكها `TopologyMonitor` فقط؛ تحققي من استجابة `/dataset/run/status` أن:
+
+```json
+"forwarding_flows_reset": true
+```
+
+ابدئي بـpilot صغير، وتحققي أن ملفات الـflow الجديدة تحتوي `source=packetin_window` قبل أي batch كبير. راقبي حمل الـcontroller لأن الـmirror يزيد Packet-In rate.
+
 ## قواعد عدم التحيز والتسريب
 
 1. كل تجربة تبدأ بـUUID `run_id` جديد.
