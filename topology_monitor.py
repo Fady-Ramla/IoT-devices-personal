@@ -118,6 +118,12 @@ if HOST_FLOW_HARD_TIMEOUT < 0:
 PACKETIN_COLLECTION_MIRROR = os.getenv(
     "SECUREIOT_PACKETIN_COLLECTION_MIRROR", "0"
 ) == "1"
+_mirror_macs = {
+    value.strip().lower()
+    for value in os.getenv("SECUREIOT_PACKETIN_COLLECTION_SOURCE_MACS", "").split(",")
+    if value.strip()
+}
+PACKETIN_COLLECTION_SOURCE_MACS = frozenset(_mirror_macs)
 
 ETH_TYPE_LLDP = 0x88CC
 ETH_TYPE_ARP = 0x0806
@@ -1950,7 +1956,9 @@ class TopologyMonitor(app_manager.RyuApp):
         # Mirror only at the source access ingress. Mirroring trunk hops would
         # multiply every packet by the path length and can overwhelm Ryu during
         # a collection run, while the source copy is sufficient for features.
-        if PACKETIN_COLLECTION_MIRROR and not data_has_vlan:
+        if (PACKETIN_COLLECTION_MIRROR and not data_has_vlan
+                and (not PACKETIN_COLLECTION_SOURCE_MACS
+                     or str(eth_src).lower() in PACKETIN_COLLECTION_SOURCE_MACS)):
             actions.append(parser.OFPActionOutput(
                 datapath.ofproto.OFPP_CONTROLLER,
                 datapath.ofproto.OFPCML_NO_BUFFER,
