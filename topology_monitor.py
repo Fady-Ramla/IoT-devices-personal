@@ -805,10 +805,16 @@ class TopologyMonitor(app_manager.RyuApp):
         datapath = msg.datapath
         dpid = datapath.id
 
-        # Forward a telemetry-only copy to TrafficMonitorMerged. The topology
-        # app remains the sole forwarding owner; this event carries the same
-        # OpenFlow message without emitting another PacketOut.
-        self.send_event_to_observers(EventPacketInObserved(msg))
+        # Forward a telemetry-only copy directly to the collector. Ryu's
+        # observer queue does not reliably deliver this action-generated
+        # Packet-In to every app, while TopologyMonitor already owns the event.
+        # No PacketOut is emitted and forwarding remains owned here.
+        collector = app_manager.lookup_service_brick("TrafficMonitorMerged")
+        if collector is not None:
+            try:
+                collector.packet_in_handler(EventPacketInObserved(msg))
+            except Exception:
+                self.logger.exception("Packet-In telemetry collector failed")
 
         if "in_port" not in msg.match:
             return
