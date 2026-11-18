@@ -31,16 +31,16 @@ def main():
              "400-1400", "1-2500", "500-1500", "1-3000", "250-1750"]
     durations = [10, 12, 15, 18, 20]
 
-    lines = [
-        "# Generated sequential Packet-In collection batch",
-        "# Source host: h5 (MAC 00:00:00:00:00:06)",
-        "# Each normal/attack command blocks until its run completes.",
-        "# Do not edit labels or mix switch_flow_stats into the final dataset.",
-        "",
-    ]
+    # Mininet's CLI source command does not treat '#' as a comment. Keep the
+    # generated file command-only so every line is executable by ``source``.
+    lines = []
     for i in range(args.rounds):
         j = i % len(normal_rates)
         duration = durations[i % len(durations)]
+        if post_counts[j] > post_rates[j] * duration:
+            raise SystemExit(
+                "invalid malicious_post plan: count must be <= rate * duration"
+            )
         lines.append(f"normal h5 http_api h2 {duration} {normal_rates[j]}")
         lines.append(f"attack h5 port_scan h2 {ports[j]} {scan_rates[j]} {duration}")
         lines.append(f"attack h5 syn_flood h2 5000 {syn_rates[j]} {duration}")
