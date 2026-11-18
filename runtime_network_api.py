@@ -363,6 +363,8 @@ class StatsCache:
             self._datapaths[int(datapath.id)] = datapath
 
     def unregister_datapath(self, dpid):
+        if dpid is None:
+            return
         with self._lock:
             self._datapaths.pop(int(dpid), None)
 

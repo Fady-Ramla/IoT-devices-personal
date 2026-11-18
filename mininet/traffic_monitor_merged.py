@@ -1486,6 +1486,12 @@ class TrafficMonitorMerged(
 
         dpid = datapath.id
 
+        if packet_run is not None:
+            self.logger.info(
+                "PacketIn collection event run=%s dpid=%s reason=%s bytes=%s",
+                packet_run.get("run_id"), dpid,
+                getattr(msg, "reason", "unknown"), len(msg.data or b""))
+
         in_port = msg.match.get(
             "in_port"
         )
