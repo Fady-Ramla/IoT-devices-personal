@@ -1983,7 +1983,14 @@ class TrafficMonitorMerged(
                 or protocol not in (1, 6, 17)):
             return
         identity = (run["run_id"], run["generation"])
-        key = identity + (dpid, str(src_addr), str(dst_addr), protocol)
+        # Keep transport ports in the logical window identity. Without them,
+        # a port scan collapses every destination port into one 10-second
+        # window, hiding real Packet-In observations. This remains a real
+        # packet-derived window: no packet is copied or synthesized.
+        src_port_key = "" if src_port in (None, "") else str(src_port)
+        dst_port_key = "" if dst_port in (None, "") else str(dst_port)
+        key = identity + (dpid, str(src_addr), str(dst_addr), protocol,
+                          src_port_key, dst_port_key)
         state = self.packet_flow_windows.get(key)
         if state is None or now - state["start_time"] >= PACKET_FLOW_WINDOW:
             if state is not None:
@@ -2008,7 +2015,7 @@ class TrafficMonitorMerged(
     def _write_packet_flow_window(self, key, state, lock_held=False):
         if not state or state["packet_count"] <= 0:
             return False
-        _, _, dpid, src_ip, dst_ip, protocol = key
+        _, _, dpid, src_ip, dst_ip, protocol, src_port_key, dst_port_key = key
         run = state["run"]
         if self.dataset_run is not run or run["state"] not in ("active", "draining"):
             return False
