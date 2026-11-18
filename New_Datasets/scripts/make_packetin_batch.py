@@ -9,6 +9,7 @@ after the preceding run has completed. No rows are duplicated or synthesized.
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 
@@ -27,6 +28,7 @@ def main():
     syn_rates = [25, 50, 75, 100, 125, 150, 175, 200, 40, 160]
     post_counts = [25, 50, 75, 100, 125, 150, 175, 200, 40, 160]
     post_rates = [25, 50, 75, 100, 125, 150, 175, 200, 40, 160]
+    post_delays_ms = [math.ceil(1000 / rate) for rate in post_rates]
     ports = ["1-1000", "100-1100", "1-1500", "200-1200", "1-2000",
              "400-1400", "1-2500", "500-1500", "1-3000", "250-1750"]
     durations = [10, 12, 15, 18, 20]
@@ -37,16 +39,18 @@ def main():
     for i in range(args.rounds):
         j = i % len(normal_rates)
         duration = durations[i % len(durations)]
-        if post_counts[j] > post_rates[j] * duration:
+        delay_ms = post_delays_ms[j]
+        max_requests = (1000.0 / delay_ms) * duration
+        if post_counts[j] > max_requests:
             raise SystemExit(
-                "invalid malicious_post plan: count must be <= rate * duration"
+                "invalid malicious_post plan: count exceeds delay/duration capacity"
             )
         lines.append(f"normal h5 http_api h2 {duration} {normal_rates[j]}")
         lines.append(f"attack h5 port_scan h2 {ports[j]} {scan_rates[j]} {duration}")
         lines.append(f"attack h5 syn_flood h2 5000 {syn_rates[j]} {duration}")
         lines.append(
             f"attack h5 malicious_post h2 /api/iot/telemetry "
-            f"{post_counts[j]} {post_rates[j]} 1 {duration}"
+            f"{post_counts[j]} {delay_ms} 1 {duration}"
         )
         lines.append("")
 
