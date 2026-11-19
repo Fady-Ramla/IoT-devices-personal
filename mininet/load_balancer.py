@@ -90,7 +90,8 @@ class TcpLoadBalancer:
     def choose_backend(self):
         with self.lock:
             if not self.backends:
-                return None
+                return None, False
+            primary = self.backends[0]
             ordered = self.backends[self.next_backend:] + self.backends[:self.next_backend]
             self.next_backend = (self.next_backend + 1) % len(self.backends)
         healthy = [backend for backend in ordered if self.healthy(backend)]
@@ -101,8 +102,8 @@ class TcpLoadBalancer:
         self.write_stats()
         for backend in ordered:
             if backend in healthy:
-                return backend
-        return None
+                return backend, bool(primary not in healthy and backend != primary)
+        return None, False
 
     def relay(self, client, upstream):
         sockets = [client, upstream]
@@ -131,12 +132,17 @@ class TcpLoadBalancer:
 
     def handle(self, client, address):
         self.update(requests_total=1, requests_active=1)
-        backend = self.choose_backend()
+        backend, is_failover = self.choose_backend()
         if backend is None:
             client.close()
             self.update(requests_active=-1, backend_failovers=1)
             print(f"NO_HEALTHY_BACKEND client={address}", flush=True)
             return
+        if is_failover:
+            # Count each request served by a backup because the configured
+            # primary failed its health check. Normal round-robin selection
+            # while the primary is healthy is not a failover.
+            self.update(backend_failovers=1)
         self.record_backend(backend)
         try:
             upstream = socket.create_connection(backend, timeout=self.health_timeout)

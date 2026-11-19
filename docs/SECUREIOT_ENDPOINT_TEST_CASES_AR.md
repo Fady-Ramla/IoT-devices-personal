@@ -231,6 +231,8 @@ backend_requests تزيد
 updated_at يتغير
 ```
 
+في اختبار failover، إذا كان الـprimary غير healthy وتم توجيه الطلب إلى backup، يزيد `backend_failovers` لكل طلب تم تحويله. اختيار backup بسبب round-robin والـprimary سليم لا يُحسب failover. وتظل الزيادة موجودة أيضًا عند عدم وجود backend healthy أو فشل الاتصال بالـbackend المختار.
+
 ---
 
 ## TC-07 — Firewall block فقط
