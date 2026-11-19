@@ -103,6 +103,11 @@ NORMAL_PRIORITY = 10
 REROUTE_PRIORITY = 100
 ACTIVITY_TRACK_PRIORITY = 110
 DEVICE_BLOCK_PRIORITY = 50000
+HTTP_ACTIVITY_PORTS = frozenset(
+    int(value) for value in os.getenv(
+        "SECUREIOT_HTTP_ACTIVITY_PORTS", "80,443,5000,8080,8081"
+    ).split(",") if value.strip()
+)
 
 HOST_FLOW_IDLE_TIMEOUT = 30
 # Production behavior remains unchanged when this is unset. During a
@@ -246,9 +251,12 @@ class TopologyMonitor(app_manager.RyuApp):
 
         # PortStats samples used by link-utilization path selection.
         self.port_stats_previous = {}
-        # Recent ICMP echo counters for the public traffic_active signal.
+        # Recent selected data-plane activity for the public traffic_active
+        # signal: ICMP echo and HTTP/Load Balancer service traffic.
         self.switch_traffic_last_seen = {}
         self.ping_traffic_last_seen = {}
+        self.host_traffic_last_seen = {}
+        self.web_traffic_last_seen = {}
         self.flow_stats_previous = {}
 
         # Topology state.
@@ -707,12 +715,30 @@ class TopologyMonitor(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def flow_stats_reply_handler(self, ev):
-        """Mark switches active only when tracked ICMP echo counters increase."""
+        """Mark switches/hosts active when tracked ping or web counters increase."""
         dpid = int(ev.msg.datapath.id)
         now = time.time()
         for stat in ev.msg.body:
             priority = int(getattr(stat, "priority", 0))
             if priority != ACTIVITY_TRACK_PRIORITY:
+                continue
+            match = getattr(stat, "match", {})
+            try:
+                ip_proto = int(match.get("ip_proto", -1))
+                src_ip = match.get("ipv4_src")
+                dst_ip = match.get("ipv4_dst")
+                icmp_type = match.get("icmpv4_type")
+                tcp_src = match.get("tcp_src")
+                tcp_dst = match.get("tcp_dst")
+            except (AttributeError, TypeError, ValueError):
+                continue
+            is_ping = ip_proto == 1 and str(icmp_type) == "8"
+            try:
+                tcp_ports = {int(port) for port in (tcp_src, tcp_dst) if port is not None}
+            except (TypeError, ValueError):
+                tcp_ports = set()
+            is_web = ip_proto == 6 and bool(tcp_ports & HTTP_ACTIVITY_PORTS)
+            if not (is_ping or is_web):
                 continue
             key = (
                 dpid,
@@ -730,15 +756,43 @@ class TopologyMonitor(app_manager.RyuApp):
                     and byte_count >= previous[1]
                     and (packets > previous[0] or byte_count > previous[1])):
                 self.switch_traffic_last_seen[dpid] = now
-                match = getattr(stat, "match", {})
-                try:
-                    src_ip = match.get("ipv4_src")
-                    dst_ip = match.get("ipv4_dst")
-                except (AttributeError, TypeError):
-                    src_ip = dst_ip = None
                 for host_ip in (src_ip, dst_ip):
                     if host_ip:
-                        self.ping_traffic_last_seen[str(host_ip)] = now
+                        host_ip = str(host_ip)
+                        self.host_traffic_last_seen[host_ip] = now
+                        if is_ping:
+                            self.ping_traffic_last_seen[host_ip] = now
+                        if is_web:
+                            self.web_traffic_last_seen[host_ip] = now
+                for flow in self.active_flows.values():
+                    if not isinstance(flow, dict):
+                        continue
+                    same_pair = (flow.get("src_ip") == src_ip
+                                 and flow.get("dst_ip") == dst_ip)
+                    same_reverse_pair = (flow.get("src_ip") == dst_ip
+                                         and flow.get("dst_ip") == src_ip)
+                    if not (same_pair or same_reverse_pair):
+                        continue
+                    try:
+                        flow_proto = int(flow.get("ip_proto", -1))
+                    except (TypeError, ValueError):
+                        continue
+                    if is_ping and flow_proto != 1:
+                        continue
+                    try:
+                        flow_ports = {
+                            int(port) for port in (
+                                flow.get("tcp_src_port"),
+                                flow.get("tcp_dst_port"),
+                            ) if port is not None
+                        }
+                    except (TypeError, ValueError):
+                        flow_ports = set()
+                    if is_web and (flow_proto != 6
+                                   or not (flow_ports & tcp_ports)):
+                        continue
+                    flow["last_seen"] = now
+                    flow["activity_source"] = "openflow_counter_delta"
 
         # OpenFlow rules expire, so discard snapshots for rules not observed
         # recently to keep this map bounded during long-running experiments.
@@ -1778,7 +1832,7 @@ class TopologyMonitor(app_manager.RyuApp):
         return True
 
     def _observe_ipv4_flow(self, dpid, in_port, src_mac, pkt, vlan_id):
-        """Register ordinary IPv4 paths and install ICMP activity rules."""
+        """Register IPv4 paths and install ICMP/HTTP activity rules."""
         ip_pkt = pkt.get_protocol(ipv4.ipv4)
         if ip_pkt is None:
             return
@@ -1865,6 +1919,32 @@ class TopologyMonitor(app_manager.RyuApp):
                                dst_mac, ip_pkt.src, ip_pkt.dst),
                 )
 
+        tcp_src_port = int(tcp_pkt.src_port) if tcp_pkt is not None else None
+        tcp_dst_port = int(tcp_pkt.dst_port) if tcp_pkt is not None else None
+        tracked_web_port = next(
+            (port for port in (tcp_dst_port, tcp_src_port)
+             if port in HTTP_ACTIVITY_PORTS),
+            None,
+        )
+        if tracked_web_port is not None and path:
+            destination_location = gateway_loc or dst_loc
+            if destination_location is not None:
+                port_field = "tcp_dst" if tcp_dst_port == tracked_web_port else "tcp_src"
+                self._install_direction(
+                    path, src_mac, dst_mac, destination_location[1], vlan_id,
+                    extra_match={
+                        "eth_type": 0x0800,
+                        "ip_proto": 6,
+                        "ipv4_src": ip_pkt.src,
+                        "ipv4_dst": ip_pkt.dst,
+                        port_field: tracked_web_port,
+                    },
+                    priority=ACTIVITY_TRACK_PRIORITY,
+                    track_key=("activity-http", int(vlan_id), src_mac,
+                               dst_mac, ip_pkt.src, ip_pkt.dst,
+                               port_field, tracked_web_port),
+                )
+
         if any(isinstance(flow, dict) and flow.get("src_mac") == src_mac
                and flow.get("dst_ip") == ip_pkt.dst
                for flow in self.active_flows.values()):
@@ -1882,6 +1962,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 "src_ip": ip_pkt.src,
                 "dst_ip": ip_pkt.dst,
                 "ip_proto": int(ip_pkt.proto),
+                "tcp_src_port": tcp_src_port,
+                "tcp_dst_port": tcp_dst_port,
                 "icmp_type": int(icmp_pkt.type) if icmp_pkt is not None else None,
                 "path": path,
                 "path_type": path_type,
@@ -2954,6 +3036,38 @@ class TopologyMonitor(app_manager.RyuApp):
         src_ip = flow_data.get("src_ip") if isinstance(flow_data, dict) else None
         dst_ip = flow_data.get("dst_ip") if isinstance(flow_data, dict) else None
         vlan_id = flow_data.get("vlan_id") if isinstance(flow_data, dict) else None
+        try:
+            ip_proto = int(flow_data.get("ip_proto", -1))
+            icmp_type = int(flow_data.get("icmp_type", -1))
+        except (TypeError, ValueError):
+            ip_proto = icmp_type = -1
+        try:
+            web_ports = {
+                int(port) for port in (
+                    flow_data.get("tcp_src_port"),
+                    flow_data.get("tcp_dst_port"),
+                ) if port is not None
+            }
+        except (TypeError, ValueError):
+            web_ports = set()
+        is_selected_activity = (
+            (ip_proto == 1 and icmp_type == 8)
+            or (ip_proto == 6 and bool(web_ports & HTTP_ACTIVITY_PORTS))
+        )
+        if is_selected_activity:
+            observed_at = float(flow_data.get("last_seen", time.time()))
+            for host_ip in (src_ip, dst_ip):
+                if host_ip:
+                    self.host_traffic_last_seen[str(host_ip)] = observed_at
+                    if ip_proto == 6:
+                        self.web_traffic_last_seen[str(host_ip)] = observed_at
+                    else:
+                        self.ping_traffic_last_seen[str(host_ip)] = observed_at
+            for switch_dpid in flow_data.get("path") or []:
+                try:
+                    self.switch_traffic_last_seen[int(switch_dpid)] = observed_at
+                except (TypeError, ValueError):
+                    continue
         previous_flow = self.active_flows.get(flow_id)
         if src_ip and dst_ip and vlan_id is not None:
             for existing_id, existing in list(self.active_flows.items()):
@@ -2995,6 +3109,11 @@ class TopologyMonitor(app_manager.RyuApp):
         """Start a collection run with no stale reactive forwarding rules."""
         self._clear_tracked_forwarding_state()
         self.congestion_last_reroute.clear()
+        self.switch_traffic_last_seen.clear()
+        self.ping_traffic_last_seen.clear()
+        self.host_traffic_last_seen.clear()
+        self.web_traffic_last_seen.clear()
+        self.flow_stats_previous.clear()
         self.logger.info("Reset tracked forwarding state for dataset collection")
 
     # ============================================================

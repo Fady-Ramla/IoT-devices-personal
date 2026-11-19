@@ -50,6 +50,19 @@ EXPECTED_INTER_SWITCH_LINKS = len(_topology_config.INTER_SWITCH_LINKS)
 LOAD_BALANCER_CONFIG = dict(_topology_config.LOAD_BALANCER)
 SERVICE_PAIRS = dict(_topology_config.SERVICE_PAIRS)
 LOAD_BALANCER_IP = HOST_IPS.get(LOAD_BALANCER_CONFIG.get("host"), "unknown")
+LOAD_BALANCER_PORTS = {
+    int(port) for port in LOAD_BALANCER_CONFIG.get("frontends", ())
+}
+for _service_name in ("http_api", "https"):
+    _service_port = SERVICE_PAIRS.get(_service_name, {}).get("port")
+    if _service_port is not None:
+        LOAD_BALANCER_PORTS.add(int(_service_port))
+HTTP_ACTIVITY_PORTS = frozenset(
+    {80, 443, 8080, 8081} | LOAD_BALANCER_PORTS | {
+        int(value) for value in os.getenv("SECUREIOT_HTTP_ACTIVITY_PORTS", "").split(",")
+        if value.strip()
+    }
+)
 # ICMP activity counters are sampled every five seconds. Keep activity visible
 # across one sample interval and short scheduling jitter; expire after eight
 # quiet seconds, not at exact OpenFlow rule deletion time.
@@ -83,6 +96,37 @@ def _timestamp_is_recent(value, max_age_seconds, now=None):
         return False
     age = ((now or datetime.now(timezone.utc)) - stamp).total_seconds()
     return 0 <= age <= float(max_age_seconds)
+
+
+def _flow_activity_category(flow):
+    """Classify only observed ping and configured HTTP/Load Balancer flows."""
+    if not isinstance(flow, dict):
+        return None
+    try:
+        ip_proto = int(flow.get("ip_proto", -1))
+    except (TypeError, ValueError):
+        return None
+    if ip_proto == 1:
+        try:
+            return "ping" if int(flow.get("icmp_type", -1)) == 8 else None
+        except (TypeError, ValueError):
+            return None
+    if ip_proto != 6:
+        return None
+    try:
+        ports = {
+            int(port) for port in (
+                flow.get("tcp_src_port"), flow.get("tcp_dst_port")
+            ) if port is not None
+        }
+    except (TypeError, ValueError):
+        return None
+    if not ports.intersection(HTTP_ACTIVITY_PORTS):
+        return None
+    endpoints = {str(flow.get("src_ip", "")), str(flow.get("dst_ip", ""))}
+    if LOAD_BALANCER_IP in endpoints:
+        return "load_balancer"
+    return "http"
 
 
 def json_response(payload, status=200):
@@ -474,7 +518,7 @@ class RuntimeNetworkController(ControllerBase):
         return topology, (_call(topology, ["get_topology_status"], {}) or {})
 
     def _traffic_activity(self):
-        """Map active switch DPIDs to the latest ping/poll timestamp."""
+        """Map active switch DPIDs to recent ping, HTTP, or telemetry activity."""
         activity = {}
         topology = self._topology()
         ping_activity = getattr(topology, "switch_traffic_last_seen", {}) if topology is not None else {}
@@ -688,6 +732,7 @@ class RuntimeNetworkController(ControllerBase):
                 ports.sort()
         datapaths = getattr(topology, "datapaths", {}) if topology is not None else {}
         ping_activity = getattr(topology, "ping_traffic_last_seen", {}) if topology is not None else {}
+        web_activity = getattr(topology, "web_traffic_last_seen", {}) if topology is not None else {}
         now = time.time()
         telemetry_by_device = {}
         try:
@@ -713,9 +758,10 @@ class RuntimeNetworkController(ControllerBase):
                 ping_active = ping_seen is not None and 0 <= now - float(ping_seen) <= TRAFFIC_ACTIVE_WINDOW
             except (TypeError, ValueError):
                 ping_active = False
+            web_seen = web_activity.get(HOST_IPS[host_id]) if isinstance(web_activity, dict) else None
+            web_active = _timestamp_is_recent(web_seen, TRAFFIC_ACTIVE_WINDOW)
             telemetry_record = telemetry_by_device.get(host_id)
             telemetry_active = telemetry_record is not None
-            host_active = bool(telemetry_active or ping_active)
             raw_flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
             raw_flows = list(raw_flows)
             tracked_flows = _call(topology, ["get_active_flow_paths"], []) if topology else []
@@ -731,23 +777,24 @@ class RuntimeNetworkController(ControllerBase):
                                for existing in raw_flows if isinstance(existing, dict)):
                         raw_flows.append(flow)
             flows = []
-            if ping_active:
-                for flow in raw_flows:
-                    if not isinstance(flow, dict):
-                        continue
-                    try:
-                        is_icmp = int(flow.get("ip_proto", -1)) == 1
-                    except (TypeError, ValueError):
-                        is_icmp = False
-                    if not is_icmp:
-                        continue
-                    if HOST_IPS[host_id] not in (flow.get("src_ip"), flow.get("dst_ip")):
-                        continue
-                    ping_flow = dict(flow)
-                    ping_flow["traffic_category"] = "ping"
-                    ping_flow["last_seen"] = datetime.fromtimestamp(
-                        float(ping_seen), tz=timezone.utc).isoformat().replace("+00:00", "Z")
-                    flows.append(ping_flow)
+            for flow in raw_flows:
+                if not isinstance(flow, dict):
+                    continue
+                if HOST_IPS[host_id] not in (flow.get("src_ip"), flow.get("dst_ip")):
+                    continue
+                category = _flow_activity_category(flow)
+                if category is None or not _timestamp_is_recent(
+                        flow.get("last_seen"), TRAFFIC_ACTIVE_WINDOW):
+                    continue
+                active_flow = dict(flow)
+                active_flow["traffic_category"] = category
+                active_flow["last_seen"] = _parse_utc_timestamp(
+                    flow.get("last_seen")).isoformat().replace("+00:00", "Z")
+                if category == "ping":
+                    ping_active = True
+                else:
+                    web_active = True
+                flows.append(active_flow)
             telemetry_path = _graph_path(topology, "h2", host_id) if telemetry_active else None
             if telemetry_active:
                 flows.append({
@@ -764,15 +811,23 @@ class RuntimeNetworkController(ControllerBase):
                     "last_seen": telemetry_record.get("last_seen"),
                     "activity_source": "successful_sensor_poll",
                 })
-            primary_flow = flows[0] if flows else {}
+            host_active = bool(telemetry_active or ping_active or web_active)
+            primary_flow = max(
+                flows,
+                key=lambda flow: _parse_utc_timestamp(flow.get("last_seen"))
+                or datetime.min.replace(tzinfo=timezone.utc),
+            ) if flows else {}
             fallback_path = self.paths.get(host_id, {}) if host_active else {}
-            last_traffic_at = (telemetry_record.get("last_seen") if telemetry_active else None)
-            if ping_active:
-                ping_timestamp = datetime.fromtimestamp(
-                    float(ping_seen), tz=timezone.utc).isoformat().replace("+00:00", "Z")
-                if (last_traffic_at is None
-                        or _parse_utc_timestamp(ping_timestamp) > _parse_utc_timestamp(last_traffic_at)):
-                    last_traffic_at = ping_timestamp
+            traffic_timestamps = [
+                _parse_utc_timestamp(flow.get("last_seen"))
+                for flow in flows if isinstance(flow, dict)
+            ]
+            if web_active and web_seen is not None:
+                traffic_timestamps.append(_parse_utc_timestamp(web_seen))
+            if ping_active and ping_seen is not None:
+                traffic_timestamps.append(_parse_utc_timestamp(ping_seen))
+            traffic_timestamps = [stamp for stamp in traffic_timestamps if stamp is not None]
+            last_traffic_at = max(traffic_timestamps).isoformat().replace("+00:00", "Z") if traffic_timestamps else None
             telemetry_path_nodes = telemetry_path.get("nodes", []) if isinstance(telemetry_path, dict) else []
             result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": port_no,
                            # Mininet creates gw before h1, so the default

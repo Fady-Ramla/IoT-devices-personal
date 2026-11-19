@@ -125,10 +125,10 @@ HTTP 200
 
 ---
 
-## TC-04 — Telemetry / ICMP-only Switch traffic activity
+## TC-04 — Telemetry / ICMP / HTTP-Load Balancer traffic activity
 
 ### الهدف
-التأكد أن `traffic_active` يعكس نجاح telemetry وICMP ping فقط، ولا يتفعّل بسبب TCP/HTTP عادي أو port counters عامة.
+التأكد أن `traffic_active` يعكس عيّنات telemetry الناجحة، وICMP ping، وتدفّق HTTP/Load Balancer على منافذ الخدمات المعرّفة للمشروع (ومنها 5000 و443). لا يكفي وجود port counters عامة أو flow قديم لتفعيل الحالة.
 
 ### التنفيذ
 
@@ -138,6 +138,12 @@ HTTP 200
 h27 sh -c 'ping -n -i 0.5 -c 60 10.10.50.28 >/tmp/h27_to_h28_ping.log 2>&1 &'
 ```
 
+لاختبار HTTP والـLoad Balancer بدلًا من ping، شغّلي طلبات متواصلة من h21 إلى الـVIP ‏10.10.20.100:5000 (الـLoad Balancer هو h38):
+
+```text
+h21 sh -c 'for i in $(seq 1 60); do curl -4 -fsS --max-time 2 http://10.10.20.100:5000/health >/dev/null; sleep 1; done' &
+```
+
 من Terminal عادي خارج Mininet، أثناء استمرار الـping:
 
 ```bash
@@ -145,15 +151,23 @@ BASE_URL='https://<your-current-ngrok-host>'
 python3 webtrack_gateway/check_dynamic_endpoints.py "$BASE_URL"
 ```
 
+أثناء طلبات الـLoad Balancer، افحصي حالة الـhosts والـswitches مباشرةً:
+
+```bash
+curl -fsS "$BASE_URL/topology/hosts" | python3 -c 'import json,sys; [print(h["host_id"],"traffic_active=",h.get("traffic_active"),"active_flows=",h.get("active_flows"),"path=",h.get("path")) for h in json.load(sys.stdin) if h.get("host_id") in {"h21","h38","h2","h18"}]'
+curl -fsS "$BASE_URL/topology/switches" | python3 -c 'import json,sys; [print(s["switch_id"],"traffic_active=",s.get("traffic_active"),"last_traffic_at=",s.get("last_traffic_at")) for s in json.load(sys.stdin)]'
+```
+
 ### النجاح المتوقع
 
-- للـping، يزيد عداد قاعدة ICMP echo المخصصة، ويظهر h27/h28 والسويتشات على المسار `traffic_active: true` بعد عيّنتي flow stats تقريبًا (poll كل 5 ثوانٍ).
+- للـping، يزيد عداد قاعدة ICMP echo المخصصة. ولـHTTP، تزيد counters لقواعد الخدمة/الـLoad Balancer ذات الأولوية المخصصة. يظهر الطرفان والسويتشات على المسار `traffic_active: true`، وتحتوي `active_flows` على مسار حديث مصنّف `ping` أو `http` أو `load_balancer`.
+- مع VIP الاختبار، يتغيّر `requests_total` و`last_backend` في `/network/load-balancer/stats`، ويظهر نشاط المسار بين h21 وh38 والـbackend الذي استقبل الطلب.
 - `/topology/paths?source=h27&destination=h28` و`/topology/hosts/h28/path?source=h27` يعرضان المسار؛ مع flow فعلي متتبع يظهر `path_source: installed_flow` و`nodes` من DPID 5 إلى DPID 6. رد `computed: true` وحده يثبت graph route ممكنًا، وليس flow متثبتًا.
-- بعد إيقاف ping، ترجع حالة ping إلى `false` خلال 8 ثوانٍ تقريبًا من آخر زيادة مرصودة في العداد.
+- بعد إيقاف ping أو طلبات HTTP، ترجع حالة النشاط إلى `false` خلال نحو 8 ثوانٍ من آخر زيادة مرصودة في counter. لا يُعدّ المسار القديم في `path_history` نشاطًا جاريًا.
 - يجب أن يتغير sequence/timestamp الخاص بقراءة h16 بين عينتين يفصل بينهما 11 ثانية تقريبًا طالما simulator يعمل. الـGET يقرأ SQLite ولا يبدأ توليد أو ingestion جديدًا.
-- الـPOST من IoT simulator إلى Web/API خاص ولا يمر عبر ngrok؛ `traffic_active` للـhost-pair في هذا الاختبار يُثبت بزيادة ICMP flow stats، لا بمجرد GET للداشبورد.
+- الـPOST من IoT simulator إلى Web/API خاص ولا يمر عبر ngrok؛ واجهة المستخدم تقرأ telemetry باستخدام GET. كما أن مجرد GET للداشبورد أو وجود مسار محفوظ لا يثبت traffic على الـdata plane.
 
-بعد انتهاء ping المحدود، انتظري 10 ثوانٍ ثم أعيدي `GET /topology/hosts`; ينبغي أن تنتهي حالة `traffic_active` الخاصة بـh27/h28 بعد نافذة النشاط (نحو 8 ثوانٍ بعد آخر delta مرصود). لم يتغير أي VLAN أو link في هذا الاختبار.
+بعد انتهاء ping أو طلبات الـLoad Balancer، انتظري 10 ثوانٍ ثم أعيدي `GET /topology/hosts` و`GET /topology/switches`; ينبغي أن تنتهي حالة `traffic_active` بعد نافذة النشاط (نحو 8 ثوانٍ بعد آخر delta مرصود). لم يتغير أي VLAN أو link في هذا الاختبار.
 
 ---
 
