@@ -163,11 +163,11 @@ curl -fsS "$BASE_URL/topology/switches" | python3 -c 'import json,sys; [print(s[
 - للـping، يزيد عداد قاعدة ICMP echo المخصصة. ولـHTTP، تزيد counters لقواعد الخدمة/الـLoad Balancer ذات الأولوية المخصصة. يظهر الطرفان والسويتشات على المسار `traffic_active: true`، وتحتوي `active_flows` على مسار حديث مصنّف `ping` أو `http` أو `load_balancer`.
 - مع VIP الاختبار، يتغيّر `requests_total` و`last_backend` في `/network/load-balancer/stats`، ويظهر نشاط المسار بين h21 وh38 والـbackend الذي استقبل الطلب.
 - `/topology/paths?source=h27&destination=h28` و`/topology/hosts/h28/path?source=h27` يعرضان المسار؛ مع flow فعلي متتبع يظهر `path_source: installed_flow` و`nodes` من DPID 5 إلى DPID 6. رد `computed: true` وحده يثبت graph route ممكنًا، وليس flow متثبتًا.
-- بعد إيقاف ping أو طلبات HTTP، ترجع حالة النشاط إلى `false` خلال نحو 8 ثوانٍ من آخر زيادة مرصودة في counter. لا يُعدّ المسار القديم في `path_history` نشاطًا جاريًا.
+- بعد توقف كل ping/HTTP على host أو path، ترجع الحالة إلى `false` خلال نحو 8 ثوانٍ من آخر packet/counter delta. قد يظل h2 أو h38 أو backend نشطًا إذا استمرت telemetry أو LB health checks؛ هذا نشاط حقيقي وليس stale state. لا يُعدّ المسار القديم في `path_history` نشاطًا جاريًا.
 - يجب أن يتغير sequence/timestamp الخاص بقراءة h16 بين عينتين يفصل بينهما 11 ثانية تقريبًا طالما simulator يعمل. الـGET يقرأ SQLite ولا يبدأ توليد أو ingestion جديدًا.
 - الـPOST من IoT simulator إلى Web/API خاص ولا يمر عبر ngrok؛ واجهة المستخدم تقرأ telemetry باستخدام GET. كما أن مجرد GET للداشبورد أو وجود مسار محفوظ لا يثبت traffic على الـdata plane.
 
-بعد انتهاء ping أو طلبات الـLoad Balancer، انتظري 10 ثوانٍ ثم أعيدي `GET /topology/hosts` و`GET /topology/switches`; ينبغي أن تنتهي حالة `traffic_active` بعد نافذة النشاط (نحو 8 ثوانٍ بعد آخر delta مرصود). لم يتغير أي VLAN أو link في هذا الاختبار.
+بعد انتهاء ping أو طلبات الـLoad Balancer، انتظري 10 ثوانٍ ثم أعيدي `GET /topology/hosts` و`GET /topology/switches`. تحققي خصوصًا من h21 (مصدر الاختبار): يجب أن تنطفئ حالته إذا لم يبقَ له traffic؛ أما h2/h38 أو سويتشات المسار فقد تظل نشطة عند استمرار health checks أو telemetry. لم يتغير أي VLAN أو link في هذا الاختبار.
 
 ---
 
