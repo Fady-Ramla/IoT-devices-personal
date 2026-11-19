@@ -83,11 +83,14 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import queue
 import re
 import threading
 import uuid
 import time
 
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from ryu.base import app_manager
 
@@ -178,6 +181,93 @@ FLOW_HEADER = [
     "unique_dst_ports", "failed_connection_count", "tcp_fraction", "udp_fraction",
     "icmp_fraction", "source", "src_mac", "dst_mac"
 ]
+
+# Optional outbound AI classification delivery. Disabled unless the endpoint is configured.
+AI_API_URL = os.environ.get("SECUREIOT_AI_API_URL", "").strip()
+AI_API_TOKEN = os.environ.get("SECUREIOT_AI_API_TOKEN", "").strip()
+try:
+    AI_POST_TIMEOUT = max(0.2, min(float(os.environ.get("SECUREIOT_AI_POST_TIMEOUT", "2")), 10.0))
+except (TypeError, ValueError):
+    AI_POST_TIMEOUT = 2.0
+try:
+    AI_QUEUE_SIZE = max(1, int(os.environ.get("SECUREIOT_AI_QUEUE_SIZE", "1000")))
+except (TypeError, ValueError):
+    AI_QUEUE_SIZE = 1000
+AI_FEATURE_FIELDS = FLOW_HEADER[6:28]
+AI_CONTEXT_FIELDS = ("run_id", "observation_id", "timestamp", "switch_dpid",
+                     "src_ip", "dst_ip", "src_mac", "dst_mac")
+
+def build_ai_flow_payload(record):
+    """Split one FLOW_HEADER-shaped record into model features and trace context."""
+    features = {name: record.get(name, "") for name in AI_FEATURE_FIELDS}
+    # Match New_Datasets/scripts/aggregate_packet_to_flow.py: one unambiguous
+    # port is numeric; absent or multiple ports are represented as numeric 0.
+    for field in ("src_port", "dst_port"):
+        value = features.get(field)
+        try:
+            text = "" if value is None else str(value).strip()
+            port = 0 if text.lower() in ("", "none", "nan", "null", "*") else int(float(text))
+            features[field] = port if 0 <= port <= 65535 else 0
+        except (TypeError, ValueError, OverflowError):
+            features[field] = 0
+    context = {name: record.get(name, "") for name in AI_CONTEXT_FIELDS}
+    return {"features": features, "context": context}
+
+class AIFlowPoster:
+    """Bounded, asynchronous JSON POST client; network failures never block Ryu."""
+    def __init__(self, logger, endpoint=AI_API_URL, token=AI_API_TOKEN,
+                 timeout=AI_POST_TIMEOUT, queue_size=AI_QUEUE_SIZE):
+        self.logger = logger
+        self.endpoint = endpoint
+        self.token = token
+        self.timeout = timeout
+        self.pending = queue.Queue(maxsize=queue_size)
+        if self.endpoint:
+            self.worker = threading.Thread(target=self._run, name="ai-flow-poster", daemon=True)
+            self.worker.start()
+            self.logger.info("AI flow POST enabled; endpoint configured (URL hidden)")
+        else:
+            self.worker = None
+            self.logger.info("AI flow POST disabled; SECUREIOT_AI_API_URL is not set")
+
+    def enqueue(self, payload):
+        if not self.endpoint:
+            return False
+        try:
+            self.pending.put_nowait(payload)
+            return True
+        except queue.Full:
+            self.logger.warning("AI flow POST queue is full; dropping observation")
+            return False
+
+    def _run(self):
+        while True:
+            payload = self.pending.get()
+            try:
+                body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                headers = {"Accept": "application/json", "Content-Type": "application/json",
+                           "User-Agent": "SecureIoT-Ryu/1.0"}
+                if self.token:
+                    headers["Authorization"] = "Bearer " + self.token
+                request = Request(self.endpoint, data=body,
+                                  headers=headers, method="POST")
+                with urlopen(request, timeout=self.timeout) as response:
+                    status = getattr(response, "status", None)
+                    if status is None:
+                        status = response.getcode()
+                    status = int(status if status is not None else 200)
+                    response.read()
+                if 200 <= status < 300:
+                    self.logger.info("AI flow POST accepted observation_id=%s HTTP %d",
+                                     payload.get("context", {}).get("observation_id", ""), status)
+                else:
+                    self.logger.warning("AI flow POST returned HTTP %d", status)
+            except (OSError, ValueError, URLError) as exc:
+                self.logger.warning("AI flow POST failed: %s", exc)
+            except Exception:
+                self.logger.exception("Unexpected AI flow POST worker error")
+            finally:
+                self.pending.task_done()
 
 FLOW_POLL_INTERVAL = 2.0
 PACKET_FLOW_WINDOW = 10.0
@@ -631,6 +721,7 @@ class TrafficMonitorMerged(
         self.dataset_closed = False
         self.flow_requests = {}  # (connection identity, xid) -> immutable run owner
         self.flow_request_sequence = 0
+        self.ai_flow_poster = AIFlowPoster(self.logger)
         # Retain connections/used xids for this controller lifetime. An xid
         # wrapped or reset by the transport must not correlate an old reply
         # with a request belonging to a later run on the same connection.
@@ -1690,7 +1781,8 @@ class TrafficMonitorMerged(
         if packet_run is not None and ipv4_pkt is not None:
             self._update_packet_flow_window(
                 packet_timestamp, packet_run, dpid, src_ip, dst_ip,
-                src_port, dst_port, protocol, packet_length, tcp_flags
+                src_port, dst_port, protocol, packet_length, tcp_flags,
+                src_mac, dst_mac
             )
 
         # -----------------------------------------------------
@@ -1967,7 +2059,8 @@ class TrafficMonitorMerged(
     # =========================================================
     def _update_packet_flow_window(self, now, run, dpid, src_ip, dst_ip,
                                    src_port, dst_port, protocol,
-                                   packet_length, tcp_flags):
+                                   packet_length, tcp_flags,
+                                   src_mac="", dst_mac=""):
         """Aggregate observed IPv4 packets into run-scoped flow windows."""
         try:
             protocol = int(protocol)
@@ -1987,13 +2080,16 @@ class TrafficMonitorMerged(
             state = {"run": run, "start_time": now, "last_time": now,
                      "packet_count": 0, "byte_count": 0, "syn_count": 0,
                      "ack_count": 0, "rst_count": 0, "fin_count": 0,
-                     "src_ports": set(), "dst_ports": set()}
+                     "src_ports": set(), "dst_ports": set(),
+                     "src_macs": set(), "dst_macs": set()}
             self.packet_flow_windows[key] = state
         state["last_time"] = now
         state["packet_count"] += 1
         state["byte_count"] += int(packet_length or 0)
         if src_port not in ("", None): state["src_ports"].add(str(src_port))
         if dst_port not in ("", None): state["dst_ports"].add(str(dst_port))
+        if src_mac: state["src_macs"].add(str(src_mac).lower())
+        if dst_mac: state["dst_macs"].add(str(dst_mac).lower())
         try: flags = int(tcp_flags or 0)
         except (TypeError, ValueError): flags = 0
         state["syn_count"] += int(bool(flags & 0x02))
@@ -2013,6 +2109,8 @@ class TrafficMonitorMerged(
         packets, byte_count = state["packet_count"], state["byte_count"]
         syn, ack, rst = state["syn_count"], state["ack_count"], state["rst_count"]
         name = {6: "tcp", 17: "udp", 1: "icmp"}.get(protocol, str(protocol))
+        src_mac = next(iter(state["src_macs"])) if len(state["src_macs"]) == 1 else ""
+        dst_mac = next(iter(state["dst_macs"])) if len(state["dst_macs"]) == 1 else ""
         row = [end_time, dpid, src_ip, dst_ip,
                next(iter(state["src_ports"])) if len(state["src_ports"]) == 1 else "",
                next(iter(state["dst_ports"])) if len(state["dst_ports"]) == 1 else "",
@@ -2020,7 +2118,7 @@ class TrafficMonitorMerged(
                duration, byte_count / max(packets, 1), syn, ack, rst, state["fin_count"],
                syn / max(ack, 1), rst / max(packets, 1), len(state["dst_ports"]),
                max(syn - ack, 0), float(protocol == 6), float(protocol == 17),
-               float(protocol == 1), "packetin_window", "", ""]
+               float(protocol == 1), "packetin_window", src_mac, dst_mac]
         if lock_held:
             return self._write_flow_feature_locked(row, run)
         return self._write_flow_feature(row, run)
@@ -2468,8 +2566,11 @@ class TrafficMonitorMerged(
             if self.flow_rows_since_flush >= CSV_FLUSH_EVERY:
                 self.flow_file.flush()
                 self.flow_rows_since_flush = 0
+        # Send only PacketIn-window observations; all flow rows remain in CSV.
+        if row[25] == "packetin_window":
+            record = dict(zip(FLOW_HEADER, [run["run_id"], observation_id] + list(row)))
+            self.ai_flow_poster.enqueue(build_ai_flow_payload(record))
         return True
-
     # =========================================================
     # CLEANUP STALE FLOWS
     # =========================================================
