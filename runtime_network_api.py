@@ -10,9 +10,11 @@ hard imports between them.
 """
 
 import hmac
+import hashlib
 import importlib.util
 import json
 import os
+import re
 import threading
 import time
 from urllib.parse import urlsplit
@@ -63,6 +65,10 @@ HTTP_ACTIVITY_PORTS = frozenset(
         if value.strip()
     }
 )
+SSH_ACTIVITY_PORT = 22
+SSH_AUDIT_LOG_DIR = os.getenv("SECUREIOT_SSHD_LOG_DIR", "/run/secureiot/ssh")
+SSH_AUDIT_EVENT_MAX_AGE = 24 * 60 * 60
+SSH_AUDIT_LOG_MAX_BYTES = 256 * 1024
 # ICMP activity counters are sampled every five seconds. Keep activity visible
 # across one sample interval and short scheduling jitter; expire after eight
 # quiet seconds, not at exact OpenFlow rule deletion time.
@@ -99,7 +105,7 @@ def _timestamp_is_recent(value, max_age_seconds, now=None):
 
 
 def _flow_activity_category(flow):
-    """Classify only observed ping and configured HTTP/Load Balancer flows."""
+    """Classify observed ping, HTTP/Load Balancer, and SSH flows."""
     if not isinstance(flow, dict):
         return None
     try:
@@ -121,12 +127,156 @@ def _flow_activity_category(flow):
         }
     except (TypeError, ValueError):
         return None
+    if SSH_ACTIVITY_PORT in ports:
+        return "ssh"
     if not ports.intersection(HTTP_ACTIVITY_PORTS):
         return None
     endpoints = {str(flow.get("src_ip", "")), str(flow.get("dst_ip", ""))}
     if LOAD_BALANCER_IP in endpoints:
         return "load_balancer"
     return "http"
+
+
+def _ssh_log_timestamp(line, fallback_epoch):
+    """Parse ISO/syslog time from sshd output without exposing its raw line."""
+    iso = re.search(r"\d{4}-\d{2}-\d{2}[T ][0-9:.]+(?:Z|[+-]\d{2}:?\d{2})?", line)
+    if iso:
+        stamp = _parse_utc_timestamp(iso.group(0))
+        if stamp is not None:
+            return stamp, "sshd_log"
+    syslog = re.search(
+        r"\b(?P<month>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+        r"\s+(?P<day>\d{1,2})\s+(?P<clock>\d{2}:\d{2}:\d{2})\b", line
+    )
+    if syslog:
+        local_year = datetime.fromtimestamp(fallback_epoch).year
+        value = "%d %s %s" % (local_year, syslog.group("month"),
+                               syslog.group("day") + " " + syslog.group("clock"))
+        try:
+            local_stamp = datetime.strptime(value, "%Y %b %d %H:%M:%S")
+            epoch = time.mktime(local_stamp.timetuple())
+            if epoch > fallback_epoch + 86400:
+                local_stamp = local_stamp.replace(year=local_year - 1)
+                epoch = time.mktime(local_stamp.timetuple())
+            return datetime.fromtimestamp(epoch, tz=timezone.utc), "sshd_log"
+        except (ValueError, OverflowError, OSError):
+            pass
+    return datetime.fromtimestamp(fallback_epoch, tz=timezone.utc), "log_file_mtime"
+
+
+def _ssh_audit_events(now_epoch=None):
+    """Read bounded per-host sshd logs and return sanitized auth events only.
+
+    Log files are expected at ``<SECUREIOT_SSHD_LOG_DIR>/secureiot-sshd-<host>.log``.
+    Usernames, passwords, and raw log messages are deliberately never returned.
+    """
+    now_epoch = time.time() if now_epoch is None else float(now_epoch)
+    host_for_ip = {ip: host_id for host_id, ip in HOST_IPS.items()}
+    events = []
+    source_re = re.compile(
+        r"\bfrom\s+(?:\[(?P<bracketed>[0-9A-Fa-f:.]+)\]|(?P<plain>[0-9A-Fa-f:.]+))"
+        r"\s+port\s+(?P<port>\d+)\b"
+    )
+    for server_host_id, server_ip in HOST_IPS.items():
+        log_path = os.path.join(
+            SSH_AUDIT_LOG_DIR, "secureiot-sshd-%s.log" % server_host_id
+        )
+        try:
+            size = os.path.getsize(log_path)
+            if size <= 0:
+                continue
+            fallback_epoch = os.path.getmtime(log_path)
+            with open(log_path, "rb") as handle:
+                handle.seek(max(0, size - SSH_AUDIT_LOG_MAX_BYTES))
+                if size > SSH_AUDIT_LOG_MAX_BYTES:
+                    handle.readline()
+                lines = handle.read().decode("utf-8", errors="replace").splitlines()[-500:]
+        except (OSError, ValueError):
+            continue
+        for line in lines:
+            if "Connection from " in line:
+                event_type, auth_status = "connection_attempt", "not_authenticated"
+            elif re.search(r"\bAccepted\s+\S+\s+for\s+.+\s+from\s+", line):
+                event_type, auth_status = "login_success", "success"
+            elif re.search(r"\bFailed\s+\S+\s+for\s+.+\s+from\s+", line):
+                event_type, auth_status = "login_failure", "failure"
+            elif re.search(r"\bInvalid user\s+.+\s+from\s+", line):
+                event_type, auth_status = "invalid_user", "failure"
+            else:
+                continue
+            source_match = source_re.search(line)
+            if source_match is None:
+                continue
+            source_ip = source_match.group("bracketed") or source_match.group("plain")
+            stamp, timestamp_source = _ssh_log_timestamp(line, fallback_epoch)
+            if (now_epoch - stamp.timestamp() > SSH_AUDIT_EVENT_MAX_AGE
+                    or stamp.timestamp() > now_epoch + 300):
+                continue
+            digest = hashlib.sha256(
+                (server_host_id + "\0" + line).encode("utf-8", errors="replace")
+            ).hexdigest()[:16]
+            events.append({
+                "event_id": "ssh_" + digest,
+                "event_type": event_type,
+                "auth_status": auth_status,
+                "protocol": "SSH",
+                "source_host_id": host_for_ip.get(source_ip),
+                "destination_host_id": server_host_id,
+                "source_ip": source_ip,
+                "destination_ip": server_ip,
+                "destination_port": SSH_ACTIVITY_PORT,
+                "source_port": int(source_match.group("port")),
+                "timestamp": stamp.isoformat().replace("+00:00", "Z"),
+                "timestamp_source": timestamp_source,
+            })
+    events.sort(key=lambda event: event["timestamp"])
+    return events[-200:]
+
+
+def _ssh_path_info(topology, source, destination):
+    """Return a recent installed SSH path or an explicitly computed route."""
+    if not source or not destination:
+        return {"path": [], "path_source": "not_observed", "path_status": "unknown"}
+    source_ip = str(HOST_IPS.get(source, source))
+    destination_ip = str(HOST_IPS.get(destination, destination))
+    flows = _call(topology, ["get_active_flow_paths"], []) if topology is not None else []
+    recent_ssh_flow = any(
+        isinstance(flow, dict)
+        and {str(flow.get("src_ip", "")), str(flow.get("dst_ip", ""))}
+        == {source_ip, destination_ip}
+        and _flow_activity_category(flow) == "ssh"
+        and _timestamp_is_recent(flow.get("last_seen"), TRAFFIC_ACTIVE_WINDOW)
+        for flow in (flows if isinstance(flows, list) else [])
+    )
+    active_path = _active_flow_path(topology, source, destination) if recent_ssh_flow else None
+    if active_path is not None:
+        return {
+            "path": active_path.get("nodes", []),
+            "path_source": active_path.get("path_source", "installed_flow"),
+            "path_status": active_path.get("status", "active"),
+        }
+    computed_path = _graph_path(topology, source, destination)
+    return {
+        "path": computed_path.get("nodes", []) if computed_path else [],
+        "path_source": "computed" if computed_path else "not_observed",
+        "path_status": computed_path.get("status", "unknown") if computed_path else "unknown",
+    }
+
+
+def _ssh_events_for_pair(topology, source, destination):
+    """Return SSH audit events for a requested host pair, with an honest path label."""
+    if not source or not destination:
+        return []
+    source_ip = str(HOST_IPS.get(source, source))
+    destination_ip = str(HOST_IPS.get(destination, destination))
+    path_info = _ssh_path_info(topology, source, destination)
+    selected = []
+    for event in _ssh_audit_events():
+        if (event.get("source_ip") != source_ip
+                or event.get("destination_ip") != destination_ip):
+            continue
+        selected.append(dict(event, **path_info))
+    return selected
 
 
 def json_response(payload, status=200):
@@ -733,7 +883,19 @@ class RuntimeNetworkController(ControllerBase):
         datapaths = getattr(topology, "datapaths", {}) if topology is not None else {}
         ping_activity = getattr(topology, "ping_traffic_last_seen", {}) if topology is not None else {}
         web_activity = getattr(topology, "web_traffic_last_seen", {}) if topology is not None else {}
+        ssh_activity = getattr(topology, "ssh_traffic_last_seen", {}) if topology is not None else {}
         now = time.time()
+        ssh_events = _ssh_audit_events()
+        ssh_path_cache = {}
+        for event in ssh_events:
+            source_host = event.get("source_host_id")
+            destination_host = event.get("destination_host_id")
+            pair = (source_host, destination_host)
+            if pair not in ssh_path_cache:
+                ssh_path_cache[pair] = _ssh_path_info(
+                    topology, source_host, destination_host
+                )
+            event.update(ssh_path_cache[pair])
         telemetry_by_device = {}
         try:
             for device in self.iot_store.devices():
@@ -760,6 +922,8 @@ class RuntimeNetworkController(ControllerBase):
                 ping_active = False
             web_seen = web_activity.get(HOST_IPS[host_id]) if isinstance(web_activity, dict) else None
             web_active = _timestamp_is_recent(web_seen, TRAFFIC_ACTIVE_WINDOW)
+            ssh_seen = ssh_activity.get(HOST_IPS[host_id]) if isinstance(ssh_activity, dict) else None
+            ssh_active = _timestamp_is_recent(ssh_seen, TRAFFIC_ACTIVE_WINDOW)
             telemetry_record = telemetry_by_device.get(host_id)
             telemetry_active = telemetry_record is not None
             raw_flows = item.get("active_flows") if isinstance(item.get("active_flows"), list) else []
@@ -792,6 +956,8 @@ class RuntimeNetworkController(ControllerBase):
                     flow.get("last_seen")).isoformat().replace("+00:00", "Z")
                 if category == "ping":
                     ping_active = True
+                elif category == "ssh":
+                    ssh_active = True
                 else:
                     web_active = True
                 flows.append(active_flow)
@@ -811,7 +977,7 @@ class RuntimeNetworkController(ControllerBase):
                     "last_seen": telemetry_record.get("last_seen"),
                     "activity_source": "successful_sensor_poll",
                 })
-            host_active = bool(telemetry_active or ping_active or web_active)
+            host_active = bool(telemetry_active or ping_active or web_active or ssh_active)
             primary_flow = max(
                 flows,
                 key=lambda flow: _parse_utc_timestamp(flow.get("last_seen"))
@@ -826,9 +992,15 @@ class RuntimeNetworkController(ControllerBase):
                 traffic_timestamps.append(_parse_utc_timestamp(web_seen))
             if ping_active and ping_seen is not None:
                 traffic_timestamps.append(_parse_utc_timestamp(ping_seen))
+            if ssh_active and ssh_seen is not None:
+                traffic_timestamps.append(_parse_utc_timestamp(ssh_seen))
             traffic_timestamps = [stamp for stamp in traffic_timestamps if stamp is not None]
             last_traffic_at = max(traffic_timestamps).isoformat().replace("+00:00", "Z") if traffic_timestamps else None
             telemetry_path_nodes = telemetry_path.get("nodes", []) if isinstance(telemetry_path, dict) else []
+            host_ssh_events = [
+                dict(event) for event in ssh_events
+                if host_id in (event.get("source_host_id"), event.get("destination_host_id"))
+            ]
             result.append(compact({"host_id": host_id, "dpid": dpid, "port_no": port_no,
                            # Mininet creates gw before h1, so the default
                            # fallback MAC for h16 is ...:11, not ...:10.
@@ -841,6 +1013,7 @@ class RuntimeNetworkController(ControllerBase):
                            "last_seen": item.get("last_seen"),
                            "last_traffic_at": last_traffic_at,
                            "active_flows": flows,
+                           "ssh_events": host_ssh_events,
                            "path_history": _path_history(topology, host_id=host_id, limit=20),
                            "path": primary_flow.get("path", telemetry_path_nodes or fallback_path.get("nodes", [])),
                            "path_type": (primary_flow.get("path_type")
@@ -1023,10 +1196,12 @@ class RuntimeNetworkController(ControllerBase):
         active_path = _active_flow_path(topology, source, destination)
         if active_path is not None:
             active_path["history"] = _path_history(topology, source, destination)
+            active_path["ssh_events"] = _ssh_events_for_pair(topology, source, destination)
             return json_response([active_path])
         computed = _graph_path(topology, source, destination)
         if computed is not None:
             computed["history"] = _path_history(topology, source, destination)
+            computed["ssh_events"] = _ssh_events_for_pair(topology, source, destination)
             return json_response([computed])
         provider_paths = _call(topology, ["get_host_paths", "get_paths"], None) if topology is not None else None
         if isinstance(provider_paths, dict):
@@ -1077,15 +1252,18 @@ class RuntimeNetworkController(ControllerBase):
         if active_path is not None:
             active_path["host_id"] = host_id
             active_path["history"] = _path_history(topology, source, destination)
+            active_path["ssh_events"] = _ssh_events_for_pair(topology, source, destination)
             return json_response(active_path)
         computed = _graph_path(topology, source, destination)
         if computed is not None:
             computed["history"] = _path_history(topology, source, destination)
+            computed["ssh_events"] = _ssh_events_for_pair(topology, source, destination)
             return json_response(computed)
         provider_paths = _call(topology, ["get_host_paths", "get_paths"], None) if topology is not None else None
         if isinstance(provider_paths, dict) and host_id in provider_paths:
             record = dict(provider_paths[host_id])
             record["history"] = _path_history(topology, source, destination, host_id)
+            record["ssh_events"] = _ssh_events_for_pair(topology, source, destination)
             return json_response(record)
         if host_id in self.paths:
             record = dict(self.paths[host_id])

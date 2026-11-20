@@ -108,6 +108,7 @@ HTTP_ACTIVITY_PORTS = frozenset(
         "SECUREIOT_HTTP_ACTIVITY_PORTS", "80,443,5000,8080,8081"
     ).split(",") if value.strip()
 )
+SSH_ACTIVITY_PORT = 22
 
 HOST_FLOW_IDLE_TIMEOUT = 30
 # Production behavior remains unchanged when this is unset. During a
@@ -252,11 +253,12 @@ class TopologyMonitor(app_manager.RyuApp):
         # PortStats samples used by link-utilization path selection.
         self.port_stats_previous = {}
         # Recent selected data-plane activity for the public traffic_active
-        # signal: ICMP echo and HTTP/Load Balancer service traffic.
+        # signal: ICMP echo, HTTP/Load Balancer, and SSH traffic.
         self.switch_traffic_last_seen = {}
         self.ping_traffic_last_seen = {}
         self.host_traffic_last_seen = {}
         self.web_traffic_last_seen = {}
+        self.ssh_traffic_last_seen = {}
         self.flow_stats_previous = {}
 
         # Topology state.
@@ -715,7 +717,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
     @set_ev_cls(ofp_event.EventOFPFlowStatsReply, MAIN_DISPATCHER)
     def flow_stats_reply_handler(self, ev):
-        """Mark switches/hosts active when tracked ping or web counters increase."""
+        """Mark switches/hosts active when tracked ping, web, or SSH counters increase."""
         dpid = int(ev.msg.datapath.id)
         now = time.time()
         for stat in ev.msg.body:
@@ -738,7 +740,8 @@ class TopologyMonitor(app_manager.RyuApp):
             except (TypeError, ValueError):
                 tcp_ports = set()
             is_web = ip_proto == 6 and bool(tcp_ports & HTTP_ACTIVITY_PORTS)
-            if not (is_ping or is_web):
+            is_ssh = ip_proto == 6 and SSH_ACTIVITY_PORT in tcp_ports
+            if not (is_ping or is_web or is_ssh):
                 continue
             key = (
                 dpid,
@@ -764,6 +767,8 @@ class TopologyMonitor(app_manager.RyuApp):
                             self.ping_traffic_last_seen[host_ip] = now
                         if is_web:
                             self.web_traffic_last_seen[host_ip] = now
+                        if is_ssh:
+                            self.ssh_traffic_last_seen[host_ip] = now
                 for flow in self.active_flows.values():
                     if not isinstance(flow, dict):
                         continue
@@ -790,6 +795,9 @@ class TopologyMonitor(app_manager.RyuApp):
                         flow_ports = set()
                     if is_web and (flow_proto != 6
                                    or not (flow_ports & tcp_ports)):
+                        continue
+                    if is_ssh and (flow_proto != 6
+                                   or SSH_ACTIVITY_PORT not in flow_ports):
                         continue
                     flow["last_seen"] = now
                     flow["activity_source"] = "openflow_counter_delta"
@@ -1921,6 +1929,11 @@ class TopologyMonitor(app_manager.RyuApp):
 
         tcp_src_port = int(tcp_pkt.src_port) if tcp_pkt is not None else None
         tcp_dst_port = int(tcp_pkt.dst_port) if tcp_pkt is not None else None
+        tracked_ssh_port = next(
+            (port for port in (tcp_dst_port, tcp_src_port)
+             if port == SSH_ACTIVITY_PORT),
+            None,
+        )
         tracked_web_port = next(
             (port for port in (tcp_dst_port, tcp_src_port)
              if port in HTTP_ACTIVITY_PORTS),
@@ -1943,6 +1956,25 @@ class TopologyMonitor(app_manager.RyuApp):
                     track_key=("activity-http", int(vlan_id), src_mac,
                                dst_mac, ip_pkt.src, ip_pkt.dst,
                                port_field, tracked_web_port),
+                )
+
+        if tracked_ssh_port is not None and path:
+            destination_location = gateway_loc or dst_loc
+            if destination_location is not None:
+                port_field = "tcp_dst" if tcp_dst_port == tracked_ssh_port else "tcp_src"
+                self._install_direction(
+                    path, src_mac, dst_mac, destination_location[1], vlan_id,
+                    extra_match={
+                        "eth_type": 0x0800,
+                        "ip_proto": 6,
+                        "ipv4_src": ip_pkt.src,
+                        "ipv4_dst": ip_pkt.dst,
+                        port_field: tracked_ssh_port,
+                    },
+                    priority=ACTIVITY_TRACK_PRIORITY,
+                    track_key=("activity-ssh", int(vlan_id), src_mac,
+                               dst_mac, ip_pkt.src, ip_pkt.dst,
+                               port_field, tracked_ssh_port),
                 )
 
         if any(isinstance(flow, dict) and flow.get("src_mac") == src_mac
@@ -3050,16 +3082,20 @@ class TopologyMonitor(app_manager.RyuApp):
             }
         except (TypeError, ValueError):
             web_ports = set()
+        is_ssh = ip_proto == 6 and SSH_ACTIVITY_PORT in web_ports
         is_selected_activity = (
             (ip_proto == 1 and icmp_type == 8)
             or (ip_proto == 6 and bool(web_ports & HTTP_ACTIVITY_PORTS))
+            or is_ssh
         )
         if is_selected_activity:
             observed_at = float(flow_data.get("last_seen", time.time()))
             for host_ip in (src_ip, dst_ip):
                 if host_ip:
                     self.host_traffic_last_seen[str(host_ip)] = observed_at
-                    if ip_proto == 6:
+                    if is_ssh:
+                        self.ssh_traffic_last_seen[str(host_ip)] = observed_at
+                    elif ip_proto == 6:
                         self.web_traffic_last_seen[str(host_ip)] = observed_at
                     else:
                         self.ping_traffic_last_seen[str(host_ip)] = observed_at
@@ -3113,6 +3149,7 @@ class TopologyMonitor(app_manager.RyuApp):
         self.ping_traffic_last_seen.clear()
         self.host_traffic_last_seen.clear()
         self.web_traffic_last_seen.clear()
+        self.ssh_traffic_last_seen.clear()
         self.flow_stats_previous.clear()
         self.logger.info("Reset tracked forwarding state for dataset collection")
 

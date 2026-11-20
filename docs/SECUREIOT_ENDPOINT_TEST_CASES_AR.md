@@ -571,6 +571,51 @@ recovery event
 ```text
 /firewall/rules
 ```
+---
+
+## TC-17 — SSH attempts and authenticated logins
+
+### الهدف
+عرض محاولة SSH ونتيجة المصادقة بين جهازين داخل ردود الـGET الحالية، مع إظهار المسار من غير كشف اسم المستخدم أو كلمة المرور. `ssh_events` مصدره سجل `sshd`، أما `traffic_active` و`active_flows` فيعتمدان على مرور TCP/22 المرصود في OpenFlow؛ سجل login قد يبقى ظاهرًا كتاريخ بعد انتهاء الجلسة، لكنه لا يجعل `traffic_active` يظل true.
+
+### تجهيز خادم h4 لتسجيل أحداث sshd
+داخل Mininet، تحققي أولًا من أن port 22 مستمع:
+
+```text
+h4 ss -lntp '( sport = :22 )'
+```
+
+استخدمي `-e` لتسجيل رسائل sshd في ملف خاص داخل مجلد runtime بصلاحية 700، مع بادئة وقت UTC لكل سطر. إذا كان هناك sshd يعمل بالفعل ولا يكتب هذا الملف، أوقفي فقط PID الخاص بالمستمع على h4 بعد التأكد منه؛ إيقافه ينهي جلسات SSH الحالية. ثم شغّلي:
+
+```text
+h4 sh -c 'install -d -m 700 /run/secureiot/ssh; touch /run/secureiot/ssh/secureiot-sshd-h4.log; chmod 600 /run/secureiot/ssh/secureiot-sshd-h4.log; umask 077; ( /usr/sbin/sshd -D -e 2>&1 | while IFS= read -r line; do printf "%s %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$line" >> /run/secureiot/ssh/secureiot-sshd-h4.log; done ) >/dev/null 2>&1 &'
+```
+
+لا تستخدمي `pkill sshd` من Mininet؛ قد يوقف خوادم SSH أخرى على الـVM. إذا لم يكن SSH server مثبتًا على الـVM أصلًا، ثبتيه على الـVM ثم أعيدي تشغيل Mininet قبل تنفيذ الاختبار.
+
+### تنفيذ تسجيل دخول من h36 إلى h4
+اتركي جلسة SSH مفتوحة مؤقتًا:
+
+```text
+h36 ssh -o StrictHostKeyChecking=accept-new zolikha@10.10.20.4
+```
+
+اكتبي كلمة المرور عند prompt التفاعلي فقط، ولا تضعيها في أمر أو في GET. من terminal عادي آخر، أثناء/بعد الاختبار:
+
+```bash
+BASE_URL='https://<your-current-ngrok-host>'
+curl -fsS "$BASE_URL/topology/hosts" | python3 -c 'import json,sys; [print(h["host_id"],"traffic_active=",h.get("traffic_active"),"active_flows=",[(f.get("traffic_category"),f.get("path")) for f in h.get("active_flows",[])],"ssh_events=",h.get("ssh_events")) for h in json.load(sys.stdin) if h.get("host_id") in {"h36","h4"}]'
+curl -fsS "$BASE_URL/topology/paths?source=h36&destination=h4" | python3 -m json.tool
+```
+
+لاختبار الرفض، نفّذي محاولة واحدة بكلمة مرور خاطئة عند prompt، ثم أعيدي GET؛ لا تسجلي كلمة المرور في command history.
+
+### النجاح المتوقع
+- يظهر الحدث نفسه على h36 وh4 داخل `ssh_events`، مع `source_host_id=h36` و`destination_host_id=h4` و`destination_port=22`.
+- تتضمن `event_type` القيم `connection_attempt` و`login_success` أو `login_failure` حسب ما سجله sshd. لا تتضمن الاستجابة اسم المستخدم أو نص سجل sshd الخام أو كلمة المرور.
+- يحتوي رد `/topology/paths` على `ssh_events` للزوج المطلوب. يكون `path_source=installed_flow` فقط عند وجود flow مرصود؛ وإلا يكون `computed` أو `not_observed` بوضوح.
+- أثناء وجود حزم TCP/22 حديثة، يصنّف `active_flows[].traffic_category` كـ`ssh` ويكون `traffic_active=true` للطرفين والسويتشات التي رصدت العدادات. لا يعني سجل نجاح login وحده أن الاتصال ما زال نشطًا.
+- الـgateway يظل GET-only؛ لم تتم إضافة endpoint أو POST.
 
 ---
 
@@ -590,6 +635,7 @@ recovery event
 | Resilience | TC-12 |
 | Real reroute | TC-14 وTC-15 |
 | Event history | TC-16 |
+| SSH audit and activity | TC-17 |
 
 ---
 
@@ -599,8 +645,9 @@ recovery event
 |---|---|---|
 | `host_id`, `switch_id`, `dpid`, `ipv4`, `vlan_id` | ثابت/مهيأ | مصدره إعدادات Mininet والطوبولوجيا؛ لا يتغير أثناء التجربة العادية. |
 | `port_no` | مهيأ مع احتمال اختلاف البيئة | قيمة منفذ host من إعدادات/اكتشاف الـcontroller، وليست counter للمرور. |
-| `status`, `controller_seen`, `traffic_active`, `last_seen` | ديناميكي | يعكس حالة الاتصال وآخر رصد حقيقي. `traffic_active` خاص بزيادة عدادات ICMP ping أو نجاح قراءة telemetry، ويعود إلى false بعد انتهاء نافذة النشاط. |
+| `status`, `controller_seen`, `traffic_active`, `last_seen` | ديناميكي | يعكس حالة الاتصال وآخر رصد حقيقي. `traffic_active` يشمل ICMP ping وHTTP/Load Balancer وTCP/22 المرصود وقراءات telemetry الناجحة، ويعود إلى false بعد انتهاء نافذة النشاط؛ لا يُمدَّد بمجرد وجود حدث SSH تاريخي. |
 | `path`, `path_source`, `history`, `active_flows` | ديناميكي | يتأثر بالـflow الفعلي، وتغيّر الروابط، وإعادة التوجيه. `history` يظل داخل الاستجابة الحالية لـ`/topology/paths` أو `/topology/hosts/{host_id}/path`، وليس endpoint منفصلًا. |
+| `ssh_events` | ديناميكي/تاريخي | يُقرأ من سجل sshd لكل host خلال آخر 24 ساعة (حتى 200 حدث على مستوى الرد)، ويُعرض على host العميل والخادم وفي استجابة path الموجودة؛ تتضمن النتيجة والنقاط الطرفية والتوقيت فقط، ولا تُعرض أسماء المستخدمين أو كلمات المرور. |
 | OpenFlow packet/byte counters | ديناميكي تراكمي | تتغير مع المرور حتى تنتهي/تحذف القاعدة أو يعاد تشغيل الـswitch/controller. |
 | topology links و`isolated_links` | ديناميكي | تتغير عند link down/restore أو العزل/الاستعادة. |
 | telemetry readings و`sequence` و`timestamp` | ديناميكي | تتغير مع كل قراءة جديدة محفوظة؛ طلبات GET تقرأ المخزن ولا تبدأ polling أو ingestion. |

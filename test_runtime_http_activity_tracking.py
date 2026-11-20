@@ -37,6 +37,7 @@ def test_http_flow_stats_refresh_activity():
         namespace={
             "ACTIVITY_TRACK_PRIORITY": 110,
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
+            "SSH_ACTIVITY_PORT": 22,
             "time": SimpleNamespace(time=lambda: 125.0),
         },
     )
@@ -101,6 +102,7 @@ def test_http_packet_observation_marks_activity_immediately():
         class_name="TopologyMonitor",
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
+            "SSH_ACTIVITY_PORT": 22,
             "time": SimpleNamespace(time=lambda: 200.0),
         },
     )
@@ -138,12 +140,13 @@ def test_http_packet_observation_marks_activity_immediately():
     assert monitor.switch_traffic_last_seen == {3: 200.0, 1: 200.0}
 
 
-def test_api_classifies_only_ping_and_web_services():
+def test_api_classifies_ping_web_and_ssh_services():
     classify = extract_function(
         ROOT / "runtime_network_api.py",
         "_flow_activity_category",
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
+            "SSH_ACTIVITY_PORT": 22,
             "LOAD_BALANCER_PORTS": {443, 5000},
             "LOAD_BALANCER_IP": "10.10.20.100",
         },
@@ -163,7 +166,8 @@ def test_api_classifies_only_ping_and_web_services():
         "src_ip": "10.10.20.100", "dst_ip": "10.10.20.2",
     }) == "load_balancer"
     assert classify({"ip_proto": 6, "tcp_dst_port": 80}) == "http"
-    assert classify({"ip_proto": 6, "tcp_dst_port": 22}) is None
+    assert classify({"ip_proto": 6, "tcp_dst_port": 22}) == "ssh"
+    assert classify({"ip_proto": 6, "tcp_src_port": 22}) == "ssh"
     assert classify({"ip_proto": 17, "udp_dst_port": 53}) is None
 
 
@@ -174,6 +178,7 @@ def test_hosts_endpoint_exposes_recent_load_balancer_activity():
         "_flow_activity_category",
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
+            "SSH_ACTIVITY_PORT": 22,
             "LOAD_BALANCER_PORTS": {443, 5000},
             "LOAD_BALANCER_IP": "10.10.20.100",
         },
@@ -198,6 +203,7 @@ def test_hosts_endpoint_exposes_recent_load_balancer_activity():
             "datetime": datetime,
             "timezone": timezone,
             "_flow_activity_category": classify,
+            "_ssh_audit_events": lambda: [],
             "_parse_utc_timestamp": lambda value: (
                 datetime.fromtimestamp(float(value), tz=timezone.utc)
                 if isinstance(value, (int, float))
@@ -283,6 +289,6 @@ def test_hosts_endpoint_exposes_recent_load_balancer_activity():
 if __name__ == "__main__":
     test_http_flow_stats_refresh_activity()
     test_http_packet_observation_marks_activity_immediately()
-    test_api_classifies_only_ping_and_web_services()
+    test_api_classifies_ping_web_and_ssh_services()
     test_hosts_endpoint_exposes_recent_load_balancer_activity()
     print("PASS: HTTP/LB activity refreshes and is classified dynamically")
