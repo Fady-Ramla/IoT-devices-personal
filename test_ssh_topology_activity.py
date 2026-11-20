@@ -231,8 +231,64 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
         assert live_by_id[host_id]["active_flows"][0]["traffic_category"] == "ssh"
 
 
+def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
+    install_policy = extract_function(
+        ROOT / "topology_monitor.py", "_install_ssh_policy_rules", "TopologyMonitor",
+        {
+            "SSH_DENIED_VLANS": frozenset({10, 20, 30, 50}),
+            "SSH_PROTECTED_SERVERS": {
+                "h4": "10.10.20.4", "h20": "10.10.20.20",
+            },
+            "SSH_ACTIVITY_PORT": 22,
+            "SSH_POLICY_PRIORITY": 49999,
+            "OFPVID_NONE": 0,
+            "OFPVID_PRESENT": 0x1000,
+        },
+    )
+
+    class Parser:
+        @staticmethod
+        def OFPMatch(**fields):
+            return fields
+
+    class Monitor:
+        vlan_port_map = {
+            (2, 1): {"kind": "access", "vlan_id": 20},
+            (2, 2): {"kind": "access", "vlan_id": 40},
+            (2, 3): {"kind": "trunk", "vlan_id": None},
+        }
+        ssh_policy_flows = {}
+        ssh_policy_switches = set()
+        ssh_policy_failed_switches = set()
+        logger = SimpleNamespace(exception=lambda *args, **kwargs: None)
+
+        def _add_flow(self, datapath, priority, match, actions, track_key=None):
+            self.installed.append((priority, match, actions))
+
+    monitor = Monitor()
+    monitor.installed = []
+    datapath = SimpleNamespace(id=2, ofproto_parser=Parser())
+    assert install_policy(monitor, datapath) is True
+    assert len(monitor.installed) == 15  # IPv4 servers plus IPv6 guard
+    assert all(priority == 49999 and actions == []
+               for priority, _match, actions in monitor.installed)
+    assert {match["ipv4_dst"] for _, match, _ in monitor.installed
+            if "ipv4_dst" in match} == {
+        "10.10.20.4", "10.10.20.20",
+    }
+    assert all(match["ip_proto"] == 6 and match["tcp_dst"] == 22
+               for _, match, _ in monitor.installed)
+    assert sum(match["eth_type"] == 0x86DD
+               for _, match, _ in monitor.installed) == 5
+    assert all(match["in_port"] != 2 for _, match, _ in monitor.installed)
+    assert all(match.get("vlan_vid") != (0x1000 | 40)
+               for _, match, _ in monitor.installed)
+    assert monitor.ssh_policy_switches == {2}
+
+
 if __name__ == "__main__":
     test_ssh_openflow_counter_delta_marks_hosts_and_switch()
     test_ssh_log_events_are_sanitized_and_map_client_server()
     test_hosts_endpoint_adds_ssh_events_to_both_participants()
-    print("PASS: SSH counters, sshd audit events, and topology host response")
+    test_ssh_access_policy_drops_nonmanagement_vlan_traffic()
+    print("PASS: SSH ACL, counters, sshd audit events, and topology host response")

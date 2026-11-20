@@ -109,7 +109,19 @@ HTTP_ACTIVITY_PORTS = frozenset(
     ).split(",") if value.strip()
 )
 SSH_ACTIVITY_PORT = 22
-
+# Only the configured management VLAN may open SSH sessions to these service
+# hosts. VLAN 40 currently contains exactly h36 and h37 in the validated map.
+SSH_MANAGEMENT_VLAN = 40
+SSH_MANAGEMENT_HOSTS = {
+    "h36": "10.10.40.36",
+    "h37": "10.10.40.37",
+}
+SSH_PROTECTED_SERVERS = {
+    "h4": "10.10.20.4",
+    "h20": "10.10.20.20",
+}
+SSH_DENIED_VLANS = frozenset(ALLOWED_VLANS - {SSH_MANAGEMENT_VLAN})
+SSH_POLICY_PRIORITY = DEVICE_BLOCK_PRIORITY - 1
 HOST_FLOW_IDLE_TIMEOUT = 30
 # Production behavior remains unchanged when this is unset. During a
 # packet-in dataset collection run, a small positive hard timeout makes
@@ -283,6 +295,12 @@ class TopologyMonitor(app_manager.RyuApp):
         # Explicit Security blocks keyed by normalized source MAC.
         # IP is retained only for audit; enforcement matches eth_src.
         self.blocked_devices = {}
+        # High-priority OpenFlow drops that limit SSH to the management VLAN.
+        # Keys are (dpid, rule-key); values are the exact matches to delete on
+        # VLAN-map refresh. Device-wide blocks retain a higher priority.
+        self.ssh_policy_flows = {}
+        self.ssh_policy_switches = set()
+        self.ssh_policy_failed_switches = set()
         # Dashboard-facing firewall history.  Keep this separate from Ryu's
         # internal event queue and from forwarding-flow bookkeeping.
         self.firewall_events = []
@@ -334,7 +352,7 @@ class TopologyMonitor(app_manager.RyuApp):
             try:
                 stat = VLAN_PORT_MAP_FILE.stat()
                 signature = (stat.st_mtime_ns, stat.st_size)
-                if signature != last_signature:
+                if signature != last_signature or not self.vlan_map_ready:
                     payload = json.loads(VLAN_PORT_MAP_FILE.read_text(encoding="utf-8"))
                     if payload.get("schema_version") != 2:
                         raise ValueError("unsupported VLAN map schema")
@@ -437,9 +455,16 @@ class TopologyMonitor(app_manager.RyuApp):
 
                     if self.vlan_map_ready:
                         self._clear_tracked_forwarding_state()
+                    self.vlan_map_ready = False
+                    self._delete_ssh_policy_rules()
                     self.vlan_port_map = port_map
                     self.vlan_networks = networks
                     self.vlan_map_topology_id = topology_id
+                    for datapath in list(self.datapaths.values()):
+                        if not self._install_ssh_policy_rules(datapath):
+                            raise RuntimeError(
+                                "SSH allow-list installation failed on s%d"
+                                % int(datapath.id))
                     self.vlan_map_ready = True
                     last_signature = signature
                     self.logger.info(
@@ -449,6 +474,7 @@ class TopologyMonitor(app_manager.RyuApp):
                 if self.vlan_map_ready:
                     self.logger.warning("VLAN map removed; data forwarding is fail-closed")
                     self._clear_tracked_forwarding_state()
+                self._delete_ssh_policy_rules()
                 self.vlan_port_map = {}
                 self.vlan_networks = {}
                 self.vlan_map_topology_id = None
@@ -458,6 +484,7 @@ class TopologyMonitor(app_manager.RyuApp):
                 if self.vlan_map_ready:
                     self.logger.exception("Invalid VLAN map; data forwarding is fail-closed")
                     self._clear_tracked_forwarding_state()
+                self._delete_ssh_policy_rules()
                 self.vlan_port_map = {}
                 self.vlan_networks = {}
                 self.vlan_map_topology_id = None
@@ -581,6 +608,15 @@ class TopologyMonitor(app_manager.RyuApp):
             except Exception:
                 self.logger.exception(
                     "Failed to restore device block on s%d for %s", dpid, mac)
+
+        if self.vlan_map_ready:
+            self._delete_ssh_policy_rules(dpid)
+            if not self._install_ssh_policy_rules(datapath):
+                self.logger.error(
+                    "SSH policy failed on s%d; forwarding is now fail-closed", dpid)
+                self.vlan_map_ready = False
+                self._clear_tracked_forwarding_state()
+                self._delete_ssh_policy_rules()
 
         datapath.send_msg(parser.OFPPortDescStatsRequest(datapath, 0))
 
@@ -1333,6 +1369,95 @@ class TopologyMonitor(app_manager.RyuApp):
         except ValueError:
             return False
 
+    def _delete_ssh_policy_rules(self, dpid=None):
+        """Remove the exact SSH policy flows before replacing the VLAN map."""
+        for (flow_dpid, rule_key), match in list(self.ssh_policy_flows.items()):
+            if dpid is not None and int(flow_dpid) != int(dpid):
+                continue
+            datapath = self.datapaths.get(flow_dpid)
+            if datapath is not None:
+                ofproto = datapath.ofproto
+                parser = datapath.ofproto_parser
+                datapath.send_msg(parser.OFPFlowMod(
+                    datapath=datapath,
+                    command=ofproto.OFPFC_DELETE_STRICT,
+                    table_id=0,
+                    priority=SSH_POLICY_PRIORITY,
+                    out_port=ofproto.OFPP_ANY,
+                    out_group=ofproto.OFPG_ANY,
+                    match=match))
+            self.ssh_policy_flows.pop((flow_dpid, rule_key), None)
+        if dpid is None:
+            self.ssh_policy_switches.clear()
+            self.ssh_policy_failed_switches.clear()
+        else:
+            self.ssh_policy_switches.discard(int(dpid))
+            self.ssh_policy_failed_switches.discard(int(dpid))
+
+    def _install_ssh_policy_rules(self, datapath):
+        """Drop SSH to h4/h20 at ingress unless traffic is in VLAN 40.
+
+        Access-port rules cover untagged frames from local non-management
+        endpoints; trunk-port rules cover those same VLANs between switches
+        and at the service edge. VLAN 40 is omitted, and the validated
+        topology map defines only h36/h37 as its endpoint devices.
+        """
+        dpid = int(datapath.id)
+        parser = datapath.ofproto_parser
+        failures = []
+        for (port_dpid, port_no), entry in sorted(self.vlan_port_map.items()):
+            if int(port_dpid) != dpid:
+                continue
+            if entry["kind"] == "access":
+                vlan_ids = ([int(entry["vlan_id"])]
+                            if int(entry["vlan_id"]) in SSH_DENIED_VLANS
+                            else [])
+                match_vlan = OFPVID_NONE
+            else:
+                vlan_ids = sorted(SSH_DENIED_VLANS)
+                match_vlan = None
+            for vlan_id in vlan_ids:
+                targets = [
+                    (server_host, 0x0800, {"ipv4_dst": server_ip})
+                    for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items())
+                ]
+                # The topology inventory is IPv4-only. Drop non-management
+                # IPv6 SSH too, so link-local addressing cannot bypass the
+                # protected-server rules on a shared VLAN.
+                targets.append(("ipv6-any", 0x86DD, {}))
+                for target_id, eth_type, destination_match in targets:
+                    fields = {
+                        "in_port": int(port_no),
+                        "eth_type": eth_type,
+                        "ip_proto": 6,
+                        "tcp_dst": SSH_ACTIVITY_PORT,
+                    }
+                    fields.update(destination_match)
+                    fields["vlan_vid"] = (
+                        OFPVID_PRESENT | vlan_id
+                        if entry["kind"] == "trunk" else match_vlan
+                    )
+                    match = parser.OFPMatch(**fields)
+                    rule_key = (int(port_no), entry["kind"], vlan_id,
+                                target_id)
+                    try:
+                        self._add_flow(
+                            datapath, SSH_POLICY_PRIORITY, match, [],
+                            track_key=None)
+                        self.ssh_policy_flows[(dpid, rule_key)] = match
+                    except Exception:
+                        failures.append(rule_key)
+                        self.logger.exception(
+                            "Failed to install SSH policy on s%d:%d for VLAN %d -> %s",
+                            dpid, port_no, vlan_id, target_id)
+        if failures:
+            self._delete_ssh_policy_rules(dpid)
+            self.ssh_policy_failed_switches.add(dpid)
+            return False
+        self.ssh_policy_failed_switches.discard(dpid)
+        self.ssh_policy_switches.add(dpid)
+        return True
+
     def _install_device_block_rule(self, datapath, mac):
         mac = self.normalize_device_mac(mac)
         parser = datapath.ofproto_parser
@@ -1460,6 +1585,53 @@ class TopologyMonitor(app_manager.RyuApp):
                   "action": "DROP", "direction": "both", "source": "any",
                   "destination": "any", "enabled": True, "status": "installed",
                   "source_provider": "TopologyMonitor"}]
+        policy_status = (
+            "installed"
+            if (self.vlan_map_ready and self.datapaths
+                and set(self.datapaths).issubset(self.ssh_policy_switches)
+                and not self.ssh_policy_failed_switches)
+            else "pending"
+        )
+        for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items()):
+            rules.append({
+                "rule_id": "ssh-management-allow-" + server_host,
+                "priority": SSH_POLICY_PRIORITY,
+                "action": "ALLOW",
+                "direction": "ingress",
+                "source": ",".join(sorted(SSH_MANAGEMENT_HOSTS.values())),
+                "destination": server_ip,
+                "protocol": "TCP",
+                "destination_port": SSH_ACTIVITY_PORT,
+                "enabled": True,
+                "status": policy_status,
+                "source_provider": "TopologyMonitor",
+            })
+            rules.append({
+                "rule_id": "ssh-nonmanagement-drop-" + server_host,
+                "priority": SSH_POLICY_PRIORITY,
+                "action": "DROP",
+                "direction": "ingress",
+                "source": "VLANs 10,20,30,50 (all non-management VLANs)",
+                "destination": server_ip,
+                "protocol": "TCP",
+                "destination_port": SSH_ACTIVITY_PORT,
+                "enabled": True,
+                "status": policy_status,
+                "source_provider": "TopologyMonitor",
+            })
+        rules.append({
+            "rule_id": "ssh-nonmanagement-drop-ipv6",
+            "priority": SSH_POLICY_PRIORITY,
+            "action": "DROP",
+            "direction": "ingress",
+            "source": "VLANs 10,20,30,50 (all non-management VLANs)",
+            "destination": "IPv6 (all destinations)",
+            "protocol": "TCP",
+            "destination_port": SSH_ACTIVITY_PORT,
+            "enabled": True,
+            "status": policy_status,
+            "source_provider": "TopologyMonitor",
+        })
         for mac, block in sorted(self.blocked_devices.items()):
             rules.append({"rule_id": "device-block-" + mac.replace(":", ""),
                           "priority": DEVICE_BLOCK_PRIORITY, "action": "DROP",

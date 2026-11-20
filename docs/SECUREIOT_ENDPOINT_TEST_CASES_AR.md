@@ -578,6 +578,25 @@ recovery event
 ### الهدف
 عرض محاولة SSH ونتيجة المصادقة بين جهازين داخل ردود الـGET الحالية، مع إظهار المسار من غير كشف اسم المستخدم أو كلمة المرور. `ssh_events` مصدره سجل `sshd`، أما `traffic_active` و`active_flows` فيعتمدان على مرور TCP/22 المرصود في OpenFlow؛ سجل login قد يبقى ظاهرًا كتاريخ بعد انتهاء الجلسة، لكنه لا يجعل `traffic_active` يظل true.
 
+### سياسة الوصول
+السياسة الفعلية تسمح لأجهزة Management VLAN 40 فقط (`h36` ‏10.10.40.36 و`h37` ‏10.10.40.37) بالوصول إلى TCP/22 على خادمي SSH المعرّفين: الأساسي `h4` ‏10.10.20.4 والاحتياطي `h20` ‏10.10.20.20. تُسقط قواعد OpenFlow محاولات SSH من VLANs 10 و20 و30 و50 عند منافذ الوصول والـtrunk، ولا تمنع بقية أنواع الترافيك. وتُسقط أيضًا SSH عبر IPv6 من VLANs غير الإدارية لمنع تجاوز القواعد باستخدام عناوين link-local.
+
+بعد تشغيل Mininet وانتظار ظهور `VLAN map ready` في سجل Ryu، اختبري من داخل Mininet:
+
+```text
+h21 nc -vz -w 2 10.10.20.4 22
+h36 nc -vz -w 2 10.10.20.4 22
+h37 nc -vz -w 2 10.10.20.4 22
+```
+
+الأول يجب أن يفشل أو ينتهي بمهلة؛ الاثنان الآخران يجب أن يصلا إلى h4 إذا كان `sshd` يستمع. افحصي سياسة الجدار عبر GET موجود:
+
+```bash
+curl -fsS "$API/firewall/rules" | python3 -c 'import json,sys; [print(r) for r in json.load(sys.stdin) if str(r.get("rule_id", "")).startswith("ssh-")]'
+```
+
+يجب أن تظهَر قواعد `ssh-management-allow-*` و`ssh-nonmanagement-drop-*` بحالة `installed`. محاولة مرفوضة عند الـswitch لا تصل إلى `sshd`، لذلك لا يُتوقع أن تظهر كسجل مصادقة داخل `ssh_events`؛ قواعد الـACL ظاهرة في `/firewall/rules`.
+
 ### تجهيز خادم h4 لتسجيل أحداث sshd
 داخل Mininet، تحققي أولًا من أن port 22 مستمع:
 
