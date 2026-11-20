@@ -52,7 +52,7 @@ VLAN_PORT_MAP_FILE = os.getenv(
 )
 LIVE_IOT_INGEST_TOKEN = ""
 SSH_DEMO_USERNAME = os.getenv("SECUREIOT_SSH_USERNAME", "secureiot")
-SSH_DEMO_PASSWORD = os.getenv("SECUREIOT_SSH_PASSWORD", "secureiot-demo")
+SSH_DEMO_PASSWORD = os.getenv("SECUREIOT_SSH_PASSWORD", "N3twork-Lab!2026")
 
 
 class SecureIoT38Topo(Topo):
