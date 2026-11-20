@@ -1394,17 +1394,59 @@ class TopologyMonitor(app_manager.RyuApp):
             self.ssh_policy_switches.discard(int(dpid))
             self.ssh_policy_failed_switches.discard(int(dpid))
 
+    def _purge_legacy_ssh_vlan_drop_rules(self, datapath):
+        """Delete the prior VLAN-tag-only trunk drops from an older release."""
+        dpid = int(datapath.id)
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        try:
+            for (port_dpid, port_no), entry in self.vlan_port_map.items():
+                if int(port_dpid) != dpid or entry["kind"] != "trunk":
+                    continue
+                for vlan_id in sorted(SSH_DENIED_VLANS):
+                    matches = [
+                        parser.OFPMatch(
+                            in_port=int(port_no), eth_type=0x0800,
+                            ipv4_dst=server_ip, ip_proto=6,
+                            tcp_dst=SSH_ACTIVITY_PORT,
+                            vlan_vid=OFPVID_PRESENT | vlan_id)
+                        for server_ip in SSH_PROTECTED_SERVERS.values()
+                    ]
+                    matches.append(parser.OFPMatch(
+                        in_port=int(port_no), eth_type=0x86DD,
+                        ip_proto=6, tcp_dst=SSH_ACTIVITY_PORT,
+                        vlan_vid=OFPVID_PRESENT | vlan_id))
+                    for match in matches:
+                        datapath.send_msg(parser.OFPFlowMod(
+                            datapath=datapath,
+                            command=ofproto.OFPFC_DELETE_STRICT,
+                            table_id=0,
+                            priority=SSH_POLICY_PRIORITY,
+                            out_port=ofproto.OFPP_ANY,
+                            out_group=ofproto.OFPG_ANY,
+                            match=match))
+        except Exception:
+            self.logger.exception(
+                "Failed to remove legacy SSH trunk rules on s%d", dpid)
+            return False
+        return True
+
     def _install_ssh_policy_rules(self, datapath):
         """Drop SSH to h4/h20 at ingress unless traffic is in VLAN 40.
 
         Access-port rules cover untagged frames from local non-management
-        endpoints; trunk-port rules cover those same VLANs between switches
-        and at the service edge. VLAN 40 is omitted, and the validated
-        topology map defines only h36/h37 as its endpoint devices.
+        endpoints. Trunk rules match the original IPv4 source subnet rather
+        than the current VLAN tag: the L3 gateway changes a routed packet's
+        VLAN from 40 to the destination VLAN while preserving its source IP.
+        The validated topology map defines only h36/h37 as VLAN 40 endpoints.
         """
         dpid = int(datapath.id)
         parser = datapath.ofproto_parser
         failures = []
+        if not self._purge_legacy_ssh_vlan_drop_rules(datapath):
+            self.ssh_policy_switches.discard(dpid)
+            self.ssh_policy_failed_switches.add(dpid)
+            return False
         for (port_dpid, port_no), entry in sorted(self.vlan_port_map.items()):
             if int(port_dpid) != dpid:
                 continue
@@ -1412,19 +1454,30 @@ class TopologyMonitor(app_manager.RyuApp):
                 vlan_ids = ([int(entry["vlan_id"])]
                             if int(entry["vlan_id"]) in SSH_DENIED_VLANS
                             else [])
-                match_vlan = OFPVID_NONE
             else:
                 vlan_ids = sorted(SSH_DENIED_VLANS)
-                match_vlan = None
             for vlan_id in vlan_ids:
-                targets = [
-                    (server_host, 0x0800, {"ipv4_dst": server_ip})
-                    for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items())
-                ]
-                # The topology inventory is IPv4-only. Drop non-management
-                # IPv6 SSH too, so link-local addressing cannot bypass the
-                # protected-server rules on a shared VLAN.
-                targets.append(("ipv6-any", 0x86DD, {}))
+                if entry["kind"] == "access":
+                    targets = [
+                        (server_host, 0x0800, {"ipv4_dst": server_ip})
+                        for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items())
+                    ]
+                    # There is no IPv6 routing in the five-VLAN gateway.
+                    # Deny local non-management IPv6 SSH at its source port,
+                    # without catching routed management traffic on trunks.
+                    targets.append(("ipv6-any", 0x86DD, {}))
+                else:
+                    network = self.vlan_networks[vlan_id]
+                    source_network = (
+                        str(network.network_address), str(network.netmask)
+                    )
+                    targets = [
+                        (server_host, 0x0800, {
+                            "ipv4_src": source_network,
+                            "ipv4_dst": server_ip,
+                        })
+                        for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items())
+                    ]
                 for target_id, eth_type, destination_match in targets:
                     fields = {
                         "in_port": int(port_no),
@@ -1433,10 +1486,8 @@ class TopologyMonitor(app_manager.RyuApp):
                         "tcp_dst": SSH_ACTIVITY_PORT,
                     }
                     fields.update(destination_match)
-                    fields["vlan_vid"] = (
-                        OFPVID_PRESENT | vlan_id
-                        if entry["kind"] == "trunk" else match_vlan
-                    )
+                    if entry["kind"] == "access":
+                        fields["vlan_vid"] = OFPVID_NONE
                     match = parser.OFPMatch(**fields)
                     rule_key = (int(port_no), entry["kind"], vlan_id,
                                 target_id)

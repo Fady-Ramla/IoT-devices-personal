@@ -2,6 +2,7 @@
 """Regression checks for SSH activity and sanitized sshd audit visibility."""
 import ast
 import hashlib
+import ipaddress
 import os
 import re
 import tempfile
@@ -232,6 +233,19 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
 
 
 def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
+    purge_legacy_rules = extract_function(
+        ROOT / "topology_monitor.py", "_purge_legacy_ssh_vlan_drop_rules",
+        "TopologyMonitor",
+        {
+            "SSH_DENIED_VLANS": frozenset({10, 20, 30, 50}),
+            "SSH_PROTECTED_SERVERS": {
+                "h4": "10.10.20.4", "h20": "10.10.20.20",
+            },
+            "SSH_ACTIVITY_PORT": 22,
+            "SSH_POLICY_PRIORITY": 49999,
+            "OFPVID_PRESENT": 0x1000,
+        },
+    )
     install_policy = extract_function(
         ROOT / "topology_monitor.py", "_install_ssh_policy_rules", "TopologyMonitor",
         {
@@ -243,6 +257,7 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
             "SSH_POLICY_PRIORITY": 49999,
             "OFPVID_NONE": 0,
             "OFPVID_PRESENT": 0x1000,
+            "ipaddress": ipaddress,
         },
     )
 
@@ -251,25 +266,50 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
         def OFPMatch(**fields):
             return fields
 
+        @staticmethod
+        def OFPFlowMod(**fields):
+            return fields
+
     class Monitor:
         vlan_port_map = {
             (2, 1): {"kind": "access", "vlan_id": 20},
             (2, 2): {"kind": "access", "vlan_id": 40},
             (2, 3): {"kind": "trunk", "vlan_id": None},
         }
+        vlan_networks = {
+            10: ipaddress.ip_network("10.10.10.0/24"),
+            20: ipaddress.ip_network("10.10.20.0/24"),
+            30: ipaddress.ip_network("10.10.30.0/24"),
+            40: ipaddress.ip_network("10.10.40.0/24"),
+            50: ipaddress.ip_network("10.10.50.0/24"),
+        }
         ssh_policy_flows = {}
         ssh_policy_switches = set()
         ssh_policy_failed_switches = set()
         logger = SimpleNamespace(exception=lambda *args, **kwargs: None)
+
+        def _purge_legacy_ssh_vlan_drop_rules(self, datapath):
+            return purge_legacy_rules(self, datapath)
 
         def _add_flow(self, datapath, priority, match, actions, track_key=None):
             self.installed.append((priority, match, actions))
 
     monitor = Monitor()
     monitor.installed = []
-    datapath = SimpleNamespace(id=2, ofproto_parser=Parser())
+    datapath = SimpleNamespace(
+        id=2, ofproto_parser=Parser(),
+        ofproto=SimpleNamespace(
+            OFPFC_DELETE_STRICT=4, OFPP_ANY=0xFFFFFFFC,
+            OFPG_ANY=0xFFFFFFFF),
+        sent_messages=[],
+    )
+    datapath.send_msg = datapath.sent_messages.append
     assert install_policy(monitor, datapath) is True
-    assert len(monitor.installed) == 15  # IPv4 servers plus IPv6 guard
+    assert len(monitor.installed) == 11  # access guards + source-network trunk guards
+    assert len(datapath.sent_messages) == 12  # old IPv4 and IPv6 trunk drops
+    assert all(message["priority"] == 49999
+               and message["command"] == 4
+               for message in datapath.sent_messages)
     assert all(priority == 49999 and actions == []
                for priority, _match, actions in monitor.installed)
     assert {match["ipv4_dst"] for _, match, _ in monitor.installed
@@ -279,10 +319,18 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
     assert all(match["ip_proto"] == 6 and match["tcp_dst"] == 22
                for _, match, _ in monitor.installed)
     assert sum(match["eth_type"] == 0x86DD
-               for _, match, _ in monitor.installed) == 5
+               for _, match, _ in monitor.installed) == 1
     assert all(match["in_port"] != 2 for _, match, _ in monitor.installed)
-    assert all(match.get("vlan_vid") != (0x1000 | 40)
-               for _, match, _ in monitor.installed)
+    access_rules = [match for _, match, _ in monitor.installed
+                    if match["in_port"] == 1]
+    trunk_rules = [match for _, match, _ in monitor.installed
+                   if match["in_port"] == 3]
+    assert len(access_rules) == 3
+    assert len(trunk_rules) == 8
+    assert all(match["vlan_vid"] == 0 for match in access_rules)
+    assert all("vlan_vid" not in match for match in trunk_rules)
+    assert all(match["ipv4_src"] != ("10.10.40.0", "255.255.255.0")
+               for match in trunk_rules)
     assert monitor.ssh_policy_switches == {2}
 
 
