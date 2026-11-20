@@ -51,6 +51,8 @@ VLAN_PORT_MAP_FILE = os.getenv(
     os.path.join(PROJECT_ROOT, "New_Datasets", "config", "vlan_port_map.json"),
 )
 LIVE_IOT_INGEST_TOKEN = ""
+SSH_DEMO_USERNAME = os.getenv("SECUREIOT_SSH_USERNAME", "secureiot")
+SSH_DEMO_PASSWORD = os.getenv("SECUREIOT_SSH_PASSWORD", "secureiot-demo")
 
 
 class SecureIoT38Topo(Topo):
@@ -333,7 +335,15 @@ def start_live_iot_web_api(net, ingest_token):
 
 
 def start_ssh_backends(net):
-    """Ensure h4/h20 accept TCP/22 and write sanitized sshd audit logs."""
+    """Ensure h4/h20 accept TCP/22 with the configurable demo account."""
+    if (not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", SSH_DEMO_USERNAME)
+            or not SSH_DEMO_PASSWORD
+            or "\n" in SSH_DEMO_PASSWORD
+            or "\r" in SSH_DEMO_PASSWORD):
+        raise RuntimeError("invalid SECUREIOT_SSH_USERNAME/SECUREIOT_SSH_PASSWORD")
+    demo_credential = shlex.quote(
+        "%s:%s" % (SSH_DEMO_USERNAME, SSH_DEMO_PASSWORD)
+    )
     for host_id in ("h4", "h20"):
         host = net.get(host_id)
         address = HOSTS[host_id]["ip"].split("/", 1)[0]
@@ -354,14 +364,21 @@ def start_ssh_backends(net):
             audit_log = "/run/secureiot/ssh/secureiot-sshd-%s.log" % host_id
             launch = (
                 "mkdir -p /run/sshd && /usr/bin/ssh-keygen -A && "
+                "(id -u %s >/dev/null 2>&1 || "
+                "useradd -m -s /bin/bash %s) && "
+                "printf '%%s\\n' %s | chpasswd && "
                 "install -d -m 700 /run/secureiot/ssh && "
                 "touch %s && chmod 600 %s && umask 077; "
                 "( /usr/sbin/sshd -D -e -o ListenAddress=%s "
+                "-o PasswordAuthentication=yes -o KbdInteractiveAuthentication=no "
+                "-o PermitRootLogin=no -o UsePAM=no "
                 "-o PidFile=/tmp/sshd-%s.pid 2>&1 | "
                 "while IFS= read -r line; do "
                 "printf '%%s %%s\\n' \"$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)\" "
                 "\"$line\" >> %s; done ) >/dev/null 2>&1 &"
-                % (audit_log, audit_log, address, host_id, audit_log)
+                % (shlex.quote(SSH_DEMO_USERNAME),
+                   shlex.quote(SSH_DEMO_USERNAME), demo_credential,
+                   audit_log, audit_log, address, host_id, audit_log)
             )
             host.cmd(launch)
         deadline = time.monotonic() + 15
@@ -379,7 +396,8 @@ def start_ssh_backends(net):
             )
             raise RuntimeError("%s sshd did not listen on %s:22; %s" %
                                (host_id, address, tail.strip()))
-    info("*** SSH backends ready: h4:22 primary, h20:22 standby.\n")
+    info("*** SSH backends ready: h4:22 primary, h20:22 standby; demo user=%s.\n"
+         % SSH_DEMO_USERNAME)
 
 
 def start_demo_services(net, live_iot_api=False):
