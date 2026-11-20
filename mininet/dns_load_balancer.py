@@ -18,11 +18,13 @@ def probe_query(name="https.lab"):
 
 
 class DnsLoadBalancer:
-    def __init__(self, listen_host, listen_port, backends, health_timeout=1.0):
+    def __init__(self, listen_host, listen_port, backends, health_timeout=1.0,
+                 forward_timeout=3.0):
         self.listen_host = listen_host
         self.listen_port = int(listen_port)
         self.backends = list(backends)
         self.health_timeout = float(health_timeout)
+        self.forward_timeout = float(forward_timeout)
         self.stats_file = os.environ.get("SECUREIOT_LB_STATS_FILE", DEFAULT_STATS)
         self.lock = threading.Lock()
         self.stats = {
@@ -97,7 +99,7 @@ class DnsLoadBalancer:
 
     def forward(self, backend, packet):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.settimeout(self.health_timeout)
+        sock.settimeout(self.forward_timeout)
         try:
             sock.sendto(packet, backend)
             response, _ = sock.recvfrom(65535)
@@ -169,12 +171,14 @@ def main():
     parser.add_argument("--listen-port", type=int, default=53)
     parser.add_argument("--backends", required=True)
     parser.add_argument("--health-timeout", type=float, default=1.0)
+    parser.add_argument("--forward-timeout", type=float, default=3.0)
     args = parser.parse_args()
     DnsLoadBalancer(
         args.listen_host,
         args.listen_port,
         parse_backends(args.backends),
         health_timeout=args.health_timeout,
+        forward_timeout=args.forward_timeout,
     ).serve_forever()
 
 

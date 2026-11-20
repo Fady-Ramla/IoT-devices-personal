@@ -647,6 +647,7 @@ def start_project_dns(net):
     lb_host.cmd(
         "SECUREIOT_LB_STATS_FILE=/tmp/secureiot-lb-dns-stats.json "
         "python3 %s --listen-host 10.10.20.100 --listen-port 53 "
+        "--health-timeout 1.0 --forward-timeout 3.0 "
         "--backends 10.10.30.2:53,10.10.30.17:53 "
         "> /tmp/lb-53.log 2>&1 &"
         % shlex.quote(lb)
