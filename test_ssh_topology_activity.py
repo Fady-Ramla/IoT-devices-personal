@@ -36,6 +36,7 @@ def test_ssh_openflow_counter_delta_marks_hosts_and_switch():
             "ACTIVITY_TRACK_PRIORITY": 110,
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
             "time": SimpleNamespace(time=lambda: 300.0),
         },
     )
@@ -96,9 +97,9 @@ def test_ssh_log_events_are_sanitized_and_map_client_server():
     with tempfile.TemporaryDirectory() as log_dir:
         log_path = Path(log_dir) / "secureiot-sshd-h4.log"
         log_path.write_text(
-            f"{prefix} vm sshd[99]: Connection from 10.10.40.36 port 49152 on 10.10.20.4 port 22\n"
-            f"{prefix} vm sshd[99]: Accepted password for private_user from 10.10.40.36 port 49152 ssh2\n"
-            f"{prefix} vm sshd[99]: Failed password for private_user from 10.10.40.36 port 49153 ssh2\n",
+            f"{prefix} vm sshd[99]: Connection from 10.10.20.100 port 49152 on 10.10.20.4 port 22\n"
+            f"{prefix} vm sshd[99]: Accepted password for private_user from 10.10.20.100 port 49152 ssh2\n"
+            f"{prefix} vm sshd[99]: Failed password for private_user from 10.10.20.100 port 49153 ssh2\n",
             encoding="utf-8",
         )
         parser = extract_function(
@@ -106,7 +107,7 @@ def test_ssh_log_events_are_sanitized_and_map_client_server():
             namespace={
                 "time": time, "os": os, "re": re, "hashlib": hashlib,
                 "datetime": datetime, "timezone": timezone,
-                "HOST_IPS": {"h36": "10.10.40.36", "h4": "10.10.20.4"},
+                "HOST_IPS": {"h38": "10.10.20.100", "h4": "10.10.20.4"},
                 "SSH_AUDIT_LOG_DIR": str(log_dir),
                 "SSH_ACTIVITY_PORT": 22,
                 "SSH_AUDIT_LOG_MAX_BYTES": 256 * 1024,
@@ -119,7 +120,7 @@ def test_ssh_log_events_are_sanitized_and_map_client_server():
     assert [event["event_type"] for event in events] == [
         "connection_attempt", "login_success", "login_failure",
     ]
-    assert all(event["source_host_id"] == "h36" for event in events)
+    assert all(event["source_host_id"] == "h38" for event in events)
     assert all(event["destination_host_id"] == "h4" for event in events)
     assert all(event["destination_port"] == 22 for event in events)
     assert all("private_user" not in repr(event) for event in events)
@@ -132,8 +133,8 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
     now = time.time()
     event = {
         "event_id": "ssh_example", "event_type": "login_success",
-        "auth_status": "success", "source_host_id": "h36",
-        "destination_host_id": "h4", "source_ip": "10.10.40.36",
+        "auth_status": "success", "source_host_id": "h38",
+        "destination_host_id": "h4", "source_ip": "10.10.20.100",
         "destination_ip": "10.10.20.4", "destination_port": 22,
         "timestamp": datetime.fromtimestamp(now, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
     }
@@ -142,17 +143,18 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
             "LOAD_BALANCER_IP": "10.10.20.100",
         },
     )
     hosts = extract_function(
         source_path, "hosts", "RuntimeNetworkController",
         {
-            "HOSTS": {"h36": {}, "h4": {}},
-            "HOST_IPS": {"h36": "10.10.40.36", "h4": "10.10.20.4"},
-            "HOST_VLANS": {"h36": 40, "h4": 20},
-            "HOST_SWITCHES": {"h36": "s5", "h4": "s2"},
-            "SWITCH_DPIDS": {"s2": 2, "s5": 5},
+            "HOSTS": {"h36": {}, "h38": {}, "h4": {}},
+            "HOST_IPS": {"h36": "10.10.40.36", "h38": "10.10.20.100", "h4": "10.10.20.4"},
+            "HOST_VLANS": {"h36": 40, "h38": 20, "h4": 20},
+            "HOST_SWITCHES": {"h36": "s6", "h38": "s2", "h4": "s2"},
+            "SWITCH_DPIDS": {"s2": 2, "s6": 6},
             "TRAFFIC_ACTIVE_WINDOW": 8.0,
             "TELEMETRY_ACTIVE_WINDOW": 15.0,
             "time": time, "datetime": datetime, "timezone": timezone,
@@ -171,7 +173,7 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
                  if callable(getattr(obj, name, None))), default
             ),
             "_ssh_path_info": lambda *args, **kwargs: {
-                "path": [5, 2], "path_source": "computed", "path_status": "active",
+                "path": [2], "path_source": "computed", "path_status": "active",
             },
             "_path_history": lambda *args, **kwargs: [],
             "compact": lambda value: value,
@@ -180,7 +182,7 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
     )
 
     class Topology:
-        datapaths = {2: object(), 5: object()}
+        datapaths = {2: object(), 6: object()}
         vlan_port_map = {}
         ping_traffic_last_seen = {}
         web_traffic_last_seen = {}
@@ -201,22 +203,22 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
 
     rows = hosts(Api(), SimpleNamespace(GET={}))
     by_id = {row["host_id"]: row for row in rows}
-    for host_id in ("h36", "h4"):
+    for host_id in ("h38", "h4"):
         assert by_id[host_id]["ssh_events"][0]["event_type"] == "login_success"
-        assert by_id[host_id]["ssh_events"][0]["path"] == [5, 2]
+        assert by_id[host_id]["ssh_events"][0]["path"] == [2]
         assert by_id[host_id]["ssh_events"][0]["path_source"] == "computed"
         # Authentication history alone is not mislabeled as live data-plane activity.
         assert by_id[host_id]["traffic_active"] is False
 
     flow = {
-        "src_ip": "10.10.40.36", "dst_ip": "10.10.20.4",
-        "ip_proto": 6, "tcp_src_port": 49152, "tcp_dst_port": 22,
-        "path": [5, 2], "path_type": "inter_switch",
+        "src_ip": "10.10.40.36", "dst_ip": "10.10.20.100",
+        "ip_proto": 6, "tcp_src_port": 49152, "tcp_dst_port": 2222,
+        "path": [6, 2], "path_type": "gateway",
         "path_status": "active", "last_seen": now,
     }
 
     class LiveTopology(Topology):
-        ssh_traffic_last_seen = {"10.10.40.36": now, "10.10.20.4": now}
+        ssh_traffic_last_seen = {"10.10.40.36": now, "10.10.20.100": now}
 
         def get_active_flow_paths(self):
             return [flow]
@@ -227,7 +229,7 @@ def test_hosts_endpoint_adds_ssh_events_to_both_participants():
 
     live_rows = hosts(LiveApi(), SimpleNamespace(GET={}))
     live_by_id = {row["host_id"]: row for row in live_rows}
-    for host_id in ("h36", "h4"):
+    for host_id in ("h36", "h38"):
         assert live_by_id[host_id]["traffic_active"] is True
         assert live_by_id[host_id]["active_flows"][0]["traffic_category"] == "ssh"
 
@@ -242,6 +244,13 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
                 "h4": "10.10.20.4", "h20": "10.10.20.20",
             },
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_FRONTEND_PORT": 2222,
+            "SSH_BACKEND_SOURCE_IP": "10.10.20.100",
+            "SSH_FRONTEND_IP": "10.10.20.100",
+            "SSH_FRONTEND_HOST_ID": "h38",
+            "SSH_MANAGEMENT_HOSTS": {
+                "h36": "10.10.40.36", "h37": "10.10.40.37",
+            },
             "SSH_POLICY_PRIORITY": 49999,
             "OFPVID_PRESENT": 0x1000,
         },
@@ -254,6 +263,10 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
                 "h4": "10.10.20.4", "h20": "10.10.20.20",
             },
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_FRONTEND_PORT": 2222,
+            "SSH_BACKEND_SOURCE_IP": "10.10.20.100",
+            "SSH_FRONTEND_IP": "10.10.20.100",
+            "SSH_FRONTEND_HOST_ID": "h38",
             "SSH_POLICY_PRIORITY": 49999,
             "SSH_MANAGEMENT_HOSTS": {
                 "h36": "10.10.40.36", "h37": "10.10.40.37",
@@ -279,10 +292,10 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
 
     class Monitor:
         vlan_port_map = {
-            (2, 1): {"kind": "access", "vlan_id": 20, "host_id": "h21"},
+            (2, 1): {"kind": "access", "vlan_id": 50, "host_id": "h21"},
             (2, 2): {"kind": "access", "vlan_id": 40, "host_id": "h36"},
             (2, 3): {"kind": "trunk", "vlan_id": None},
-            (2, 4): {"kind": "access", "vlan_id": 40, "host_id": "h19"},
+            (2, 4): {"kind": "access", "vlan_id": 20, "host_id": "h38"},
         }
         vlan_networks = {
             10: ipaddress.ip_network("10.10.10.0/24"),
@@ -314,35 +327,54 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
     )
     datapath.send_msg = datapath.sent_messages.append
     assert install_policy(monitor, datapath) is True
-    assert len(monitor.installed) == 14  # non-IT access guards + trunk guards
-    assert len(datapath.sent_messages) == 12  # old IPv4 and IPv6 trunk drops
+    assert len(monitor.installed) == 44  # final frontend-aware subnet guards
+    assert len(datapath.sent_messages) == 22  # old subnet and VLAN-tagged drops
     assert all(message["priority"] == 49999
                and message["command"] == 4
                for message in datapath.sent_messages)
     assert all(priority == 49999 for priority, _match, _actions in monitor.installed)
     assert {match["ipv4_dst"] for _, match, _ in monitor.installed
             if "ipv4_dst" in match} == {
-        "10.10.20.4", "10.10.20.20",
+        "10.10.20.4", "10.10.20.20", "10.10.20.100",
     }
-    assert all(match["ip_proto"] == 6 and match["tcp_dst"] == 22
+    assert all(match["ip_proto"] == 6 and match["tcp_dst"] in {22, 2222}
                for _, match, _ in monitor.installed)
     assert sum(match["eth_type"] == 0x86DD
-               for _, match, _ in monitor.installed) == 2
-    assert all(match["in_port"] != 2 for _, match, _ in monitor.installed)
+               for _, match, _ in monitor.installed) == 3
     access_rules = [match for _, match, _ in monitor.installed
                     if match["in_port"] == 1]
-    unauthorized_management_rules = [match for _, match, _ in monitor.installed
-                                     if match["in_port"] == 4]
+    frontend_rules = [match for _, match, _ in monitor.installed
+                      if match["in_port"] == 4]
     trunk_rules = [match for _, match, _ in monitor.installed
                    if match["in_port"] == 3]
-    assert len(access_rules) == 3
-    assert len(unauthorized_management_rules) == 3
-    assert len(trunk_rules) == 8
+    assert len(access_rules) == 4
+    assert len(frontend_rules) == 2
+    assert len(trunk_rules) == 35
     assert all(match["vlan_vid"] == 0 for match in access_rules)
-    assert all(match["vlan_vid"] == 0 for match in unauthorized_management_rules)
+    assert all(match["vlan_vid"] == 0 for match in frontend_rules)
     assert all("vlan_vid" not in match for match in trunk_rules)
-    assert all(match["ipv4_src"] != ("10.10.40.0", "255.255.255.0")
-               for match in trunk_rules)
+    h36 = ipaddress.ip_address("10.10.40.36")
+    h37 = ipaddress.ip_address("10.10.40.37")
+    lb_address = ipaddress.ip_address("10.10.20.100")
+    for match in trunk_rules:
+        network = ipaddress.ip_network(
+            "%s/%s" % match["ipv4_src"], strict=False
+        )
+        if match["tcp_dst"] == 22:
+            assert lb_address not in network
+        else:
+            assert h36 not in network and h37 not in network
+    assert all(match["tcp_dst"] in {22, 2222} for match in access_rules
+               if match["eth_type"] == 0x0800 and match["in_port"] == 1)
+    management_rules = [match for _, match, _ in monitor.installed
+                        if match["in_port"] == 2]
+    assert not any(match["tcp_dst"] == 2222 for match in management_rules)
+    assert any(match.get("tcp_dst") == 2222 and match.get("ipv4_dst") == "10.10.20.100"
+               for match in access_rules)
+    assert not any(match.get("ipv4_dst") in {"10.10.20.4", "10.10.20.20"}
+                   for match in frontend_rules)
+    assert all(match["tcp_dst"] == 2222 for match in frontend_rules
+               if match["eth_type"] == 0x0800)
     assert all(len(actions) == 1 and actions[0]["type"] == "output"
                and actions[0]["port"] == 0xFFFFFFFD
                for _priority, match, actions in monitor.installed
@@ -363,6 +395,10 @@ def test_ssh_denial_audit_is_bounded_and_installs_exact_drop_cache():
             "h4": "10.10.20.4", "h20": "10.10.20.20",
         },
         "SSH_ACTIVITY_PORT": 22,
+        "SSH_FRONTEND_PORT": 2222,
+        "SSH_FRONTEND_IP": "10.10.20.100",
+        "SSH_FRONTEND_HOST_ID": "h38",
+        "SSH_BACKEND_SOURCE_IP": "10.10.20.100",
         "SSH_DENY_CACHE_PRIORITY": 50001,
         "SSH_DENY_CACHE_IDLE_TIMEOUT": 30,
         "SSH_DENY_CACHE_HARD_TIMEOUT": 300,
@@ -384,7 +420,9 @@ def test_ssh_denial_audit_is_bounded_and_installs_exact_drop_cache():
         _is_ssh_policy_denial = is_denied
         _audit_denied_ssh_packet = audit
         vlan_port_map = {
-            (2, 1): {"kind": "access", "vlan_id": 10, "host_id": "h21"},
+            (2, 1): {"kind": "access", "vlan_id": 50, "host_id": "h21"},
+            (2, 2): {"kind": "access", "vlan_id": 40, "host_id": "h36"},
+            (2, 3): {"kind": "access", "vlan_id": 20, "host_id": "h38"},
         }
         vlan_networks = {
             10: ipaddress.ip_network("10.10.10.0/24"),
@@ -427,6 +465,24 @@ def test_ssh_denial_audit_is_bounded_and_installs_exact_drop_cache():
     assert match["in_port"] == 1 and match["ipv4_src"] == "10.10.10.21"
     assert match["ipv4_dst"] == "10.10.20.4" and match["tcp_src"] == 49152
     assert idle_timeout == 30 and hard_timeout == 300 and track_key is None
+    frontend_ip = SimpleNamespace(proto=6, src="10.10.50.21", dst="10.10.20.100")
+    frontend_tcp = SimpleNamespace(src_port=49153, dst_port=2222)
+    assert monitor._audit_denied_ssh_packet(datapath, 1, frontend_ip, frontend_tcp) is True
+    assert len(monitor.firewall_events) == 2
+    assert monitor.firewall_events[-1]["destination_host_id"] == "h38"
+    assert monitor.firewall_events[-1]["destination_port"] == 2222
+    assert monitor.firewall_events[-1]["rule_id"] == "ssh-frontend-nonmanagement-drop-h38"
+    assert monitor.installed[-1][1]["tcp_dst"] == 2222
+
+    direct_admin_ip = SimpleNamespace(proto=6, src="10.10.40.36", dst="10.10.20.4")
+    assert monitor._is_ssh_policy_denial(
+        datapath, 2, direct_admin_ip, tcp_pkt) is True
+    allowed_front_ip = SimpleNamespace(proto=6, src="10.10.40.36", dst="10.10.20.100")
+    allowed_front_tcp = SimpleNamespace(src_port=49154, dst_port=2222)
+    assert monitor._is_ssh_policy_denial(
+        datapath, 2, allowed_front_ip, allowed_front_tcp) is False
+    backend_ip = SimpleNamespace(proto=6, src="10.10.20.100", dst="10.10.20.4")
+    assert monitor._is_ssh_policy_denial(datapath, 3, backend_ip, tcp_pkt) is False
 
 
 def test_gateway_ssh_allowlist_is_exact_and_preserves_other_it_services():
@@ -439,18 +495,17 @@ def test_gateway_ssh_allowlist_is_exact_and_preserves_other_it_services():
                 for target in node.targets)
     )
     rules = ast.literal_eval(assignment.value)
-    ssh_rules = [rule for rule in rules if "--dport 22" in rule]
+    ssh_rules = [rule for rule in rules if "--dport 2222" in rule]
     actual_pairs = set()
     for rule in ssh_rules:
         fields = rule.split()
         actual_pairs.add((fields[fields.index("-s") + 1],
                           fields[fields.index("-d") + 1]))
     assert actual_pairs == {
-        ("10.10.40.36/32", "10.10.20.4/32"),
-        ("10.10.40.36/32", "10.10.20.20/32"),
-        ("10.10.40.37/32", "10.10.20.4/32"),
-        ("10.10.40.37/32", "10.10.20.20/32"),
+        ("10.10.40.36/32", "10.10.20.100/32"),
+        ("10.10.40.37/32", "10.10.20.100/32"),
     }
+    assert not any("--dport 22 " in rule for rule in rules)
     application_rule = next(rule for rule in rules
                             if "--dports 443,5000" in rule)
     assert "22" not in application_rule

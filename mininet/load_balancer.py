@@ -12,11 +12,16 @@ import time
 DEFAULT_STATS = "/var/tmp/secureiot-lb-stats.json"
 
 class TcpLoadBalancer:
-    def __init__(self, listen_host, listen_port, backends, health_timeout=1.0):
+    def __init__(self, listen_host, listen_port, backends, health_timeout=1.0,
+                 strategy="round-robin", idle_timeout=30.0):
         self.listen_host = listen_host
         self.listen_port = int(listen_port)
         self.backends = list(backends)
         self.health_timeout = float(health_timeout)
+        if strategy not in ("round-robin", "primary-backup"):
+            raise ValueError("strategy must be round-robin or primary-backup")
+        self.strategy = strategy
+        self.idle_timeout = float(idle_timeout)
         self.stats_file = os.environ.get("SECUREIOT_LB_STATS_FILE", DEFAULT_STATS)
         self.lock = threading.Lock()
         self.next_backend = 0
@@ -28,6 +33,8 @@ class TcpLoadBalancer:
             "health_checks_performed": False,
             "last_health_check": None,
             "last_backend": None,
+            "strategy": self.strategy,
+            "idle_timeout": self.idle_timeout,
             "backend_requests": {
                 f"{host}:{port}": 0 for host, port in self.backends
             },
@@ -92,8 +99,11 @@ class TcpLoadBalancer:
             if not self.backends:
                 return None, False
             primary = self.backends[0]
-            ordered = self.backends[self.next_backend:] + self.backends[:self.next_backend]
-            self.next_backend = (self.next_backend + 1) % len(self.backends)
+            if self.strategy == "primary-backup":
+                ordered = list(self.backends)
+            else:
+                ordered = self.backends[self.next_backend:] + self.backends[:self.next_backend]
+                self.next_backend = (self.next_backend + 1) % len(self.backends)
         healthy = [backend for backend in ordered if self.healthy(backend)]
         with self.lock:
             self.stats["healthy_backends"] = [f"{host}:{port}" for host, port in healthy]
@@ -102,6 +112,8 @@ class TcpLoadBalancer:
         self.write_stats()
         for backend in ordered:
             if backend in healthy:
+                if self.strategy == "primary-backup":
+                    return backend, backend != primary
                 return backend, bool(primary not in healthy and backend != primary)
         return None, False
 
@@ -109,7 +121,8 @@ class TcpLoadBalancer:
         sockets = [client, upstream]
         try:
             while sockets:
-                readable, _, exceptional = select.select(sockets, [], sockets, 30)
+                timeout = self.idle_timeout if self.idle_timeout > 0 else None
+                readable, _, exceptional = select.select(sockets, [], sockets, timeout)
                 if exceptional or not readable:
                     return
                 for source in readable:
@@ -147,10 +160,25 @@ class TcpLoadBalancer:
         try:
             upstream = socket.create_connection(backend, timeout=self.health_timeout)
         except OSError:
-            client.close()
-            self.update(requests_active=-1, backend_failovers=1)
-            print(f"BACKEND_CONNECT_FAILED backend={backend}", flush=True)
-            return
+            upstream = None
+            if self.strategy == "primary-backup":
+                for candidate in self.backends:
+                    if candidate == backend or not self.healthy(candidate):
+                        continue
+                    try:
+                        upstream = socket.create_connection(
+                            candidate, timeout=self.health_timeout)
+                    except OSError:
+                        continue
+                    backend = candidate
+                    self.record_backend(backend)
+                    self.update(backend_failovers=1)
+                    break
+            if upstream is None:
+                client.close()
+                self.update(requests_active=-1, backend_failovers=1)
+                print(f"BACKEND_CONNECT_FAILED backend={backend}", flush=True)
+                return
         print(f"FORWARD listen={self.listen_port} backend={backend} client={address}", flush=True)
         try:
             self.relay(client, upstream)
@@ -178,8 +206,15 @@ def main():
     parser.add_argument("--listen-host", default="0.0.0.0")
     parser.add_argument("--listen-port", type=int, required=True)
     parser.add_argument("--backends", required=True)
+    parser.add_argument("--strategy", choices=("round-robin", "primary-backup"),
+                        default="round-robin")
+    parser.add_argument("--idle-timeout", type=float, default=30.0,
+                        help="seconds without traffic before closing a relay; 0 disables")
     args = parser.parse_args()
-    TcpLoadBalancer(args.listen_host, args.listen_port, parse_backends(args.backends)).serve_forever()
+    TcpLoadBalancer(
+        args.listen_host, args.listen_port, parse_backends(args.backends),
+        strategy=args.strategy, idle_timeout=args.idle_timeout,
+    ).serve_forever()
 
 if __name__ == "__main__":
     main()

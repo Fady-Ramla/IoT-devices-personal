@@ -66,6 +66,7 @@ HTTP_ACTIVITY_PORTS = frozenset(
     }
 )
 SSH_ACTIVITY_PORT = 22
+SSH_ACTIVITY_PORTS = frozenset({22, 2222})
 SSH_AUDIT_LOG_DIR = os.getenv("SECUREIOT_SSHD_LOG_DIR", "/run/secureiot/ssh")
 SSH_AUDIT_EVENT_MAX_AGE = 24 * 60 * 60
 SSH_AUDIT_LOG_MAX_BYTES = 256 * 1024
@@ -127,7 +128,7 @@ def _flow_activity_category(flow):
         }
     except (TypeError, ValueError):
         return None
-    if SSH_ACTIVITY_PORT in ports:
+    if ports & SSH_ACTIVITY_PORTS:
         return "ssh"
     if not ports.intersection(HTTP_ACTIVITY_PORTS):
         return None

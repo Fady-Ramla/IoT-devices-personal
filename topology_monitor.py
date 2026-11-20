@@ -109,8 +109,13 @@ HTTP_ACTIVITY_PORTS = frozenset(
     ).split(",") if value.strip()
 )
 SSH_ACTIVITY_PORT = 22
-# Only access ports explicitly identified as h36/h37 may open SSH sessions to
-# these service hosts. The validated map also fixes both hosts to VLAN 40.
+# SSH clients use the dedicated h38 TCP frontend; only that frontend may open
+# TCP/22 connections to the primary/standby SSH servers.
+SSH_FRONTEND_HOST_ID = "h38"
+SSH_FRONTEND_IP = "10.10.20.100"
+SSH_FRONTEND_PORT = 2222
+SSH_BACKEND_SOURCE_IP = SSH_FRONTEND_IP
+SSH_ACTIVITY_PORTS = frozenset({SSH_ACTIVITY_PORT, SSH_FRONTEND_PORT})
 SSH_MANAGEMENT_VLAN = 40
 SSH_MANAGEMENT_HOSTS = {
     "h36": "10.10.40.36",
@@ -299,7 +304,7 @@ class TopologyMonitor(app_manager.RyuApp):
         # Explicit Security blocks keyed by normalized source MAC.
         # IP is retained only for audit; enforcement matches eth_src.
         self.blocked_devices = {}
-        # High-priority OpenFlow drops that limit SSH to the management VLAN.
+        # High-priority OpenFlow guards enforce the SSH frontend/backend path.
         # Keys are (dpid, rule-key); values are the exact matches to delete on
         # VLAN-map refresh. Device-wide blocks retain a higher priority.
         self.ssh_policy_flows = {}
@@ -484,7 +489,7 @@ class TopologyMonitor(app_manager.RyuApp):
                     for datapath in list(self.datapaths.values()):
                         if not self._install_ssh_policy_rules(datapath):
                             raise RuntimeError(
-                                "SSH allow-list installation failed on s%d"
+                                "SSH frontend/backend policy installation failed on s%d"
                                 % int(datapath.id))
                     self.vlan_map_ready = True
                     last_signature = signature
@@ -797,7 +802,7 @@ class TopologyMonitor(app_manager.RyuApp):
             except (TypeError, ValueError):
                 tcp_ports = set()
             is_web = ip_proto == 6 and bool(tcp_ports & HTTP_ACTIVITY_PORTS)
-            is_ssh = ip_proto == 6 and SSH_ACTIVITY_PORT in tcp_ports
+            is_ssh = ip_proto == 6 and bool(tcp_ports & SSH_ACTIVITY_PORTS)
             if not (is_ping or is_web or is_ssh):
                 continue
             key = (
@@ -854,7 +859,7 @@ class TopologyMonitor(app_manager.RyuApp):
                                    or not (flow_ports & tcp_ports)):
                         continue
                     if is_ssh and (flow_proto != 6
-                                   or SSH_ACTIVITY_PORT not in flow_ports):
+                                   or not (flow_ports & SSH_ACTIVITY_PORTS)):
                         continue
                     flow["last_seen"] = now
                     flow["activity_source"] = "openflow_counter_delta"
@@ -1424,7 +1429,7 @@ class TopologyMonitor(app_manager.RyuApp):
             self.ssh_policy_failed_switches.discard(int(dpid))
 
     def _purge_legacy_ssh_vlan_drop_rules(self, datapath):
-        """Delete the prior VLAN-tag-only trunk drops from an older release."""
+        """Delete prior VLAN-tagged and subnet-based SSH trunk drops."""
         dpid = int(datapath.id)
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
@@ -1432,19 +1437,30 @@ class TopologyMonitor(app_manager.RyuApp):
             for (port_dpid, port_no), entry in self.vlan_port_map.items():
                 if int(port_dpid) != dpid or entry["kind"] != "trunk":
                     continue
-                for vlan_id in sorted(SSH_DENIED_VLANS):
+                for vlan_id, network in sorted(self.vlan_networks.items()):
+                    source_network = (
+                        str(network.network_address), str(network.netmask)
+                    )
                     matches = [
                         parser.OFPMatch(
                             in_port=int(port_no), eth_type=0x0800,
-                            ipv4_dst=server_ip, ip_proto=6,
-                            tcp_dst=SSH_ACTIVITY_PORT,
-                            vlan_vid=OFPVID_PRESENT | vlan_id)
+                            ipv4_src=source_network, ipv4_dst=server_ip,
+                            ip_proto=6, tcp_dst=SSH_ACTIVITY_PORT)
                         for server_ip in SSH_PROTECTED_SERVERS.values()
                     ]
-                    matches.append(parser.OFPMatch(
-                        in_port=int(port_no), eth_type=0x86DD,
-                        ip_proto=6, tcp_dst=SSH_ACTIVITY_PORT,
-                        vlan_vid=OFPVID_PRESENT | vlan_id))
+                    if vlan_id in SSH_DENIED_VLANS:
+                        matches.extend(
+                            parser.OFPMatch(
+                                in_port=int(port_no), eth_type=0x0800,
+                                ipv4_dst=server_ip, ip_proto=6,
+                                tcp_dst=SSH_ACTIVITY_PORT,
+                                vlan_vid=OFPVID_PRESENT | vlan_id)
+                            for server_ip in SSH_PROTECTED_SERVERS.values()
+                        )
+                        matches.append(parser.OFPMatch(
+                            in_port=int(port_no), eth_type=0x86DD,
+                            ip_proto=6, tcp_dst=SSH_ACTIVITY_PORT,
+                            vlan_vid=OFPVID_PRESENT | vlan_id))
                     for match in matches:
                         datapath.send_msg(parser.OFPFlowMod(
                             datapath=datapath,
@@ -1461,59 +1477,79 @@ class TopologyMonitor(app_manager.RyuApp):
         return True
 
     def _is_ssh_policy_denial(self, datapath, in_port, ip_pkt, tcp_pkt):
-        """Identify TCP/22 traffic that the installed host/VLAN policy denies."""
-        if (getattr(ip_pkt, "proto", None) != 6
-                or getattr(tcp_pkt, "dst_port", None) != SSH_ACTIVITY_PORT
-                or getattr(ip_pkt, "dst", None) not in SSH_PROTECTED_SERVERS.values()):
+        """Identify SSH frontend/backend traffic denied by the host/VLAN ACL."""
+        destination_port = getattr(tcp_pkt, "dst_port", None)
+        destination_ip = getattr(ip_pkt, "dst", None)
+        if getattr(ip_pkt, "proto", None) != 6:
             return False
         entry = self.vlan_port_map.get((int(datapath.id), int(in_port)))
         if not entry:
             return False
         if entry.get("kind") == "access":
-            return (int(entry.get("vlan_id", -1)) in SSH_DENIED_VLANS
-                    or entry.get("host_id") not in SSH_MANAGEMENT_HOSTS)
+            host_id = entry.get("host_id")
+            if (destination_port == SSH_ACTIVITY_PORT
+                    and destination_ip in SSH_PROTECTED_SERVERS.values()):
+                return host_id != SSH_FRONTEND_HOST_ID
+            if (destination_port == SSH_FRONTEND_PORT
+                    and destination_ip == SSH_FRONTEND_IP):
+                return host_id not in SSH_MANAGEMENT_HOSTS
+            return False
         if entry.get("kind") == "trunk":
             try:
                 source_ip = ipaddress.ip_address(ip_pkt.src)
             except (TypeError, ValueError):
                 return False
-            return any(
-                source_ip in self.vlan_networks[vlan_id]
-                for vlan_id in SSH_DENIED_VLANS
-                if vlan_id in self.vlan_networks
+            in_lab_network = any(
+                source_ip in network for network in self.vlan_networks.values()
             )
+            if (destination_port == SSH_ACTIVITY_PORT
+                    and destination_ip in SSH_PROTECTED_SERVERS.values()):
+                return in_lab_network and str(source_ip) != SSH_BACKEND_SOURCE_IP
+            if (destination_port == SSH_FRONTEND_PORT
+                    and destination_ip == SSH_FRONTEND_IP):
+                return in_lab_network and str(source_ip) not in set(
+                    SSH_MANAGEMENT_HOSTS.values())
         return False
 
     def _audit_denied_ssh_packet(self, datapath, in_port, ip_pkt, tcp_pkt):
-        """Record an SDN-denied SSH attempt and install a short exact drop cache."""
+        """Record a denied frontend/backend attempt and cache its exact drop."""
         if not self._is_ssh_policy_denial(datapath, in_port, ip_pkt, tcp_pkt):
             return False
 
         now = time.time()
         source_ip = str(ip_pkt.src)
         destination_ip = str(ip_pkt.dst)
-        audit_key = (source_ip, destination_ip)
+        destination_port = int(tcp_pkt.dst_port)
+        audit_key = (source_ip, destination_ip, destination_port)
         last_seen = self.ssh_deny_audit_last_seen.get(audit_key)
         if last_seen is None or now - last_seen >= SSH_DENY_AUDIT_INTERVAL:
             server_host = next(
                 (host_id for host_id, address in SSH_PROTECTED_SERVERS.items()
                  if address == destination_ip),
-                "unknown",
+                SSH_FRONTEND_HOST_ID if destination_ip == SSH_FRONTEND_IP else "unknown",
             )
             entry = self.vlan_port_map.get((int(datapath.id), int(in_port)), {})
+            frontend_attempt = destination_port == SSH_FRONTEND_PORT
             event = {
                 "event_type": "ssh_access_denied",
                 "action": "DROP",
-                "rule_id": "ssh-nonmanagement-drop-" + server_host,
+                "rule_id": (
+                    "ssh-frontend-nonmanagement-drop-h38" if frontend_attempt
+                    else "ssh-backend-not-load-balancer-drop-" + server_host
+                ),
                 "source_ip": source_ip,
                 "source_host_id": entry.get("host_id"),
                 "destination_ip": destination_ip,
                 "destination_host_id": server_host,
                 "protocol": "TCP",
-                "destination_port": SSH_ACTIVITY_PORT,
+                "destination_port": destination_port,
                 "switch_id": int(datapath.id),
                 "ingress_port": int(in_port),
-                "reason": "source host is not in the SSH allow-list",
+                "reason": (
+                    "source host is not in the SSH frontend allow-list"
+                    if frontend_attempt else
+                    "backend SSH is allowed only from the SSH load balancer"
+                ),
                 "timestamp": now,
             }
             self.firewall_events.append(event)
@@ -1523,14 +1559,15 @@ class TopologyMonitor(app_manager.RyuApp):
                 oldest_key = next(iter(self.ssh_deny_audit_last_seen))
                 self.ssh_deny_audit_last_seen.pop(oldest_key, None)
             self.logger.warning(
-                "SSH_ACCESS_DENIED source=%s destination=%s port=22 switch=s%d in_port=%d",
-                source_ip, destination_ip, int(datapath.id), int(in_port))
+                "SSH_ACCESS_DENIED source=%s destination=%s port=%d switch=s%d in_port=%d",
+                source_ip, destination_ip, destination_port,
+                int(datapath.id), int(in_port))
 
         match = datapath.ofproto_parser.OFPMatch(
             in_port=int(in_port), eth_type=0x0800,
             ipv4_src=source_ip, ipv4_dst=destination_ip,
             ip_proto=6, tcp_src=int(tcp_pkt.src_port),
-            tcp_dst=SSH_ACTIVITY_PORT)
+            tcp_dst=destination_port)
         try:
             self._add_flow(
                 datapath, SSH_DENY_CACHE_PRIORITY, match, [],
@@ -1544,16 +1581,39 @@ class TopologyMonitor(app_manager.RyuApp):
         return True
 
     def _install_ssh_policy_rules(self, datapath):
-        """Drop SSH to h4/h20 at ingress unless the source host is h36 or h37.
+        """Restrict SSH clients to h38:2222 and backend TCP/22 to h38.
 
-        Access-port rules use the validated host identity and VLAN. Trunk rules
-        match the original IPv4 source subnet rather than the current VLAN tag:
-        the L3 gateway changes a routed packet's VLAN from 40 to the destination
-        VLAN while preserving its source IP. Only h36/h37 are mapped to VLAN 40.
+        Access rules use the validated host identities. Trunk guards use
+        original source IPv4 subnets because the gateway rewrites VLAN tags
+        when routing from VLAN 40 to the Services VLAN.
         """
         dpid = int(datapath.id)
         parser = datapath.ofproto_parser
         failures = []
+
+        def subnets_except(network, excluded_ips):
+            remaining = [network]
+            for excluded_ip in excluded_ips:
+                address = ipaddress.ip_address(excluded_ip)
+                address_network = ipaddress.ip_network(
+                    "%s/%d" % (address, address.max_prefixlen)
+                )
+                next_remaining = []
+                for candidate in remaining:
+                    if (address in candidate
+                            and candidate.prefixlen == address.max_prefixlen
+                            and candidate.network_address == address):
+                        # A prior exclusion can leave this address as an
+                        # exact /32. Drop it instead of retaining a hole in
+                        # the management allow-list.
+                        continue
+                    if address in candidate and candidate.prefixlen < address.max_prefixlen:
+                        next_remaining.extend(candidate.address_exclude(address_network))
+                    else:
+                        next_remaining.append(candidate)
+                remaining = next_remaining
+            return sorted(remaining, key=lambda item: int(item.network_address))
+
         if not self._purge_legacy_ssh_vlan_drop_rules(datapath):
             self.ssh_policy_switches.discard(dpid)
             self.ssh_policy_failed_switches.add(dpid)
@@ -1561,63 +1621,83 @@ class TopologyMonitor(app_manager.RyuApp):
         for (port_dpid, port_no), entry in sorted(self.vlan_port_map.items()):
             if int(port_dpid) != dpid:
                 continue
+            targets = []
             if entry["kind"] == "access":
-                vlan_ids = ([int(entry["vlan_id"])]
-                            if (int(entry["vlan_id"]) in SSH_DENIED_VLANS
-                                or entry.get("host_id") not in SSH_MANAGEMENT_HOSTS)
-                            else [])
-            else:
-                vlan_ids = sorted(SSH_DENIED_VLANS)
-            for vlan_id in vlan_ids:
-                if entry["kind"] == "access":
-                    targets = [
-                        (server_host, 0x0800, {"ipv4_dst": server_ip})
+                host_id = entry.get("host_id")
+                vlan_id = int(entry.get("vlan_id", -1))
+                if host_id != SSH_FRONTEND_HOST_ID:
+                    targets.extend(
+                        ("backend-" + server_host, 0x0800, SSH_ACTIVITY_PORT,
+                         {"ipv4_dst": server_ip})
                         for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items())
-                    ]
-                    # There is no IPv6 routing in the five-VLAN gateway.
-                    # Deny local non-management IPv6 SSH at its source port,
-                    # without catching routed management traffic on trunks.
-                    targets.append(("ipv6-any", 0x86DD, {}))
-                else:
-                    network = self.vlan_networks[vlan_id]
-                    source_network = (
-                        str(network.network_address), str(network.netmask)
                     )
-                    targets = [
-                        (server_host, 0x0800, {
-                            "ipv4_src": source_network,
-                            "ipv4_dst": server_ip,
-                        })
-                        for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items())
-                    ]
-                for target_id, eth_type, destination_match in targets:
-                    fields = {
-                        "in_port": int(port_no),
-                        "eth_type": eth_type,
-                        "ip_proto": 6,
-                        "tcp_dst": SSH_ACTIVITY_PORT,
-                    }
-                    fields.update(destination_match)
-                    if entry["kind"] == "access":
-                        fields["vlan_vid"] = OFPVID_NONE
-                    match = parser.OFPMatch(**fields)
-                    rule_key = (int(port_no), entry["kind"], vlan_id,
-                                target_id)
-                    try:
-                        actions = []
-                        if eth_type == 0x0800:
-                            actions = [parser.OFPActionOutput(
-                                datapath.ofproto.OFPP_CONTROLLER,
-                                datapath.ofproto.OFPCML_NO_BUFFER)]
-                        self._add_flow(
-                            datapath, SSH_POLICY_PRIORITY, match, actions,
-                            track_key=None)
-                        self.ssh_policy_flows[(dpid, rule_key)] = match
-                    except Exception:
-                        failures.append(rule_key)
-                        self.logger.exception(
-                            "Failed to install SSH policy on s%d:%d for VLAN %d -> %s",
-                            dpid, port_no, vlan_id, target_id)
+                if host_id not in SSH_MANAGEMENT_HOSTS:
+                    targets.append((
+                        "frontend-nonmanagement", 0x0800, SSH_FRONTEND_PORT,
+                        {"ipv4_dst": SSH_FRONTEND_IP},
+                    ))
+                # No IPv6 SSH service is published; prevent an address-family bypass.
+                targets.append(("ipv6-any", 0x86DD, SSH_ACTIVITY_PORT, {}))
+                rule_targets = [(vlan_id, target) for target in targets]
+            else:
+                rule_targets = []
+                for vlan_id, network in sorted(self.vlan_networks.items()):
+                    for source_subnet in subnets_except(
+                            network, (SSH_BACKEND_SOURCE_IP,)):
+                        source_match = (
+                            str(source_subnet.network_address),
+                            str(source_subnet.netmask),
+                        )
+                        for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items()):
+                            rule_targets.append((vlan_id, (
+                                "backend-%s-%s" % (server_host, source_subnet),
+                                0x0800, SSH_ACTIVITY_PORT,
+                                {"ipv4_src": source_match, "ipv4_dst": server_ip},
+                            )))
+                    for source_subnet in subnets_except(
+                            network, SSH_MANAGEMENT_HOSTS.values()):
+                        source_match = (
+                            str(source_subnet.network_address),
+                            str(source_subnet.netmask),
+                        )
+                        rule_targets.append((vlan_id, (
+                            "frontend-nonmanagement-%s" % source_subnet,
+                            0x0800, SSH_FRONTEND_PORT,
+                            {"ipv4_src": source_match,
+                             "ipv4_dst": SSH_FRONTEND_IP},
+                        )))
+
+            for vlan_id, target in rule_targets:
+                target_id, eth_type, destination_port, destination_match = target
+                fields = {
+                    "in_port": int(port_no),
+                    "eth_type": eth_type,
+                    "ip_proto": 6,
+                    "tcp_dst": destination_port,
+                }
+                fields.update(destination_match)
+                if entry["kind"] == "access":
+                    fields["vlan_vid"] = OFPVID_NONE
+                match = parser.OFPMatch(**fields)
+                rule_key = (
+                    int(port_no), entry["kind"], vlan_id, target_id,
+                    destination_port,
+                )
+                try:
+                    actions = []
+                    if eth_type == 0x0800:
+                        actions = [parser.OFPActionOutput(
+                            datapath.ofproto.OFPP_CONTROLLER,
+                            datapath.ofproto.OFPCML_NO_BUFFER)]
+                    self._add_flow(
+                        datapath, SSH_POLICY_PRIORITY, match, actions,
+                        track_key=None)
+                    self.ssh_policy_flows[(dpid, rule_key)] = match
+                except Exception:
+                    failures.append(rule_key)
+                    self.logger.exception(
+                        "Failed to install SSH policy on s%d:%d for VLAN %d -> %s:%d",
+                        dpid, port_no, vlan_id, target_id, destination_port)
         if failures:
             self._delete_ssh_policy_rules(dpid)
             self.ssh_policy_failed_switches.add(dpid)
@@ -1760,16 +1840,46 @@ class TopologyMonitor(app_manager.RyuApp):
                 and not self.ssh_policy_failed_switches)
             else "pending"
         )
+        rules.append({
+            "rule_id": "ssh-management-frontend-allow",
+            "priority": SSH_POLICY_PRIORITY,
+            "action": "ALLOW",
+            "direction": "ingress",
+            "source": "Allow-list: h36,h37 (10.10.40.36, 10.10.40.37)",
+            "source_vlan": SSH_MANAGEMENT_VLAN,
+            "source_ips": sorted(SSH_MANAGEMENT_HOSTS.values()),
+            "destination": SSH_FRONTEND_IP,
+            "destination_host_id": SSH_FRONTEND_HOST_ID,
+            "protocol": "TCP",
+            "destination_port": SSH_FRONTEND_PORT,
+            "enabled": True,
+            "status": policy_status,
+            "source_provider": "TopologyMonitor",
+        })
+        rules.append({
+            "rule_id": "ssh-frontend-nonmanagement-drop-h38",
+            "priority": SSH_POLICY_PRIORITY,
+            "action": "DROP",
+            "direction": "ingress",
+            "source": "All hosts except h36,h37",
+            "destination": SSH_FRONTEND_IP,
+            "destination_host_id": SSH_FRONTEND_HOST_ID,
+            "protocol": "TCP",
+            "destination_port": SSH_FRONTEND_PORT,
+            "enabled": True,
+            "status": policy_status,
+            "source_provider": "TopologyMonitor",
+        })
         for server_host, server_ip in sorted(SSH_PROTECTED_SERVERS.items()):
             rules.append({
-                "rule_id": "ssh-management-allow-" + server_host,
+                "rule_id": "ssh-backend-load-balancer-allow-" + server_host,
                 "priority": SSH_POLICY_PRIORITY,
                 "action": "ALLOW",
-                "direction": "ingress",
-                "source": "Allow-list: h36,h37 (10.10.40.36, 10.10.40.37)",
-                "source_vlan": SSH_MANAGEMENT_VLAN,
-                "source_ips": sorted(SSH_MANAGEMENT_HOSTS.values()),
+                "direction": "egress",
+                "source": SSH_FRONTEND_IP,
+                "source_host_id": SSH_FRONTEND_HOST_ID,
                 "destination": server_ip,
+                "destination_host_id": server_host,
                 "protocol": "TCP",
                 "destination_port": SSH_ACTIVITY_PORT,
                 "enabled": True,
@@ -1777,12 +1887,13 @@ class TopologyMonitor(app_manager.RyuApp):
                 "source_provider": "TopologyMonitor",
             })
             rules.append({
-                "rule_id": "ssh-nonmanagement-drop-" + server_host,
+                "rule_id": "ssh-backend-not-load-balancer-drop-" + server_host,
                 "priority": SSH_POLICY_PRIORITY,
                 "action": "DROP",
                 "direction": "ingress",
-                "source": "All hosts except h36,h37 (including non-IT VLAN-40 access ports)",
+                "source": "All hosts except SSH load balancer h38 (10.10.20.100)",
                 "destination": server_ip,
+                "destination_host_id": server_host,
                 "protocol": "TCP",
                 "destination_port": SSH_ACTIVITY_PORT,
                 "enabled": True,
@@ -1790,11 +1901,11 @@ class TopologyMonitor(app_manager.RyuApp):
                 "source_provider": "TopologyMonitor",
             })
         rules.append({
-            "rule_id": "ssh-nonmanagement-drop-ipv6",
+            "rule_id": "ssh-ipv6-drop",
             "priority": SSH_POLICY_PRIORITY,
             "action": "DROP",
             "direction": "ingress",
-            "source": "All non-IT access ports",
+            "source": "All access ports",
             "destination": "IPv6 (all destinations)",
             "protocol": "TCP",
             "destination_port": SSH_ACTIVITY_PORT,
@@ -2273,7 +2384,7 @@ class TopologyMonitor(app_manager.RyuApp):
         tcp_dst_port = int(tcp_pkt.dst_port) if tcp_pkt is not None else None
         tracked_ssh_port = next(
             (port for port in (tcp_dst_port, tcp_src_port)
-             if port == SSH_ACTIVITY_PORT),
+             if port in SSH_ACTIVITY_PORTS),
             None,
         )
         tracked_web_port = next(
@@ -3424,7 +3535,7 @@ class TopologyMonitor(app_manager.RyuApp):
             }
         except (TypeError, ValueError):
             web_ports = set()
-        is_ssh = ip_proto == 6 and SSH_ACTIVITY_PORT in web_ports
+        is_ssh = ip_proto == 6 and bool(web_ports & SSH_ACTIVITY_PORTS)
         is_selected_activity = (
             (ip_proto == 1 and icmp_type == 8)
             or (ip_proto == 6 and bool(web_ports & HTTP_ACTIVITY_PORTS))

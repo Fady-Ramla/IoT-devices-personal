@@ -80,7 +80,7 @@ SERVICE_PAIRS = {
     "https":    {"primary": "h3", "backup": "h19", "port": 443,  "vlan": VLAN_SERVICES},
     "ssh":      {"primary": "h4", "backup": "h20", "port": 22,   "vlan": VLAN_SERVICES},
 }
-LOAD_BALANCER = {"host": "h38", "frontends": (5000, 443)}
+LOAD_BALANCER = {"host": "h38", "frontends": (5000, 443, 2222)}
 
 HOSTS = {}
 

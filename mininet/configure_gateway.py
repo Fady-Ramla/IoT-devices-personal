@@ -45,11 +45,10 @@ FORWARD_RULES = (
     "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.20 -p tcp -m multiport --dports 5000,443 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.30 -p udp --dport 53 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.30 -p tcp --dport 53 -j ACCEPT",
-    # SSH is restricted to the two approved IT hosts and the two SSH servers.
-    "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.36/32 -d 10.10.20.4/32 -p tcp --dport 22 -j ACCEPT",
-    "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.36/32 -d 10.10.20.20/32 -p tcp --dport 22 -j ACCEPT",
-    "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.37/32 -d 10.10.20.4/32 -p tcp --dport 22 -j ACCEPT",
-    "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.37/32 -d 10.10.20.20/32 -p tcp --dport 22 -j ACCEPT",
+    # SSH clients must pass through the h38 TCP/2222 frontend. Its h4/h20
+    # backend connections remain on Services VLAN 20 and do not traverse gw.
+    "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.36/32 -d 10.10.20.100/32 -p tcp --dport 2222 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.37/32 -d 10.10.20.100/32 -p tcp --dport 2222 -j ACCEPT",
     # Retain the existing IT access to application HTTPS and Web/API services.
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -p tcp -m multiport --dports 443,5000 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.10 -p tcp --dport 5000 -j ACCEPT",
