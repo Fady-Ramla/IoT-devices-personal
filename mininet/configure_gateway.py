@@ -37,6 +37,9 @@ FORWARD_RULES = (
     # Services may reach the host WAN for the server-side ngrok POST. IoT
     # devices remain isolated from the WAN and can only be polled on :8081.
     "iptables -A FORWARD -i gw-eth0.20 -o sio-wan-gw -j ACCEPT",
+    # Employees may browse externally through the gateway NAT, but only on
+    # web ports. Their DNS queries remain directed to the internal DNS VLAN.
+    "iptables -A FORWARD -i gw-eth0.50 -o sio-wan-gw -p tcp -m multiport --dports 80,443 -j ACCEPT",
     # IoT to approved application services and DNS.
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -p tcp -m multiport --dports 5000,443 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.30 -p udp --dport 53 -j ACCEPT",
