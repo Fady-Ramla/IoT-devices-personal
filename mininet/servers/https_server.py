@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import http.server
-import json
 import os
 import ssl
 
@@ -17,21 +16,7 @@ class HTTPSHandler(http.server.SimpleHTTPRequestHandler):
         super().__init__(*args, directory=WEB_ROOT, **kwargs)
 
     def do_GET(self):
-        if self.path.split("?", 1)[0] in ("/health", "/healthz"):
-            payload = {
-                "service": "https",
-                "backend": BACKEND_NAME,
-                "address": SERVER_IP,
-                "status": "healthy",
-            }
-            body = json.dumps(payload, sort_keys=True).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        print(f"HTTPS request: {self.path}", flush=True)
+        print(f"HTTPS request: {self.path} backend={BACKEND_NAME}", flush=True)
         return super().do_GET()
 
     def list_directory(self, path):
