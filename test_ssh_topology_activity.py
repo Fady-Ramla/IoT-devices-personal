@@ -255,6 +255,9 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
             },
             "SSH_ACTIVITY_PORT": 22,
             "SSH_POLICY_PRIORITY": 49999,
+            "SSH_MANAGEMENT_HOSTS": {
+                "h36": "10.10.40.36", "h37": "10.10.40.37",
+            },
             "OFPVID_NONE": 0,
             "OFPVID_PRESENT": 0x1000,
             "ipaddress": ipaddress,
@@ -270,11 +273,16 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
         def OFPFlowMod(**fields):
             return fields
 
+        @staticmethod
+        def OFPActionOutput(port, max_len):
+            return {"type": "output", "port": port, "max_len": max_len}
+
     class Monitor:
         vlan_port_map = {
-            (2, 1): {"kind": "access", "vlan_id": 20},
-            (2, 2): {"kind": "access", "vlan_id": 40},
+            (2, 1): {"kind": "access", "vlan_id": 20, "host_id": "h21"},
+            (2, 2): {"kind": "access", "vlan_id": 40, "host_id": "h36"},
             (2, 3): {"kind": "trunk", "vlan_id": None},
+            (2, 4): {"kind": "access", "vlan_id": 40, "host_id": "h19"},
         }
         vlan_networks = {
             10: ipaddress.ip_network("10.10.10.0/24"),
@@ -300,18 +308,18 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
         id=2, ofproto_parser=Parser(),
         ofproto=SimpleNamespace(
             OFPFC_DELETE_STRICT=4, OFPP_ANY=0xFFFFFFFC,
-            OFPG_ANY=0xFFFFFFFF),
+            OFPG_ANY=0xFFFFFFFF, OFPP_CONTROLLER=0xFFFFFFFD,
+            OFPCML_NO_BUFFER=0xFFFF),
         sent_messages=[],
     )
     datapath.send_msg = datapath.sent_messages.append
     assert install_policy(monitor, datapath) is True
-    assert len(monitor.installed) == 11  # access guards + source-network trunk guards
+    assert len(monitor.installed) == 14  # non-IT access guards + trunk guards
     assert len(datapath.sent_messages) == 12  # old IPv4 and IPv6 trunk drops
     assert all(message["priority"] == 49999
                and message["command"] == 4
                for message in datapath.sent_messages)
-    assert all(priority == 49999 and actions == []
-               for priority, _match, actions in monitor.installed)
+    assert all(priority == 49999 for priority, _match, _actions in monitor.installed)
     assert {match["ipv4_dst"] for _, match, _ in monitor.installed
             if "ipv4_dst" in match} == {
         "10.10.20.4", "10.10.20.20",
@@ -319,19 +327,133 @@ def test_ssh_access_policy_drops_nonmanagement_vlan_traffic():
     assert all(match["ip_proto"] == 6 and match["tcp_dst"] == 22
                for _, match, _ in monitor.installed)
     assert sum(match["eth_type"] == 0x86DD
-               for _, match, _ in monitor.installed) == 1
+               for _, match, _ in monitor.installed) == 2
     assert all(match["in_port"] != 2 for _, match, _ in monitor.installed)
     access_rules = [match for _, match, _ in monitor.installed
                     if match["in_port"] == 1]
+    unauthorized_management_rules = [match for _, match, _ in monitor.installed
+                                     if match["in_port"] == 4]
     trunk_rules = [match for _, match, _ in monitor.installed
                    if match["in_port"] == 3]
     assert len(access_rules) == 3
+    assert len(unauthorized_management_rules) == 3
     assert len(trunk_rules) == 8
     assert all(match["vlan_vid"] == 0 for match in access_rules)
+    assert all(match["vlan_vid"] == 0 for match in unauthorized_management_rules)
     assert all("vlan_vid" not in match for match in trunk_rules)
     assert all(match["ipv4_src"] != ("10.10.40.0", "255.255.255.0")
                for match in trunk_rules)
+    assert all(len(actions) == 1 and actions[0]["type"] == "output"
+               and actions[0]["port"] == 0xFFFFFFFD
+               for _priority, match, actions in monitor.installed
+               if match["eth_type"] == 0x0800)
+    assert all(actions == [] for _priority, match, actions in monitor.installed
+               if match["eth_type"] == 0x86DD)
     assert monitor.ssh_policy_switches == {2}
+
+
+def test_ssh_denial_audit_is_bounded_and_installs_exact_drop_cache():
+    source_path = ROOT / "topology_monitor.py"
+    namespace = {
+        "SSH_DENIED_VLANS": frozenset({10, 20, 30, 50}),
+        "SSH_MANAGEMENT_HOSTS": {
+            "h36": "10.10.40.36", "h37": "10.10.40.37",
+        },
+        "SSH_PROTECTED_SERVERS": {
+            "h4": "10.10.20.4", "h20": "10.10.20.20",
+        },
+        "SSH_ACTIVITY_PORT": 22,
+        "SSH_DENY_CACHE_PRIORITY": 50001,
+        "SSH_DENY_CACHE_IDLE_TIMEOUT": 30,
+        "SSH_DENY_CACHE_HARD_TIMEOUT": 300,
+        "SSH_DENY_AUDIT_INTERVAL": 5,
+        "ipaddress": ipaddress,
+        "time": time,
+    }
+    is_denied = extract_function(
+        source_path, "_is_ssh_policy_denial", "TopologyMonitor", namespace)
+    audit = extract_function(
+        source_path, "_audit_denied_ssh_packet", "TopologyMonitor", namespace)
+
+    class Parser:
+        @staticmethod
+        def OFPMatch(**fields):
+            return fields
+
+    class Monitor:
+        _is_ssh_policy_denial = is_denied
+        _audit_denied_ssh_packet = audit
+        vlan_port_map = {
+            (2, 1): {"kind": "access", "vlan_id": 10, "host_id": "h21"},
+        }
+        vlan_networks = {
+            10: ipaddress.ip_network("10.10.10.0/24"),
+            20: ipaddress.ip_network("10.10.20.0/24"),
+            30: ipaddress.ip_network("10.10.30.0/24"),
+            40: ipaddress.ip_network("10.10.40.0/24"),
+            50: ipaddress.ip_network("10.10.50.0/24"),
+        }
+
+        def __init__(self):
+            self.firewall_events = []
+            self.ssh_deny_audit_last_seen = {}
+            self.installed = []
+            self.logger = SimpleNamespace(
+                warning=lambda *args, **kwargs: None,
+                exception=lambda *args, **kwargs: None,
+            )
+
+        def _add_flow(self, datapath, priority, match, actions,
+                      idle_timeout=0, hard_timeout=0, track_key=None):
+            self.installed.append((priority, match, actions,
+                                   idle_timeout, hard_timeout, track_key))
+
+    monitor = Monitor()
+    datapath = SimpleNamespace(id=2, ofproto_parser=Parser())
+    ip_pkt = SimpleNamespace(proto=6, src="10.10.10.21", dst="10.10.20.4")
+    tcp_pkt = SimpleNamespace(src_port=49152, dst_port=22)
+    assert monitor._audit_denied_ssh_packet(datapath, 1, ip_pkt, tcp_pkt) is True
+    assert monitor._audit_denied_ssh_packet(datapath, 1, ip_pkt, tcp_pkt) is True
+    assert len(monitor.firewall_events) == 1
+    event = monitor.firewall_events[0]
+    assert event["event_type"] == "ssh_access_denied"
+    assert event["action"] == "DROP"
+    assert event["source_ip"] == "10.10.10.21"
+    assert event["destination_host_id"] == "h4"
+    assert event["destination_port"] == 22
+    assert len(monitor.installed) == 2
+    priority, match, actions, idle_timeout, hard_timeout, track_key = monitor.installed[0]
+    assert priority == 50001 and actions == []
+    assert match["in_port"] == 1 and match["ipv4_src"] == "10.10.10.21"
+    assert match["ipv4_dst"] == "10.10.20.4" and match["tcp_src"] == 49152
+    assert idle_timeout == 30 and hard_timeout == 300 and track_key is None
+
+
+def test_gateway_ssh_allowlist_is_exact_and_preserves_other_it_services():
+    source_path = ROOT / "mininet" / "configure_gateway.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    assignment = next(
+        node for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "FORWARD_RULES"
+                for target in node.targets)
+    )
+    rules = ast.literal_eval(assignment.value)
+    ssh_rules = [rule for rule in rules if "--dport 22" in rule]
+    actual_pairs = set()
+    for rule in ssh_rules:
+        fields = rule.split()
+        actual_pairs.add((fields[fields.index("-s") + 1],
+                          fields[fields.index("-d") + 1]))
+    assert actual_pairs == {
+        ("10.10.40.36/32", "10.10.20.4/32"),
+        ("10.10.40.36/32", "10.10.20.20/32"),
+        ("10.10.40.37/32", "10.10.20.4/32"),
+        ("10.10.40.37/32", "10.10.20.20/32"),
+    }
+    application_rule = next(rule for rule in rules
+                            if "--dports 443,5000" in rule)
+    assert "22" not in application_rule
 
 
 if __name__ == "__main__":
@@ -339,4 +461,6 @@ if __name__ == "__main__":
     test_ssh_log_events_are_sanitized_and_map_client_server()
     test_hosts_endpoint_adds_ssh_events_to_both_participants()
     test_ssh_access_policy_drops_nonmanagement_vlan_traffic()
-    print("PASS: SSH ACL, counters, sshd audit events, and topology host response")
+    test_ssh_denial_audit_is_bounded_and_installs_exact_drop_cache()
+    test_gateway_ssh_allowlist_is_exact_and_preserves_other_it_services()
+    print("PASS: SSH host allow-list, SDN deny audit, counters, and gateway ACL")

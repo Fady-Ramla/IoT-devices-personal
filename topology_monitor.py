@@ -109,8 +109,8 @@ HTTP_ACTIVITY_PORTS = frozenset(
     ).split(",") if value.strip()
 )
 SSH_ACTIVITY_PORT = 22
-# Only the configured management VLAN may open SSH sessions to these service
-# hosts. VLAN 40 currently contains exactly h36 and h37 in the validated map.
+# Only access ports explicitly identified as h36/h37 may open SSH sessions to
+# these service hosts. The validated map also fixes both hosts to VLAN 40.
 SSH_MANAGEMENT_VLAN = 40
 SSH_MANAGEMENT_HOSTS = {
     "h36": "10.10.40.36",
@@ -122,6 +122,10 @@ SSH_PROTECTED_SERVERS = {
 }
 SSH_DENIED_VLANS = frozenset(ALLOWED_VLANS - {SSH_MANAGEMENT_VLAN})
 SSH_POLICY_PRIORITY = DEVICE_BLOCK_PRIORITY - 1
+SSH_DENY_CACHE_PRIORITY = DEVICE_BLOCK_PRIORITY + 1
+SSH_DENY_CACHE_IDLE_TIMEOUT = 30
+SSH_DENY_CACHE_HARD_TIMEOUT = 300
+SSH_DENY_AUDIT_INTERVAL = 5
 HOST_FLOW_IDLE_TIMEOUT = 30
 # Production behavior remains unchanged when this is unset. During a
 # packet-in dataset collection run, a small positive hard timeout makes
@@ -301,6 +305,7 @@ class TopologyMonitor(app_manager.RyuApp):
         self.ssh_policy_flows = {}
         self.ssh_policy_switches = set()
         self.ssh_policy_failed_switches = set()
+        self.ssh_deny_audit_last_seen = {}
         # Dashboard-facing firewall history.  Keep this separate from Ryu's
         # internal event queue and from forwarding-flow bookkeeping.
         self.firewall_events = []
@@ -354,7 +359,7 @@ class TopologyMonitor(app_manager.RyuApp):
                 signature = (stat.st_mtime_ns, stat.st_size)
                 if signature != last_signature or not self.vlan_map_ready:
                     payload = json.loads(VLAN_PORT_MAP_FILE.read_text(encoding="utf-8"))
-                    if payload.get("schema_version") != 2:
+                    if payload.get("schema_version") != 3:
                         raise ValueError("unsupported VLAN map schema")
                     if int(payload.get("expected_switches", -1)) != EXPECTED_SWITCHES:
                         raise ValueError("switch-count mismatch in VLAN map")
@@ -381,6 +386,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
                     port_map = {}
                     access_count = trunk_count = endpoint_count = gateway_count = 0
+                    endpoint_host_ids = set()
                     inter_switch_trunk_count = gateway_trunk_count = 0
                     gateway_trunk_switches = set()
                     endpoint_vlan_counts = {vlan_id: 0 for vlan_id in ALLOWED_VLANS}
@@ -413,7 +419,20 @@ class TopologyMonitor(app_manager.RyuApp):
                             role = row.get("role", "endpoint")
                             if role not in ("endpoint", "gateway"):
                                 raise ValueError("invalid access-port role")
-                            entry = {"kind": kind, "role": role, "vlan_id": vlan_id, "allowed_vlans": frozenset()}
+                            host_id = str(row.get("host_id", "")).strip()
+                            if role == "endpoint":
+                                if (not host_id or host_id in endpoint_host_ids
+                                        or ((vlan_id == SSH_MANAGEMENT_VLAN)
+                                            != (host_id in SSH_MANAGEMENT_HOSTS))):
+                                    raise ValueError("invalid access host identity or management VLAN assignment")
+                                endpoint_host_ids.add(host_id)
+                            else:
+                                host_id = None
+                            entry = {
+                                "kind": kind, "role": role, "host_id": host_id,
+                                "vlan_id": vlan_id,
+                                "allowed_vlans": frozenset(),
+                            }
                             access_count += 1
                             if role == "gateway":
                                 gateway_count += 1
@@ -441,8 +460,10 @@ class TopologyMonitor(app_manager.RyuApp):
                         port_map[key] = entry
 
                     dpids = {dpid for dpid, _port in port_map}
+                    expected_host_ids = {"h%d" % value for value in range(1, 39)}
                     if (len(dpids) != EXPECTED_SWITCHES or access_count != 38
                             or endpoint_count != 38 or gateway_count != 0
+                            or endpoint_host_ids != expected_host_ids
                             or gateway_trunk_count != 1
                             or gateway_trunk_switches != {"s3"}
                             or inter_switch_trunk_count != EXPECTED_PHYSICAL_LINKS * 2
@@ -904,17 +925,6 @@ class TopologyMonitor(app_manager.RyuApp):
         datapath = msg.datapath
         dpid = datapath.id
 
-        # Forward a telemetry-only copy directly to the collector. Ryu's
-        # observer queue does not reliably deliver this action-generated
-        # Packet-In to every app, while TopologyMonitor already owns the event.
-        # No PacketOut is emitted and forwarding remains owned here.
-        collector = app_manager.lookup_service_brick("TrafficMonitorMerged")
-        if collector is not None:
-            try:
-                collector.packet_in_handler(EventPacketInObserved(msg))
-            except Exception:
-                self.logger.exception("Packet-In telemetry collector failed")
-
         if "in_port" not in msg.match:
             return
 
@@ -932,6 +942,25 @@ class TopologyMonitor(app_manager.RyuApp):
 
         if eth_pkt is None:
             return
+
+        ipv4_pkt = pkt.get_protocol(ipv4.ipv4)
+        tcp_pkt = pkt.get_protocol(tcp.tcp)
+        if (ipv4_pkt is not None and tcp_pkt is not None
+                and self._audit_denied_ssh_packet(
+                    datapath, in_port, ipv4_pkt, tcp_pkt)):
+            return
+
+        # Forward a telemetry-only copy directly to the collector. Ryu's
+        # observer queue does not reliably deliver this action-generated
+        # Packet-In to every app, while TopologyMonitor already owns the event.
+        # Policy-denied SSH is audited above but is not mixed into unrelated
+        # packet-in training windows. No PacketOut is emitted here.
+        collector = app_manager.lookup_service_brick("TrafficMonitorMerged")
+        if collector is not None:
+            try:
+                collector.packet_in_handler(EventPacketInObserved(msg))
+            except Exception:
+                self.logger.exception("Packet-In telemetry collector failed")
 
         src_mac = eth_pkt.src
         dst_mac = eth_pkt.dst
@@ -1431,14 +1460,96 @@ class TopologyMonitor(app_manager.RyuApp):
             return False
         return True
 
-    def _install_ssh_policy_rules(self, datapath):
-        """Drop SSH to h4/h20 at ingress unless traffic is in VLAN 40.
+    def _is_ssh_policy_denial(self, datapath, in_port, ip_pkt, tcp_pkt):
+        """Identify TCP/22 traffic that the installed host/VLAN policy denies."""
+        if (getattr(ip_pkt, "proto", None) != 6
+                or getattr(tcp_pkt, "dst_port", None) != SSH_ACTIVITY_PORT
+                or getattr(ip_pkt, "dst", None) not in SSH_PROTECTED_SERVERS.values()):
+            return False
+        entry = self.vlan_port_map.get((int(datapath.id), int(in_port)))
+        if not entry:
+            return False
+        if entry.get("kind") == "access":
+            return (int(entry.get("vlan_id", -1)) in SSH_DENIED_VLANS
+                    or entry.get("host_id") not in SSH_MANAGEMENT_HOSTS)
+        if entry.get("kind") == "trunk":
+            try:
+                source_ip = ipaddress.ip_address(ip_pkt.src)
+            except (TypeError, ValueError):
+                return False
+            return any(
+                source_ip in self.vlan_networks[vlan_id]
+                for vlan_id in SSH_DENIED_VLANS
+                if vlan_id in self.vlan_networks
+            )
+        return False
 
-        Access-port rules cover untagged frames from local non-management
-        endpoints. Trunk rules match the original IPv4 source subnet rather
-        than the current VLAN tag: the L3 gateway changes a routed packet's
-        VLAN from 40 to the destination VLAN while preserving its source IP.
-        The validated topology map defines only h36/h37 as VLAN 40 endpoints.
+    def _audit_denied_ssh_packet(self, datapath, in_port, ip_pkt, tcp_pkt):
+        """Record an SDN-denied SSH attempt and install a short exact drop cache."""
+        if not self._is_ssh_policy_denial(datapath, in_port, ip_pkt, tcp_pkt):
+            return False
+
+        now = time.time()
+        source_ip = str(ip_pkt.src)
+        destination_ip = str(ip_pkt.dst)
+        audit_key = (source_ip, destination_ip)
+        last_seen = self.ssh_deny_audit_last_seen.get(audit_key)
+        if last_seen is None or now - last_seen >= SSH_DENY_AUDIT_INTERVAL:
+            server_host = next(
+                (host_id for host_id, address in SSH_PROTECTED_SERVERS.items()
+                 if address == destination_ip),
+                "unknown",
+            )
+            entry = self.vlan_port_map.get((int(datapath.id), int(in_port)), {})
+            event = {
+                "event_type": "ssh_access_denied",
+                "action": "DROP",
+                "rule_id": "ssh-nonmanagement-drop-" + server_host,
+                "source_ip": source_ip,
+                "source_host_id": entry.get("host_id"),
+                "destination_ip": destination_ip,
+                "destination_host_id": server_host,
+                "protocol": "TCP",
+                "destination_port": SSH_ACTIVITY_PORT,
+                "switch_id": int(datapath.id),
+                "ingress_port": int(in_port),
+                "reason": "source host is not in the SSH allow-list",
+                "timestamp": now,
+            }
+            self.firewall_events.append(event)
+            self.firewall_events[:] = self.firewall_events[-200:]
+            self.ssh_deny_audit_last_seen[audit_key] = now
+            if len(self.ssh_deny_audit_last_seen) > 4096:
+                oldest_key = next(iter(self.ssh_deny_audit_last_seen))
+                self.ssh_deny_audit_last_seen.pop(oldest_key, None)
+            self.logger.warning(
+                "SSH_ACCESS_DENIED source=%s destination=%s port=22 switch=s%d in_port=%d",
+                source_ip, destination_ip, int(datapath.id), int(in_port))
+
+        match = datapath.ofproto_parser.OFPMatch(
+            in_port=int(in_port), eth_type=0x0800,
+            ipv4_src=source_ip, ipv4_dst=destination_ip,
+            ip_proto=6, tcp_src=int(tcp_pkt.src_port),
+            tcp_dst=SSH_ACTIVITY_PORT)
+        try:
+            self._add_flow(
+                datapath, SSH_DENY_CACHE_PRIORITY, match, [],
+                idle_timeout=SSH_DENY_CACHE_IDLE_TIMEOUT,
+                hard_timeout=SSH_DENY_CACHE_HARD_TIMEOUT,
+                track_key=None)
+        except Exception:
+            self.logger.exception(
+                "Failed to cache denied SSH flow from %s to %s",
+                source_ip, destination_ip)
+        return True
+
+    def _install_ssh_policy_rules(self, datapath):
+        """Drop SSH to h4/h20 at ingress unless the source host is h36 or h37.
+
+        Access-port rules use the validated host identity and VLAN. Trunk rules
+        match the original IPv4 source subnet rather than the current VLAN tag:
+        the L3 gateway changes a routed packet's VLAN from 40 to the destination
+        VLAN while preserving its source IP. Only h36/h37 are mapped to VLAN 40.
         """
         dpid = int(datapath.id)
         parser = datapath.ofproto_parser
@@ -1452,7 +1563,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 continue
             if entry["kind"] == "access":
                 vlan_ids = ([int(entry["vlan_id"])]
-                            if int(entry["vlan_id"]) in SSH_DENIED_VLANS
+                            if (int(entry["vlan_id"]) in SSH_DENIED_VLANS
+                                or entry.get("host_id") not in SSH_MANAGEMENT_HOSTS)
                             else [])
             else:
                 vlan_ids = sorted(SSH_DENIED_VLANS)
@@ -1492,8 +1604,13 @@ class TopologyMonitor(app_manager.RyuApp):
                     rule_key = (int(port_no), entry["kind"], vlan_id,
                                 target_id)
                     try:
+                        actions = []
+                        if eth_type == 0x0800:
+                            actions = [parser.OFPActionOutput(
+                                datapath.ofproto.OFPP_CONTROLLER,
+                                datapath.ofproto.OFPCML_NO_BUFFER)]
                         self._add_flow(
-                            datapath, SSH_POLICY_PRIORITY, match, [],
+                            datapath, SSH_POLICY_PRIORITY, match, actions,
                             track_key=None)
                         self.ssh_policy_flows[(dpid, rule_key)] = match
                     except Exception:
@@ -1649,7 +1766,7 @@ class TopologyMonitor(app_manager.RyuApp):
                 "priority": SSH_POLICY_PRIORITY,
                 "action": "ALLOW",
                 "direction": "ingress",
-                "source": "Management VLAN 40 (h36,h37)",
+                "source": "Allow-list: h36,h37 (10.10.40.36, 10.10.40.37)",
                 "source_vlan": SSH_MANAGEMENT_VLAN,
                 "source_ips": sorted(SSH_MANAGEMENT_HOSTS.values()),
                 "destination": server_ip,
@@ -1664,7 +1781,7 @@ class TopologyMonitor(app_manager.RyuApp):
                 "priority": SSH_POLICY_PRIORITY,
                 "action": "DROP",
                 "direction": "ingress",
-                "source": "VLANs 10,20,30,50 (all non-management VLANs)",
+                "source": "All hosts except h36,h37 (including non-IT VLAN-40 access ports)",
                 "destination": server_ip,
                 "protocol": "TCP",
                 "destination_port": SSH_ACTIVITY_PORT,
@@ -1677,7 +1794,7 @@ class TopologyMonitor(app_manager.RyuApp):
             "priority": SSH_POLICY_PRIORITY,
             "action": "DROP",
             "direction": "ingress",
-            "source": "VLANs 10,20,30,50 (all non-management VLANs)",
+            "source": "All non-IT access ports",
             "destination": "IPv6 (all destinations)",
             "protocol": "TCP",
             "destination_port": SSH_ACTIVITY_PORT,

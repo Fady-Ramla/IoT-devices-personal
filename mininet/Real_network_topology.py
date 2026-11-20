@@ -132,20 +132,23 @@ def _write_vlan_port_map(net):
     allowed_vlans = sorted(int(vlan_id) for vlan_id in NETWORKS)
     records = []
 
-    def add_record(switch, node, kind, vlan_id=None, role="endpoint", node_intf_name=None):
+    def add_record(switch, node, kind, vlan_id=None, role="endpoint",
+                   node_intf_name=None, host_id=None):
         record = {
             "dpid": _switch_dpid(switch),
             "switch": switch.name,
             "port_no": _switch_port_for_node(switch, node, node_intf_name),
             "kind": kind,
             "role": role,
+            "host_id": host_id,
             "vlan_id": int(vlan_id) if vlan_id is not None else None,
             "allowed_vlans": allowed_vlans if kind == "trunk" else [],
         }
         records.append(record)
 
     for host_id, spec in HOSTS.items():
-        add_record(net.get(spec["switch"]), net.get(host_id), "access", spec["vlan"])
+        add_record(net.get(spec["switch"]), net.get(host_id), "access",
+                   spec["vlan"], host_id=host_id)
 
     gateway = net.get("gw")
     add_record(
@@ -170,7 +173,7 @@ def _write_vlan_port_map(net):
         )
 
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "topology_id": uuid.uuid4().hex,
         "expected_switches": 6,
         "expected_inter_switch_links": 12,
