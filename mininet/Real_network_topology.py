@@ -1000,6 +1000,7 @@ def run():
         if not batch_path and os.getenv("START_DEMO_SERVICES", "0") == "1":
             # Start sensors before the Web/API poller so its first cycle does
             # not race the TCP/8081 listeners during topology startup.
+            wait_for_controller_ready(timeout_sec=90)
             start_demo_services(
                 net,
                 live_iot_api=(os.getenv("START_IOT_SIMULATORS", "0") == "1"),
