@@ -29,6 +29,10 @@ class TcpLoadBalancer:
             "requests_total": 0, "requests_active": 0,
             "bytes_in": 0, "bytes_out": 0,
             "backend_failovers": 0,
+            "failure_events_total": 0,
+            "recovery_events": 0,
+            "active_failures": 0,
+            "failed_backends": [],
             "healthy_backends": [],
             "health_checks_performed": False,
             "last_health_check": None,
@@ -43,6 +47,7 @@ class TcpLoadBalancer:
             "backends": [f"{h}:{p}" for h, p in self.backends],
             "updated_at": time.time(),
         }
+        self._health_snapshot = None
         self.write_stats()
 
     def write_stats(self):
@@ -94,6 +99,21 @@ class TcpLoadBalancer:
         finally:
             sock.close()
 
+    def record_health_state(self, healthy):
+        """Record backend transitions separately from per-request failovers."""
+        healthy_ids = {f"{host}:{port}" for host, port in healthy}
+        all_ids = {f"{host}:{port}" for host, port in self.backends}
+        with self.lock:
+            previous = self._health_snapshot
+            if previous is not None:
+                self.stats["failure_events_total"] += len(previous - healthy_ids)
+                self.stats["recovery_events"] += len(healthy_ids - previous)
+            self._health_snapshot = set(healthy_ids)
+            failed = sorted(all_ids - healthy_ids)
+            self.stats["active_failures"] = len(failed)
+            self.stats["failed_backends"] = failed
+        self.write_stats()
+
     def choose_backend(self):
         with self.lock:
             if not self.backends:
@@ -105,6 +125,7 @@ class TcpLoadBalancer:
                 ordered = self.backends[self.next_backend:] + self.backends[:self.next_backend]
                 self.next_backend = (self.next_backend + 1) % len(self.backends)
         healthy = [backend for backend in ordered if self.healthy(backend)]
+        self.record_health_state(healthy)
         with self.lock:
             self.stats["healthy_backends"] = [f"{host}:{port}" for host, port in healthy]
             self.stats["health_checks_performed"] = True

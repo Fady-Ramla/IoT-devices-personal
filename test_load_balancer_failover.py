@@ -108,6 +108,27 @@ class LoadBalancerFailoverTests(unittest.TestCase):
             self.assertEqual(stats["backend_failovers"], 1)
             self.assertEqual(stats["requests_active"], 0)
 
+    def test_health_transitions_track_events_active_failures_and_recovery(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stats_file = str(Path(temp_dir) / "lb-stats.json")
+            lb = self.make_lb(stats_file)
+            primary, backup = lb.backends
+
+            lb.record_health_state([primary, backup])
+            lb.record_health_state([backup])
+            stats = self.read_stats(stats_file)
+            self.assertEqual(stats["failure_events_total"], 1)
+            self.assertEqual(stats["active_failures"], 1)
+            self.assertEqual(stats["failed_backends"], ["10.0.0.2:5000"])
+            self.assertEqual(stats["recovery_events"], 0)
+
+            lb.record_health_state([primary, backup])
+            stats = self.read_stats(stats_file)
+            self.assertEqual(stats["failure_events_total"], 1)
+            self.assertEqual(stats["active_failures"], 0)
+            self.assertEqual(stats["failed_backends"], [])
+            self.assertEqual(stats["recovery_events"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
