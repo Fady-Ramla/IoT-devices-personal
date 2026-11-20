@@ -591,11 +591,16 @@ def start_project_https(net):
         if "CERT_READY" not in make_cert:
             raise RuntimeError("could not prepare HTTPS certificate for %s: %s" %
                                (host_id, make_cert.strip()))
+        web_root = "/tmp/%s-web" % label
         host.cmd(
+            "mkdir -p %s && printf 'SecureIoT HTTPS backend: %s\\n' > %s/index.html; "
             "pkill -f '[h]ttps_server.py' >/dev/null 2>&1 || true; "
             "env HTTPS_SERVER_IP=%s HTTPS_SERVER_PORT=443 HTTPS_CERT_FILE=%s "
-            "HTTPS_KEY_FILE=%s python3 %s > /tmp/%s.log 2>&1 &"
-            % (address, shlex.quote(cert), shlex.quote(key), shlex.quote(server), label)
+            "HTTPS_KEY_FILE=%s HTTPS_WEB_ROOT=%s HTTPS_BACKEND_NAME=%s "
+            "python3 %s > /tmp/%s.log 2>&1 &"
+            % (shlex.quote(web_root), label, shlex.quote(web_root), address,
+               shlex.quote(cert), shlex.quote(key), shlex.quote(web_root),
+               shlex.quote(label), shlex.quote(server), label)
         )
 
     lb_host = net.get("h38")
@@ -631,7 +636,8 @@ def start_project_dns(net):
         host = net.get(host_id)
         host.cmd("pkill -f '[d]ns_server.py' >/dev/null 2>&1 || true")
         host.cmd(
-            "env DNS_SERVER_IP=%s DNS_PORT=53 DNS_ANSWER_IP=10.10.20.100 "
+            "env DNS_SERVER_IP=%s DNS_PORT=53 DNS_INTERNAL_NAME=https.lab "
+            "DNS_INTERNAL_IP=10.10.20.100 DNS_UPSTREAMS=1.1.1.1,8.8.8.8 "
             "python3 %s > /tmp/%s.log 2>&1 &"
             % (address, shlex.quote(server), label)
         )
