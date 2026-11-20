@@ -1062,63 +1062,84 @@ class RuntimeNetworkController(ControllerBase):
     @api_auth_required
     @route("load_balancer", "/network/load-balancer", methods=["GET"])
     def load_balancer(self, req, **kwargs):
-        service = SERVICE_PAIRS.get("http_api", {})
-        stats = self._load_balancer_stats() or {}
+        aggregate = self._aggregate_load_balancer_stats()
         return json_response({"service_id": "secureiot-lb", "host_id": LOAD_BALANCER_CONFIG.get("host"),
                               "vip": LOAD_BALANCER_IP,
-                              "status": "running" if stats else "configured",
-                              "algorithm": "round_robin", "backend_count": len(stats.get("backends", [])) or 2,
-                              "frontends": list(LOAD_BALANCER_CONFIG.get("frontends", ())),
-                              "service_port": service.get("port"),
-                              "requests_total": stats.get("requests_total", 0),
-                              "last_backend": stats.get("last_backend"),
-                              "backend_requests": stats.get("backend_requests", {}),
-                              "healthy_backends": stats.get("healthy_backends", [])})
+                              "status": aggregate["status"],
+                              "algorithm": "round_robin", "backend_count": aggregate["total_backends"],
+                              "frontends": [53] + list(LOAD_BALANCER_CONFIG.get("frontends", ())),
+                              "requests_total": aggregate["requests_total"],
+                              "last_backend": aggregate["last_backend"],
+                              "backend_requests": aggregate["backend_requests"],
+                              "healthy_backends": aggregate["healthy_backends"],
+                              "failed_backends": aggregate["failed_backends"],
+                              "failure_events_total": aggregate["failure_events_total"],
+                              "active_failures": aggregate["active_failures"],
+                              "recovery_events": aggregate["recovery_events"],
+                              "total_failover_requests": aggregate["total_failover_requests"],
+                              "services": aggregate["services"]})
 
     @api_auth_required
     @route("load_balancer_status", "/network/load-balancer/status", methods=["GET"])
     def load_balancer_status(self, req, **kwargs):
-        stats = self._load_balancer_stats()
-        if stats is None:
+        aggregate = self._aggregate_load_balancer_stats()
+        if not aggregate["services"]:
             return json_response({"status": "unavailable", "health_checks_performed": False,
-                                  "healthy_backends": [], "total_backends": 2, "last_check": None,
-                                  "source": "stats-file-unavailable"}, status=503)
-        healthy = stats.get("healthy_backends", [])
-        return json_response({"status": "running", "health_checks_performed": bool(stats.get("health_checks_performed")),
-                              "healthy_backends": healthy, "total_backends": len(stats.get("backends", [])) or 2,
-                              "last_check": stats.get("last_health_check"),
-                              "updated_at": stats.get("updated_at"), "source": "shared-load-balancer-stats"})
+                                  "healthy_backends": [], "failed_backends": [], "total_backends": 0,
+                                  "failure_events_total": 0, "active_failures": 0,
+                                  "recovery_events": 0, "total_failover_requests": 0,
+                                  "source": "stats-files-unavailable"}, status=503)
+        return json_response({"status": aggregate["status"],
+                              "health_checks_performed": aggregate["health_checks_performed"],
+                              "healthy_backends": aggregate["healthy_backends"],
+                              "failed_backends": aggregate["failed_backends"],
+                              "total_backends": aggregate["total_backends"],
+                              "failure_events_total": aggregate["failure_events_total"],
+                              "active_failures": aggregate["active_failures"],
+                              "recovery_events": aggregate["recovery_events"],
+                              "total_failover_requests": aggregate["total_failover_requests"],
+                              "last_check": aggregate["last_check"],
+                              "updated_at": aggregate["updated_at"],
+                              "services": aggregate["services"],
+                              "source": "aggregated-load-balancer-stats"})
 
     @api_auth_required
     @route("load_balancer_backends", "/network/load-balancer/backends", methods=["GET"])
     def load_balancer_backends(self, req, **kwargs):
-        service = SERVICE_PAIRS.get("http_api", {})
-        stats = self._load_balancer_stats() or {}
-        healthy = set(stats.get("healthy_backends", []))
-        checked = bool(stats.get("health_checks_performed"))
         backends = []
-        for key in ("primary", "backup"):
-            host_id = service.get(key)
-            if host_id and host_id in HOST_IPS:
-                backends.append({"backend_id": host_id,
-                                 "address": "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000)),
-                                 "status": ("healthy" if "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000)) in healthy
-                                             else ("unhealthy" if checked else "unknown")),
-                                 "health_checked": checked, "weight": 1,
-                                 "last_check": stats.get("last_health_check")})
+        snapshots = self._load_balancer_stats_by_service()
+        for service_name, service in SERVICE_PAIRS.items():
+            stats = snapshots.get(service_name) or {}
+            healthy = set(stats.get("healthy_backends", []))
+            checked = bool(stats.get("health_checks_performed"))
+            for key in ("primary", "backup"):
+                host_id = service.get(key)
+                if host_id and host_id in HOST_IPS:
+                    address = "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000))
+                    backends.append({"service": service_name, "backend_id": host_id,
+                                     "address": address,
+                                     "status": ("healthy" if address in healthy
+                                                 else ("unhealthy" if checked else "unknown")),
+                                     "health_checked": checked, "weight": 1,
+                                     "failure_events_total": stats.get("failure_events_total", 0),
+                                     "active_failures": address in set(stats.get("failed_backends", [])),
+                                     "recovery_events": stats.get("recovery_events", 0),
+                                     "last_check": stats.get("last_health_check")})
         return json_response(backends)
 
     @api_auth_required
     @route("load_balancer_stats", "/network/load-balancer/stats", methods=["GET"])
     def load_balancer_stats(self, req, **kwargs):
-        value = self._load_balancer_stats()
-        if value is not None:
-            value["timestamp"] = now_utc()
-            value["source"] = "shared-load-balancer-stats"
-            return json_response(value)
+        aggregate = self._aggregate_load_balancer_stats()
+        if aggregate["services"]:
+            aggregate["timestamp"] = now_utc()
+            aggregate["source"] = "aggregated-load-balancer-stats"
+            return json_response(aggregate)
         return json_response({"status": "unavailable", "requests_total": 0, "requests_active": 0,
                               "bytes_in": 0, "bytes_out": 0, "backend_failovers": 0,
-                              "timestamp": now_utc(), "source": "stats-file-unavailable"}, status=503)
+                              "failure_events_total": 0, "active_failures": 0,
+                              "recovery_events": 0, "total_failover_requests": 0,
+                              "timestamp": now_utc(), "source": "stats-files-unavailable"}, status=503)
 
     @staticmethod
     def _load_balancer_stats():
@@ -1128,6 +1149,82 @@ class RuntimeNetworkController(ControllerBase):
                 return json.load(handle)
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return None
+
+    @staticmethod
+    def _load_balancer_stats_by_service():
+        paths = {
+            "dns": os.environ.get("SECUREIOT_DNS_LB_STATS_FILE", "/tmp/secureiot-lb-dns-stats.json"),
+            "http_api": os.environ.get("SECUREIOT_LB_STATS_FILE", "/var/tmp/secureiot-lb-stats.json"),
+            "https": os.environ.get("SECUREIOT_HTTPS_LB_STATS_FILE", "/tmp/secureiot-lb-https-stats.json"),
+            "ssh": os.environ.get("SECUREIOT_SSH_LB_STATS_FILE", "/tmp/secureiot-lb-ssh-stats.json"),
+        }
+        result = {}
+        for service, path in paths.items():
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    value = json.load(handle)
+                if isinstance(value, dict):
+                    result[service] = value
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                continue
+        return result
+
+    @classmethod
+    def _aggregate_load_balancer_stats(cls):
+        snapshots = cls._load_balancer_stats_by_service()
+        healthy, failed, backend_requests, backends = [], [], {}, []
+        services = {}
+        totals = {key: 0 for key in (
+            "requests_total", "requests_active", "bytes_in", "bytes_out",
+            "backend_failovers", "failure_events_total", "active_failures",
+            "recovery_events")}
+        last_backend = None
+        last_check = None
+        updated_at = None
+        for service, stats in snapshots.items():
+            for key in totals:
+                totals[key] += int(stats.get(key, 0) or 0)
+            service_healthy = list(stats.get("healthy_backends", []))
+            service_failed = list(stats.get("failed_backends", []))
+            healthy.extend(service_healthy)
+            failed.extend(service_failed)
+            backend_requests.update(stats.get("backend_requests", {}))
+            backends.extend(stats.get("backends", []))
+            if stats.get("last_backend"):
+                last_backend = stats["last_backend"]
+            if stats.get("last_health_check") is not None:
+                last_check = max(last_check or 0, stats["last_health_check"])
+            if stats.get("updated_at") is not None:
+                updated_at = max(updated_at or 0, stats["updated_at"])
+            services[service] = {
+                "status": "degraded" if stats.get("active_failures", 0) else "running",
+                "primary": SERVICE_PAIRS.get(service, {}).get("primary"),
+                "backup": SERVICE_PAIRS.get(service, {}).get("backup"),
+                "healthy_backends": service_healthy,
+                "failed_backends": service_failed,
+                "requests_total": stats.get("requests_total", 0),
+                "backend_failovers": stats.get("backend_failovers", 0),
+                "failure_events_total": stats.get("failure_events_total", 0),
+                "active_failures": stats.get("active_failures", 0),
+                "recovery_events": stats.get("recovery_events", 0),
+                "last_backend": stats.get("last_backend"),
+                "last_health_check": stats.get("last_health_check"),
+            }
+        totals["total_failover_requests"] = totals["backend_failovers"]
+        totals["total_backends"] = len(set(backends))
+        totals["healthy_backends"] = sorted(set(healthy))
+        totals["failed_backends"] = sorted(set(failed))
+        totals["backend_requests"] = backend_requests
+        totals["backends"] = sorted(set(backends))
+        totals["last_backend"] = last_backend
+        totals["last_check"] = last_check
+        totals["updated_at"] = updated_at
+        totals["health_checks_performed"] = any(
+            bool(stats.get("health_checks_performed")) for stats in snapshots.values())
+        totals["status"] = ("unavailable" if not snapshots else
+                             ("degraded" if totals["active_failures"] else "running"))
+        totals["services"] = services
+        return totals
 
     @api_auth_required
     @route("firewall_status", "/firewall/status", methods=["GET"])
