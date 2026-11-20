@@ -612,6 +612,33 @@ def start_project_https(net):
     )
 
 
+def start_project_dns(net):
+    """Start the lab DNS responder on h1, pointing A records at project HTTPS."""
+    dns_host = net.get("h1")
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    server = os.path.join(project_dir, "servers", "dns_server.py")
+    dns_host.cmd("pkill -f '[d]ns_server.py' >/dev/null 2>&1 || true")
+    dns_host.cmd("sleep 0.2")
+    launch = (
+        "env DNS_SERVER_IP=10.10.30.2 DNS_PORT=53 DNS_ANSWER_IP=10.10.20.3 "
+        "python3 %s > /tmp/dns_h1.log 2>&1 &"
+        % shlex.quote(server)
+    )
+    dns_host.cmd(launch)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        listening = dns_host.cmd(
+            "ss -lunH '( sport = :53 )' 2>/dev/null | grep -F "
+            "'10.10.30.2:53' || true"
+        )
+        if listening.strip():
+            info("*** Project DNS ready on h1:53; lab A records resolve to h3:443.\n")
+            return
+        time.sleep(0.25)
+    tail = dns_host.cmd("tail -n 20 /tmp/dns_h1.log 2>/dev/null")
+    raise RuntimeError("project DNS did not become ready on h1:53: " + tail.strip())
+
+
 def service_name_for_target(target_name, attack_type, dst_port):
     """Record the known service at the target, not the attack mechanism."""
     if target_name == 'h18':
@@ -977,6 +1004,8 @@ def run():
                 net,
                 live_iot_api=(os.getenv("START_IOT_SIMULATORS", "0") == "1"),
             )
+            start_project_dns(net)
+            start_project_https(net)
         print_inventory()
         if batch_path:
             wait_for_controller_ready()
