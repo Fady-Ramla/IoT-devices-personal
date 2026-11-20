@@ -293,7 +293,7 @@ def print_inventory():
     info("VLAN 50 Employees:    10.10.50.0/24\n")
     info("Primary: h1-h4 | IoT: h5-h16 | Backup: h17-h20\n")
     info("Employees: h21-h35 | IT Admin: h36-h37 | LB: h38\n")
-    info("Load balancers: h38:5000 -> h2/h18, h38:443 -> h3/h19, h38:2222 -> h4 primary/h20 standby\n")
+    info("Load balancers: h38:53/udp -> h1 primary/h17 standby, h38:5000 -> h2/h18, h38:443 -> h3 primary/h19 standby, h38:2222 -> h4 primary/h20 standby\n")
     info("\nUseful checks: pingall, net, links, nodes, gw iptables -L -n -v\n\n")
 
 
@@ -570,73 +570,93 @@ def start_project_web_api(net):
 
 
 def start_project_https(net):
-    """Start and verify the real HTTPS server on h3:443 with a lab-local cert."""
-    server_host = net.get("h3")
-    client_host = net.get("h5")
+    """Start h3/h19 HTTPS backends and the h38:443 TCP failover frontend."""
     project_dir = os.path.dirname(os.path.abspath(__file__))
     server = os.path.join(project_dir, "servers", "https_server.py")
-    cert_dir = "/tmp/https_server"
-    cert = cert_dir + "/cert.pem"
-    key = cert_dir + "/key.pem"
-    make_cert = server_host.cmd(
-        "mkdir -p %s && openssl req -x509 -nodes -days 2 -newkey rsa:2048 "
-        "-subj '/CN=10.10.20.3' -keyout %s -out %s "
-        ">/tmp/https_cert.log 2>&1 && test -s %s && test -s %s && echo CERT_READY"
-        % (shlex.quote(cert_dir), shlex.quote(key), shlex.quote(cert),
-           shlex.quote(key), shlex.quote(cert))
-    )
-    if "CERT_READY" not in make_cert:
-        raise RuntimeError("could not prepare lab HTTPS certificate: " + make_cert.strip())
+    lb = os.path.join(project_dir, "load_balancer.py")
+    backends = (("h3", "10.10.20.3", "https_h3"),
+                ("h19", "10.10.20.19", "https_h19"))
+    for host_id, address, label in backends:
+        host = net.get(host_id)
+        cert_dir = "/tmp/%s" % label
+        cert = cert_dir + "/cert.pem"
+        key = cert_dir + "/key.pem"
+        make_cert = host.cmd(
+            "mkdir -p %s && openssl req -x509 -nodes -days 2 -newkey rsa:2048 "
+            "-subj '/CN=%s' -keyout %s -out %s "
+            ">/tmp/%s_cert.log 2>&1 && test -s %s && test -s %s && echo CERT_READY"
+            % (shlex.quote(cert_dir), address, shlex.quote(key), shlex.quote(cert),
+               label, shlex.quote(key), shlex.quote(cert))
+        )
+        if "CERT_READY" not in make_cert:
+            raise RuntimeError("could not prepare HTTPS certificate for %s: %s" %
+                               (host_id, make_cert.strip()))
+        host.cmd(
+            "pkill -f '[h]ttps_server.py' >/dev/null 2>&1 || true; "
+            "env HTTPS_SERVER_IP=%s HTTPS_SERVER_PORT=443 HTTPS_CERT_FILE=%s "
+            "HTTPS_KEY_FILE=%s python3 %s > /tmp/%s.log 2>&1 &"
+            % (address, shlex.quote(cert), shlex.quote(key), shlex.quote(server), label)
+        )
 
-    server_host.cmd(
-        "env HTTPS_SERVER_IP=10.10.20.3 HTTPS_SERVER_PORT=443 "
-        "HTTPS_CERT_FILE=%s HTTPS_KEY_FILE=%s python3 %s "
-        "> /tmp/https_h3.log 2>&1 &"
-        % (shlex.quote(cert), shlex.quote(key), shlex.quote(server))
+    lb_host = net.get("h38")
+    lb_host.cmd("pkill -f '[l]oad_balancer.py --listen-port 443' >/dev/null 2>&1 || true")
+    lb_host.cmd(
+        "SECUREIOT_LB_STATS_FILE=/tmp/secureiot-lb-https-stats.json "
+        "python3 %s --listen-host 10.10.20.100 --listen-port 443 "
+        "--backends 10.10.20.3:443,10.10.20.19:443 "
+        "--strategy primary-backup --idle-timeout 0 > /tmp/lb-443.log 2>&1 &"
+        % shlex.quote(lb)
     )
     deadline = time.monotonic() + 20
-    last_response = ""
     while time.monotonic() < deadline:
-        last_response = client_host.cmd(
-            "curl -4 -k -sS --connect-timeout 1 --max-time 2 "
-            "-o /dev/null -w '%{http_code}' https://10.10.20.3/ 2>/dev/null"
-        ).strip()
-        if last_response == "200":
-            info("*** Project HTTPS ready on h3:443; reachable from h5.\n")
+        listening = lb_host.cmd(
+            "ss -lntH '( sport = :443 )' 2>/dev/null | grep -F "
+            "'10.10.20.100:443' || true"
+        )
+        if listening.strip():
+            info("*** HTTPS backends ready: h3:443 primary, h19:443 backup; h38:443 frontend.\n")
             return
-        time.sleep(0.5)
-    tail = server_host.cmd("tail -n 20 /tmp/https_h3.log /tmp/https_cert.log 2>/dev/null")
-    raise RuntimeError(
-        "project HTTPS did not become healthy from h5 (last HTTP status=%r): %s"
-        % (last_response, tail.strip())
-    )
+        time.sleep(0.25)
+    tail = lb_host.cmd("tail -n 20 /tmp/lb-443.log 2>/dev/null")
+    raise RuntimeError("HTTPS load balancer did not listen on h38:443: " + tail.strip())
 
 
 def start_project_dns(net):
-    """Start the lab DNS responder on h1, pointing A records at project HTTPS."""
-    dns_host = net.get("h1")
+    """Start h1/h17 DNS backends and the h38:53 UDP failover frontend."""
     project_dir = os.path.dirname(os.path.abspath(__file__))
     server = os.path.join(project_dir, "servers", "dns_server.py")
-    dns_host.cmd("pkill -f '[d]ns_server.py' >/dev/null 2>&1 || true")
-    dns_host.cmd("sleep 0.2")
-    launch = (
-        "env DNS_SERVER_IP=10.10.30.2 DNS_PORT=53 DNS_ANSWER_IP=10.10.20.3 "
-        "python3 %s > /tmp/dns_h1.log 2>&1 &"
-        % shlex.quote(server)
+    lb = os.path.join(project_dir, "dns_load_balancer.py")
+    for host_id, address, label in (("h1", "10.10.30.2", "dns_h1"),
+                                    ("h17", "10.10.30.17", "dns_h17")):
+        host = net.get(host_id)
+        host.cmd("pkill -f '[d]ns_server.py' >/dev/null 2>&1 || true")
+        host.cmd(
+            "env DNS_SERVER_IP=%s DNS_PORT=53 DNS_ANSWER_IP=10.10.20.100 "
+            "python3 %s > /tmp/%s.log 2>&1 &"
+            % (address, shlex.quote(server), label)
+        )
+
+    lb_host = net.get("h38")
+    lb_host.cmd("pkill -f '[d]ns_load_balancer.py' >/dev/null 2>&1 || true")
+    lb_host.cmd(
+        "SECUREIOT_LB_STATS_FILE=/tmp/secureiot-lb-dns-stats.json "
+        "python3 %s --listen-host 10.10.20.100 --listen-port 53 "
+        "--backends 10.10.30.2:53,10.10.30.17:53 "
+        "> /tmp/lb-53.log 2>&1 &"
+        % shlex.quote(lb)
     )
-    dns_host.cmd(launch)
-    deadline = time.monotonic() + 10
+    deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        listening = dns_host.cmd(
+        listening = lb_host.cmd(
             "ss -lunH '( sport = :53 )' 2>/dev/null | grep -F "
-            "'10.10.30.2:53' || true"
+            "'10.10.20.100:53' || true"
         )
         if listening.strip():
-            info("*** Project DNS ready on h1:53; lab A records resolve to h3:443.\n")
+            info("*** DNS backends ready: h1:53 primary, h17:53 backup; h38:53 frontend.\n")
             return
         time.sleep(0.25)
-    tail = dns_host.cmd("tail -n 20 /tmp/dns_h1.log 2>/dev/null")
-    raise RuntimeError("project DNS did not become ready on h1:53: " + tail.strip())
+    tail = lb_host.cmd("tail -n 20 /tmp/lb-53.log 2>/dev/null")
+    raise RuntimeError("DNS load balancer did not listen on h38:53: " + tail.strip())
 
 
 def service_name_for_target(target_name, attack_type, dst_port):

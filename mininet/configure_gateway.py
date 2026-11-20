@@ -40,14 +40,21 @@ FORWARD_RULES = (
     # Employees may browse externally through the gateway NAT, but only on
     # web ports. Their DNS queries remain directed to the internal DNS VLAN.
     "iptables -A FORWARD -i gw-eth0.50 -o sio-wan-gw -p tcp -m multiport --dports 80,443 -j ACCEPT",
-    # IoT to approved application services and DNS.
+    # IoT to approved application services and the DNS load-balancer VIP.
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -p tcp -m multiport --dports 5000,443 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -p tcp --dport 53 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.30 -p udp --dport 53 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.30 -p tcp --dport 53 -j ACCEPT",
-    # Employees to application frontends and DNS.
+    # Employees to application frontends and the DNS load-balancer VIP.
     "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.20 -p tcp -m multiport --dports 5000,443 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.20 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.20 -p tcp --dport 53 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.30 -p udp --dport 53 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.30 -p tcp --dport 53 -j ACCEPT",
+    # The DNS VIP on h38 forwards to h1/h17 on the DNS VLAN.
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.30 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.30 -p tcp --dport 53 -j ACCEPT",
     # SSH clients must pass through the h38 TCP/2222 frontend. Its h4/h20
     # backend connections remain on Services VLAN 20 and do not traverse gw.
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -s 10.10.40.36/32 -d 10.10.20.100/32 -p tcp --dport 2222 -j ACCEPT",
