@@ -67,6 +67,7 @@ HTTP_ACTIVITY_PORTS = frozenset(
 )
 SSH_ACTIVITY_PORT = 22
 SSH_ACTIVITY_PORTS = frozenset({22, 2222})
+SERVICE_ACTIVITY_PORTS = frozenset({53, 80, 443, 5000, 8080, 8081, 22, 2222})
 SSH_AUDIT_LOG_DIR = os.getenv("SECUREIOT_SSHD_LOG_DIR", "/run/secureiot/ssh")
 SSH_AUDIT_EVENT_MAX_AGE = 24 * 60 * 60
 SSH_AUDIT_LOG_MAX_BYTES = 256 * 1024
@@ -118,20 +119,23 @@ def _flow_activity_category(flow):
             return "ping" if int(flow.get("icmp_type", -1)) == 8 else None
         except (TypeError, ValueError):
             return None
-    if ip_proto != 6:
+    if ip_proto not in (6, 17):
         return None
     try:
         ports = {
             int(port) for port in (
-                flow.get("tcp_src_port"), flow.get("tcp_dst_port")
+                flow.get("tcp_src_port") if ip_proto == 6 else flow.get("udp_src_port"),
+                flow.get("tcp_dst_port") if ip_proto == 6 else flow.get("udp_dst_port"),
             ) if port is not None
         }
     except (TypeError, ValueError):
         return None
     if ports & SSH_ACTIVITY_PORTS:
         return "ssh"
+    if ip_proto == 17 and ports & {53}:
+        return "dns"
     if not ports.intersection(HTTP_ACTIVITY_PORTS):
-        return None
+        return "service" if ports.intersection(SERVICE_ACTIVITY_PORTS) else None
     endpoints = {str(flow.get("src_ip", "")), str(flow.get("dst_ip", ""))}
     if LOAD_BALANCER_IP in endpoints:
         return "load_balancer"
@@ -670,7 +674,7 @@ class RuntimeNetworkController(ControllerBase):
         return topology, (_call(topology, ["get_topology_status"], {}) or {})
 
     def _traffic_activity(self):
-        """Map active switch DPIDs to recent ping, HTTP, or telemetry activity."""
+        """Map active switch DPIDs to recent service, ping, or telemetry activity."""
         activity = {}
         topology = self._topology()
         ping_activity = getattr(topology, "switch_traffic_last_seen", {}) if topology is not None else {}
@@ -682,6 +686,34 @@ class RuntimeNetworkController(ControllerBase):
                         activity[int(dpid)] = datetime.fromtimestamp(
                             float(observed_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
                 except (TypeError, ValueError, OSError):
+                    continue
+
+        # Service activity is tracked by host IP in TopologyMonitor. Include
+        # HTTP/HTTPS, SSH, and DNS on the same switch signal as ping.
+        for attribute in (
+            "web_traffic_last_seen",
+            "ssh_traffic_last_seen",
+            "service_traffic_last_seen",
+        ):
+            seen_by_ip = getattr(topology, attribute, {}) if topology is not None else {}
+            if not isinstance(seen_by_ip, dict):
+                continue
+            for host_id, host_ip in HOST_IPS.items():
+                observed_at = seen_by_ip.get(host_ip)
+                if observed_at is None:
+                    continue
+                try:
+                    if time.time() - float(observed_at) > TRAFFIC_ACTIVE_WINDOW:
+                        continue
+                    dpid = SWITCH_DPIDS[HOST_SWITCHES[host_id]]
+                    timestamp = datetime.fromtimestamp(
+                        float(observed_at), tz=timezone.utc
+                    ).isoformat().replace("+00:00", "Z")
+                    current = _parse_utc_timestamp(activity.get(dpid))
+                    observed = _parse_utc_timestamp(timestamp)
+                    if current is None or (observed is not None and observed > current):
+                        activity[dpid] = timestamp
+                except (KeyError, TypeError, ValueError, OSError):
                     continue
 
         # A fresh SQLite sample proves that the private sensor GET succeeded.
