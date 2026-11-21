@@ -812,8 +812,14 @@ class TopologyMonitor(app_manager.RyuApp):
                 udp_ports = set()
             is_web = ip_proto == 6 and bool(tcp_ports & HTTP_ACTIVITY_PORTS)
             is_ssh = ip_proto == 6 and bool(tcp_ports & SSH_ACTIVITY_PORTS)
-            is_service = ((ip_proto == 6 and bool(tcp_ports & SERVICE_ACTIVITY_PORTS))
-                          or (ip_proto == 17 and bool(udp_ports & SERVICE_ACTIVITY_PORTS)))
+            # Keep the handler usable by older isolated test adapters that
+            # provide HTTP/SSH constants but not the newer service aggregate.
+            service_ports = globals().get(
+                "SERVICE_ACTIVITY_PORTS",
+                HTTP_ACTIVITY_PORTS | SSH_ACTIVITY_PORTS | frozenset({53}),
+            )
+            is_service = ((ip_proto == 6 and bool(tcp_ports & service_ports))
+                          or (ip_proto == 17 and bool(udp_ports & service_ports)))
             if not (is_ping or is_service):
                 continue
             key = (
@@ -842,7 +848,7 @@ class TopologyMonitor(app_manager.RyuApp):
                             self.web_traffic_last_seen[host_ip] = now
                         if is_ssh:
                             self.ssh_traffic_last_seen[host_ip] = now
-                        if is_service:
+                        if is_service and hasattr(self, "service_traffic_last_seen"):
                             self.service_traffic_last_seen[host_ip] = now
                 for flow in self.active_flows.values():
                     if not isinstance(flow, dict):
