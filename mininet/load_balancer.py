@@ -36,6 +36,7 @@ class TcpLoadBalancer:
             "healthy_backends": [],
             "health_checks_performed": False,
             "last_health_check": None,
+            "last_request_at": None,
             "last_backend": None,
             "strategy": self.strategy,
             "idle_timeout": self.idle_timeout,
@@ -170,6 +171,9 @@ class TcpLoadBalancer:
 
     def handle(self, client, address):
         self.update(requests_total=1, requests_active=1)
+        with self.lock:
+            self.stats["last_request_at"] = time.time()
+        self.write_stats()
         backend, is_failover = self.choose_backend()
         if backend is None:
             client.close()

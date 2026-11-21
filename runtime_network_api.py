@@ -677,43 +677,41 @@ class RuntimeNetworkController(ControllerBase):
         """Map active switch DPIDs to recent service, ping, or telemetry activity."""
         activity = {}
         topology = self._topology()
-        ping_activity = getattr(topology, "switch_traffic_last_seen", {}) if topology is not None else {}
+        now = time.time()
+        ping_activity = getattr(topology, "ping_traffic_last_seen", {}) if topology is not None else {}
         if isinstance(ping_activity, dict):
-            now = time.time()
-            for dpid, observed_at in ping_activity.items():
-                try:
-                    if now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW:
-                        activity[int(dpid)] = datetime.fromtimestamp(
-                            float(observed_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
-                except (TypeError, ValueError, OSError):
-                    continue
-
-        # Service activity is tracked by host IP in TopologyMonitor. Include
-        # HTTP/HTTPS, SSH, and DNS on the same switch signal as ping.
-        for attribute in (
-            "web_traffic_last_seen",
-            "ssh_traffic_last_seen",
-            "service_traffic_last_seen",
-        ):
-            seen_by_ip = getattr(topology, attribute, {}) if topology is not None else {}
-            if not isinstance(seen_by_ip, dict):
-                continue
             for host_id, host_ip in HOST_IPS.items():
-                observed_at = seen_by_ip.get(host_ip)
+                observed_at = ping_activity.get(host_ip)
                 if observed_at is None:
                     continue
                 try:
-                    if time.time() - float(observed_at) > TRAFFIC_ACTIVE_WINDOW:
+                    if now - float(observed_at) > TRAFFIC_ACTIVE_WINDOW:
                         continue
                     dpid = SWITCH_DPIDS[HOST_SWITCHES[host_id]]
-                    timestamp = datetime.fromtimestamp(
-                        float(observed_at), tz=timezone.utc
-                    ).isoformat().replace("+00:00", "Z")
-                    current = _parse_utc_timestamp(activity.get(dpid))
-                    observed = _parse_utc_timestamp(timestamp)
-                    if current is None or (observed is not None and observed > current):
-                        activity[dpid] = timestamp
+                    activity[dpid] = datetime.fromtimestamp(
+                        float(observed_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
                 except (KeyError, TypeError, ValueError, OSError):
+                    continue
+
+        # Only real client requests update last_request_at. Backend health
+        # checks intentionally do not make their switches look active.
+        backend_host_by_ip = {ip: host_id for host_id, ip in HOST_IPS.items()}
+        for service, stats in self._load_balancer_stats_by_service().items():
+            observed_at = stats.get("last_request_at")
+            seen = _parse_utc_timestamp(observed_at)
+            if seen is None or (datetime.now(timezone.utc) - seen).total_seconds() > TRAFFIC_ACTIVE_WINDOW:
+                continue
+            backend_host = backend_host_by_ip.get(str(stats.get("last_backend", "")).split(":", 1)[0])
+            if backend_host is None:
+                backend_host = SERVICE_PAIRS.get(service, {}).get("primary")
+            path = _graph_path(topology, "h38", backend_host) if backend_host else None
+            nodes = path.get("nodes", []) if isinstance(path, dict) else []
+            for dpid in nodes:
+                try:
+                    current = _parse_utc_timestamp(activity.get(int(dpid)))
+                    if current is None or seen > current:
+                        activity[int(dpid)] = seen.isoformat().replace("+00:00", "Z")
+                except (TypeError, ValueError):
                     continue
 
         # A fresh SQLite sample proves that the private sensor GET succeeded.
