@@ -68,6 +68,7 @@ HTTP_ACTIVITY_PORTS = frozenset(
 )
 SSH_ACTIVITY_PORT = 22
 SSH_ACTIVITY_PORTS = frozenset({22, 2222})
+SERVICE_ACTIVITY_PORTS = frozenset({53, 80, 443, 5000, 8080, 8081, 22, 2222})
 SSH_AUDIT_LOG_DIR = os.getenv("SECUREIOT_SSHD_LOG_DIR", "/run/secureiot/ssh")
 SSH_AUDIT_EVENT_MAX_AGE = 24 * 60 * 60
 SSH_AUDIT_LOG_MAX_BYTES = 256 * 1024
@@ -120,20 +121,23 @@ def _flow_activity_category(flow):
             return "ping" if int(flow.get("icmp_type", -1)) == 8 else None
         except (TypeError, ValueError):
             return None
-    if ip_proto != 6:
+    if ip_proto not in (6, 17):
         return None
     try:
         ports = {
             int(port) for port in (
-                flow.get("tcp_src_port"), flow.get("tcp_dst_port")
+                flow.get("tcp_src_port") if ip_proto == 6 else flow.get("udp_src_port"),
+                flow.get("tcp_dst_port") if ip_proto == 6 else flow.get("udp_dst_port"),
             ) if port is not None
         }
     except (TypeError, ValueError):
         return None
     if ports & SSH_ACTIVITY_PORTS:
         return "ssh"
+    if ip_proto == 17 and ports & {53}:
+        return "dns"
     if not ports.intersection(HTTP_ACTIVITY_PORTS):
-        return None
+        return "service" if ports.intersection(SERVICE_ACTIVITY_PORTS) else None
     endpoints = {str(flow.get("src_ip", "")), str(flow.get("dst_ip", ""))}
     if LOAD_BALANCER_IP in endpoints:
         return "load_balancer"
@@ -663,6 +667,7 @@ class RuntimeNetworkController(ControllerBase):
         # evaluated even when runtime_app already owns the shared store.
         self.iot_store = getattr(runtime_app, "iot_store", None) or IoTTelemetryStore()
         self._traffic_counter_snapshot = getattr(runtime_app, "traffic_counter_snapshot", {})
+        self._lb_metrics_baseline = getattr(runtime_app, "lb_metrics_baseline", {})
 
     @staticmethod
     def _topology():
@@ -715,18 +720,44 @@ class RuntimeNetworkController(ControllerBase):
         return topology, (_call(topology, ["get_topology_status"], {}) or {})
 
     def _traffic_activity(self):
-        """Map active switch DPIDs to recent ping, HTTP, or telemetry activity."""
+        """Map active switch DPIDs to recent service, ping, or telemetry activity."""
         activity = {}
         topology = self._topology()
-        ping_activity = getattr(topology, "switch_traffic_last_seen", {}) if topology is not None else {}
+        now = time.time()
+        ping_activity = getattr(topology, "ping_traffic_last_seen", {}) if topology is not None else {}
         if isinstance(ping_activity, dict):
-            now = time.time()
-            for dpid, observed_at in ping_activity.items():
+            for host_id, host_ip in HOST_IPS.items():
+                observed_at = ping_activity.get(host_ip)
+                if observed_at is None:
+                    continue
                 try:
-                    if now - float(observed_at) <= TRAFFIC_ACTIVE_WINDOW:
-                        activity[int(dpid)] = datetime.fromtimestamp(
-                            float(observed_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
-                except (TypeError, ValueError, OSError):
+                    if now - float(observed_at) > TRAFFIC_ACTIVE_WINDOW:
+                        continue
+                    dpid = SWITCH_DPIDS[HOST_SWITCHES[host_id]]
+                    activity[dpid] = datetime.fromtimestamp(
+                        float(observed_at), tz=timezone.utc).isoformat().replace("+00:00", "Z")
+                except (KeyError, TypeError, ValueError, OSError):
+                    continue
+
+        # Only real client requests update last_request_at. Backend health
+        # checks intentionally do not make their switches look active.
+        backend_host_by_ip = {ip: host_id for host_id, ip in HOST_IPS.items()}
+        for service, stats in self._load_balancer_stats_by_service().items():
+            observed_at = stats.get("last_request_at")
+            seen = _parse_utc_timestamp(observed_at)
+            if seen is None or (datetime.now(timezone.utc) - seen).total_seconds() > TRAFFIC_ACTIVE_WINDOW:
+                continue
+            backend_host = backend_host_by_ip.get(str(stats.get("last_backend", "")).split(":", 1)[0])
+            if backend_host is None:
+                backend_host = SERVICE_PAIRS.get(service, {}).get("primary")
+            path = _graph_path(topology, "h38", backend_host) if backend_host else None
+            nodes = path.get("nodes", []) if isinstance(path, dict) else []
+            for dpid in nodes:
+                try:
+                    current = _parse_utc_timestamp(activity.get(int(dpid)))
+                    if current is None or seen > current:
+                        activity[int(dpid)] = seen.isoformat().replace("+00:00", "Z")
+                except (TypeError, ValueError):
                     continue
 
         # A fresh SQLite sample proves that the private sensor GET succeeded.
@@ -1133,63 +1164,88 @@ class RuntimeNetworkController(ControllerBase):
     @api_auth_required
     @route("load_balancer", "/network/load-balancer", methods=["GET"])
     def load_balancer(self, req, **kwargs):
-        service = SERVICE_PAIRS.get("http_api", {})
-        stats = self._load_balancer_stats() or {}
+        aggregate = self._aggregate_load_balancer_stats()
         return json_response({"service_id": "secureiot-lb", "host_id": LOAD_BALANCER_CONFIG.get("host"),
                               "vip": LOAD_BALANCER_IP,
-                              "status": "running" if stats else "configured",
-                              "algorithm": "round_robin", "backend_count": len(stats.get("backends", [])) or 2,
-                              "frontends": list(LOAD_BALANCER_CONFIG.get("frontends", ())),
-                              "service_port": service.get("port"),
-                              "requests_total": stats.get("requests_total", 0),
-                              "last_backend": stats.get("last_backend"),
-                              "backend_requests": stats.get("backend_requests", {}),
-                              "healthy_backends": stats.get("healthy_backends", [])})
+                              "status": aggregate["status"],
+                              "algorithm": "round_robin", "backend_count": aggregate["total_backends"],
+                              "frontends": [53] + list(LOAD_BALANCER_CONFIG.get("frontends", ())),
+                              "requests_total": aggregate["requests_total"],
+                              "requests_active": aggregate["requests_active"],
+                              "inflight": aggregate["inflight"],
+                              "last_backend": aggregate["last_backend"],
+                              "backend_requests": aggregate["backend_requests"],
+                              "healthy_backends": aggregate["healthy_backends"],
+                              "failed_backends": aggregate["failed_backends"],
+                              "failure_events_total": aggregate["failure_events_total"],
+                              "active_failures": aggregate["active_failures"],
+                              "recovery_events": aggregate["recovery_events"],
+                              "total_failover_requests": aggregate["total_failover_requests"],
+                              "services": aggregate["services"]})
 
     @api_auth_required
     @route("load_balancer_status", "/network/load-balancer/status", methods=["GET"])
     def load_balancer_status(self, req, **kwargs):
-        stats = self._load_balancer_stats()
-        if stats is None:
+        aggregate = self._aggregate_load_balancer_stats()
+        if not aggregate["services"]:
             return json_response({"status": "unavailable", "health_checks_performed": False,
-                                  "healthy_backends": [], "total_backends": 2, "last_check": None,
-                                  "source": "stats-file-unavailable"}, status=503)
-        healthy = stats.get("healthy_backends", [])
-        return json_response({"status": "running", "health_checks_performed": bool(stats.get("health_checks_performed")),
-                              "healthy_backends": healthy, "total_backends": len(stats.get("backends", [])) or 2,
-                              "last_check": stats.get("last_health_check"),
-                              "updated_at": stats.get("updated_at"), "source": "shared-load-balancer-stats"})
+                                  "healthy_backends": [], "failed_backends": [], "total_backends": 0,
+                                  "failure_events_total": 0, "active_failures": 0,
+                                  "recovery_events": 0, "total_failover_requests": 0,
+                                  "source": "stats-files-unavailable"}, status=503)
+        return json_response({"status": aggregate["status"],
+                              "health_checks_performed": aggregate["health_checks_performed"],
+                              "healthy_backends": aggregate["healthy_backends"],
+                              "failed_backends": aggregate["failed_backends"],
+                              "total_backends": aggregate["total_backends"],
+                              "requests_active": aggregate["requests_active"],
+                              "inflight": aggregate["inflight"],
+                              "failure_events_total": aggregate["failure_events_total"],
+                              "active_failures": aggregate["active_failures"],
+                              "recovery_events": aggregate["recovery_events"],
+                              "total_failover_requests": aggregate["total_failover_requests"],
+                              "last_check": aggregate["last_check"],
+                              "updated_at": aggregate["updated_at"],
+                              "services": aggregate["services"],
+                              "source": "aggregated-load-balancer-stats"})
 
     @api_auth_required
     @route("load_balancer_backends", "/network/load-balancer/backends", methods=["GET"])
     def load_balancer_backends(self, req, **kwargs):
-        service = SERVICE_PAIRS.get("http_api", {})
-        stats = self._load_balancer_stats() or {}
-        healthy = set(stats.get("healthy_backends", []))
-        checked = bool(stats.get("health_checks_performed"))
         backends = []
-        for key in ("primary", "backup"):
-            host_id = service.get(key)
-            if host_id and host_id in HOST_IPS:
-                backends.append({"backend_id": host_id,
-                                 "address": "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000)),
-                                 "status": ("healthy" if "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000)) in healthy
-                                             else ("unhealthy" if checked else "unknown")),
-                                 "health_checked": checked, "weight": 1,
-                                 "last_check": stats.get("last_health_check")})
+        snapshots = self._load_balancer_stats_by_service()
+        for service_name, service in SERVICE_PAIRS.items():
+            stats = snapshots.get(service_name) or {}
+            healthy = set(stats.get("healthy_backends", []))
+            checked = bool(stats.get("health_checks_performed"))
+            for key in ("primary", "backup"):
+                host_id = service.get(key)
+                if host_id and host_id in HOST_IPS:
+                    address = "%s:%s" % (HOST_IPS[host_id], service.get("port", 5000))
+                    backends.append({"service": service_name, "backend_id": host_id,
+                                     "address": address,
+                                     "status": ("healthy" if address in healthy
+                                                 else ("unhealthy" if checked else "unknown")),
+                                     "health_checked": checked, "weight": 1,
+                                     "failure_events_total": stats.get("failure_events_total", 0),
+                                     "active_failures": address in set(stats.get("failed_backends", [])),
+                                     "recovery_events": stats.get("recovery_events", 0),
+                                     "last_check": stats.get("last_health_check")})
         return json_response(backends)
 
     @api_auth_required
     @route("load_balancer_stats", "/network/load-balancer/stats", methods=["GET"])
     def load_balancer_stats(self, req, **kwargs):
-        value = self._load_balancer_stats()
-        if value is not None:
-            value["timestamp"] = now_utc()
-            value["source"] = "shared-load-balancer-stats"
-            return json_response(value)
+        aggregate = self._aggregate_load_balancer_stats()
+        if aggregate["services"]:
+            aggregate["timestamp"] = now_utc()
+            aggregate["source"] = "aggregated-load-balancer-stats"
+            return json_response(aggregate)
         return json_response({"status": "unavailable", "requests_total": 0, "requests_active": 0,
                               "bytes_in": 0, "bytes_out": 0, "backend_failovers": 0,
-                              "timestamp": now_utc(), "source": "stats-file-unavailable"}, status=503)
+                              "failure_events_total": 0, "active_failures": 0,
+                              "recovery_events": 0, "total_failover_requests": 0,
+                              "timestamp": now_utc(), "source": "stats-files-unavailable"}, status=503)
 
     @staticmethod
     def _load_balancer_stats():
@@ -1199,6 +1255,93 @@ class RuntimeNetworkController(ControllerBase):
                 return json.load(handle)
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return None
+
+    @staticmethod
+    def _load_balancer_stats_by_service():
+        paths = {
+            "dns": os.environ.get("SECUREIOT_DNS_LB_STATS_FILE", "/tmp/secureiot-lb-dns-stats.json"),
+            "http_api": os.environ.get("SECUREIOT_LB_STATS_FILE", "/var/tmp/secureiot-lb-stats.json"),
+            "https": os.environ.get("SECUREIOT_HTTPS_LB_STATS_FILE", "/tmp/secureiot-lb-https-stats.json"),
+            "ssh": os.environ.get("SECUREIOT_SSH_LB_STATS_FILE", "/tmp/secureiot-lb-ssh-stats.json"),
+        }
+        result = {}
+        for service, path in paths.items():
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    value = json.load(handle)
+                if isinstance(value, dict):
+                    result[service] = value
+            except (FileNotFoundError, json.JSONDecodeError, OSError):
+                continue
+        return result
+
+    def _aggregate_load_balancer_stats(self):
+        snapshots = self._load_balancer_stats_by_service()
+        healthy, failed, backend_requests, backends = [], [], {}, []
+        services = {}
+        totals = {key: 0 for key in (
+            "requests_total", "requests_active", "bytes_in", "bytes_out",
+            "backend_failovers", "failure_events_total", "active_failures",
+            "recovery_events")}
+        last_backend = None
+        last_check = None
+        updated_at = None
+        for service, stats in snapshots.items():
+            baseline = self._lb_metrics_baseline.get(service, {})
+            def session_value(key):
+                return max(0, int(stats.get(key, 0) or 0) - int(baseline.get(key, 0) or 0))
+
+            for key in totals:
+                if key == "requests_active" or key == "active_failures":
+                    totals[key] += int(stats.get(key, 0) or 0)
+                else:
+                    totals[key] += session_value(key)
+            service_healthy = list(stats.get("healthy_backends", []))
+            service_failed = list(stats.get("failed_backends", []))
+            healthy.extend(service_healthy)
+            failed.extend(service_failed)
+            for backend, count in stats.get("backend_requests", {}).items():
+                baseline_count = baseline.get("backend_requests", {}).get(backend, 0)
+                backend_requests[backend] = max(0, int(count or 0) - int(baseline_count or 0))
+            backends.extend(stats.get("backends", []))
+            if stats.get("last_backend"):
+                last_backend = stats["last_backend"]
+            if stats.get("last_health_check") is not None:
+                last_check = max(last_check or 0, stats["last_health_check"])
+            if stats.get("updated_at") is not None:
+                updated_at = max(updated_at or 0, stats["updated_at"])
+            services[service] = {
+                "status": "degraded" if stats.get("active_failures", 0) else "running",
+                "primary": SERVICE_PAIRS.get(service, {}).get("primary"),
+                "backup": SERVICE_PAIRS.get(service, {}).get("backup"),
+                "healthy_backends": service_healthy,
+                "failed_backends": service_failed,
+                "requests_total": session_value("requests_total"),
+                "requests_active": stats.get("requests_active", 0),
+                "inflight": stats.get("requests_active", 0),
+                "backend_failovers": session_value("backend_failovers"),
+                "failure_events_total": session_value("failure_events_total"),
+                "active_failures": stats.get("active_failures", 0),
+                "recovery_events": session_value("recovery_events"),
+                "last_backend": stats.get("last_backend"),
+                "last_health_check": stats.get("last_health_check"),
+            }
+        totals["total_failover_requests"] = totals["backend_failovers"]
+        totals["inflight"] = totals["requests_active"]
+        totals["total_backends"] = len(set(backends))
+        totals["healthy_backends"] = sorted(set(healthy))
+        totals["failed_backends"] = sorted(set(failed))
+        totals["backend_requests"] = backend_requests
+        totals["backends"] = sorted(set(backends))
+        totals["last_backend"] = last_backend
+        totals["last_check"] = last_check
+        totals["updated_at"] = updated_at
+        totals["health_checks_performed"] = any(
+            bool(stats.get("health_checks_performed")) for stats in snapshots.values())
+        totals["status"] = ("unavailable" if not snapshots else
+                             ("degraded" if totals["active_failures"] else "running"))
+        totals["services"] = services
+        return totals
 
     @api_auth_required
     @route("firewall_status", "/firewall/status", methods=["GET"])
@@ -1406,6 +1549,7 @@ class RuntimeNetworkApi(app_manager.RyuApp):
         self.stats = StatsCache()
         self.iot_store = IoTTelemetryStore()
         self.paths = OrderedDict()
+        self.lb_metrics_baseline = RuntimeNetworkController._load_balancer_stats_by_service()
         # Do not assign to self.events: RyuApp owns that name for its event queue.
         self.network_events = []
         self.traffic_counter_snapshot = {}
