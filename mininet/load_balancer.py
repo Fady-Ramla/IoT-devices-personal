@@ -105,7 +105,11 @@ class TcpLoadBalancer:
         all_ids = {f"{host}:{port}" for host, port in self.backends}
         with self.lock:
             previous = self._health_snapshot
-            if previous is not None:
+            if previous is None:
+                # A backend already down when this LB session starts is still
+                # an observed failure and must be visible in the dashboard.
+                self.stats["failure_events_total"] += len(all_ids - healthy_ids)
+            else:
                 self.stats["failure_events_total"] += len(previous - healthy_ids)
                 self.stats["recovery_events"] += len(healthy_ids - previous)
             self._health_snapshot = set(healthy_ids)
