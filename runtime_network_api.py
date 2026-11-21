@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 from urllib.parse import urlsplit
@@ -70,6 +71,7 @@ SSH_ACTIVITY_PORTS = frozenset({22, 2222})
 SSH_AUDIT_LOG_DIR = os.getenv("SECUREIOT_SSHD_LOG_DIR", "/run/secureiot/ssh")
 SSH_AUDIT_EVENT_MAX_AGE = 24 * 60 * 60
 SSH_AUDIT_LOG_MAX_BYTES = 256 * 1024
+GATEWAY_PID_FILE = os.getenv("SECUREIOT_GATEWAY_PID_FILE", "/var/run/secureiot-gateway.pid")
 # ICMP activity counters are sampled every five seconds. Keep activity visible
 # across one sample interval and short scheduling jitter; expire after eight
 # quiet seconds, not at exact OpenFlow rule deletion time.
@@ -341,6 +343,50 @@ def api_auth_required(handler):
 def compact(record):
     """Drop unset optional fields instead of serializing null/unknown noise."""
     return {key: value for key, value in record.items() if value is not None and value != "unknown"}
+
+
+def _gateway_drop_counters():
+    """Read real FORWARD drops from the Mininet gateway namespace."""
+    try:
+        with open(GATEWAY_PID_FILE, "r", encoding="utf-8") as handle:
+            pid = int(handle.read().strip())
+        if pid <= 0:
+            raise ValueError("invalid gateway pid")
+        result = subprocess.run(
+            ["nsenter", "-t", str(pid), "-n", "iptables", "-nvxL", "FORWARD", "--line-numbers"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+            timeout=1.5, check=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError("gateway iptables unavailable")
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        return {"status": "unavailable", "packets": 0, "bytes": 0,
+                "policy_drop_packets": 0, "policy_drop_bytes": 0,
+                "rule_drop_packets": 0, "rule_drop_bytes": 0}
+
+    policy_packets = policy_bytes = 0
+    rule_packets = rule_bytes = 0
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if line.startswith("Chain FORWARD"):
+            match = re.search(r"policy DROP\s+(\d+) packets, (\d+) bytes", line)
+            if match:
+                policy_packets, policy_bytes = map(int, match.groups())
+            continue
+        if len(fields) < 4 or not fields[0].isdigit() or not fields[1].isdigit():
+            continue
+        if fields[3].upper() == "DROP":
+            rule_packets += int(fields[1])
+            rule_bytes += int(fields[2])
+    return {
+        "status": "ready",
+        "packets": policy_packets + rule_packets,
+        "bytes": policy_bytes + rule_bytes,
+        "policy_drop_packets": policy_packets,
+        "policy_drop_bytes": policy_bytes,
+        "rule_drop_packets": rule_packets,
+        "rule_drop_bytes": rule_bytes,
+    }
 
 
 def _call(obj, names, default=None):
@@ -1041,7 +1087,32 @@ class RuntimeNetworkController(ControllerBase):
     @route("stats_port", "/stats/port/{dpid}", methods=["GET"])
     def stats_port(self, req, dpid, **kwargs):
         value = self.stats.get("port", int(dpid))
-        return json_response(value if value else {"status": "pending", "dpid": int(dpid), "ports": []}, status=200 if value else 202)
+        if not value:
+            return json_response({"status": "pending", "dpid": int(dpid), "ports": []}, status=202)
+        ports = value.get("ports", [])
+        switch_packets = sum(
+            int(port.get("rx_dropped", 0)) + int(port.get("tx_dropped", 0))
+            for port in ports if isinstance(port, dict)
+        )
+        gateway = _gateway_drop_counters()
+        value = dict(value)
+        value["dropped_packets"] = {
+            "switch": {"packets": switch_packets},
+            "gateway": {
+                "packets": gateway["packets"],
+                "bytes": gateway["bytes"],
+                "policy_drop_packets": gateway["policy_drop_packets"],
+                "policy_drop_bytes": gateway["policy_drop_bytes"],
+                "rule_drop_packets": gateway["rule_drop_packets"],
+                "rule_drop_bytes": gateway["rule_drop_bytes"],
+                "status": gateway["status"],
+            },
+            "total": {
+                "packets": switch_packets + gateway["packets"],
+                "bytes": gateway["bytes"],
+            },
+        }
+        return json_response(value)
 
     @api_auth_required
     @route("vlan_list", "/network/vlans", methods=["GET"])

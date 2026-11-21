@@ -159,6 +159,14 @@ def _run(gateway, command):
 
 def configure_gateway(gateway):
     """Create five VLAN interfaces on gw-eth0 and install the allowlist firewall."""
+    # The host-side runtime API reads gateway iptables counters through this
+    # namespace PID and combines them with OpenFlow port drops.
+    pid_file = os.getenv("SECUREIOT_GATEWAY_PID_FILE", "/var/run/secureiot-gateway.pid")
+    try:
+        with open(pid_file, "w", encoding="utf-8") as handle:
+            handle.write(str(int(gateway.pid)) + "\n")
+    except (OSError, AttributeError, TypeError, ValueError) as exc:
+        raise RuntimeError("could not publish gateway namespace pid: %s" % exc)
     _run(gateway, "ip link set dev %s up" % GATEWAY_PARENT_INTERFACE)
 
     for vlan_id, (interface, address) in GATEWAY_VLAN_INTERFACES.items():
