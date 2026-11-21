@@ -38,6 +38,7 @@ class DnsLoadBalancer:
             "healthy_backends": [],
             "health_checks_performed": False,
             "last_health_check": None,
+            "last_request_at": None,
             "last_backend": None,
             "listen_host": self.listen_host,
             "listen_port": self.listen_port,
@@ -140,6 +141,7 @@ class DnsLoadBalancer:
         with self.lock:
             self.stats["requests_total"] += 1
             self.stats["requests_active"] += 1
+            self.stats["last_request_at"] = time.time()
         self.write_stats()
         try:
             backend, is_failover = self.choose_backend()
