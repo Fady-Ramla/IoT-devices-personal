@@ -1,6 +1,6 @@
 # Step 3 فقط: active_run.json
 
-تتضمن هذه الحزمة ملفي `mininet/attack_manager.py` و`mininet/traffic_monitor_merged.py` بعد تنفيذ Step 3 على مصدر التشغيل الحالي.
+تتضمن هذه الحزمة ملفي `mininet/attack_manager.py` و`traffic_monitor_merged.py` بعد تنفيذ Step 3 على مصدر التشغيل الحالي.
 
 - يظل `attack_manager.get_run_id()` منشئ الـUUID الوحيد.
 - بعد إدخال التشغيل في manifest بحالة planned، يكتب attack_manager `New_Datasets/active_run.json` كتابة ذرية بنفس `run_id` و`generation` وبحالة `active` قبل استدعاء Ryu.
@@ -20,13 +20,13 @@ cd ~/IoT-devices
 tar -xzf ~/Downloads/person2_step3_active_run.tar.gz -C ~/IoT-devices
 ```
 
-الأرشيف يحتوي فقط على `mininet/attack_manager.py` و`mininet/traffic_monitor_merged.py`، فيستبدل هذين الملفين فقط. تحقق من syntax بدون الكتابة إلى `__pycache__`:
+الأرشيف يحتوي فقط على `mininet/attack_manager.py` و`traffic_monitor_merged.py`، فيستبدل هذين الملفين فقط. تحقق من syntax بدون الكتابة إلى `__pycache__`:
 
 ```bash
 cd ~/IoT-devices
 python3 - <<'PY'
 from pathlib import Path
-for name in ("mininet/attack_manager.py", "mininet/traffic_monitor_merged.py"):
+for name in ("mininet/attack_manager.py", "traffic_monitor_merged.py"):
     path = Path(name)
     compile(path.read_text(encoding="utf-8"), str(path), "exec")
     print("Syntax OK:", path)

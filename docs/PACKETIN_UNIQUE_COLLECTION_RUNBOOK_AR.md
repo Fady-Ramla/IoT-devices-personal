@@ -15,7 +15,7 @@
 
 ## مصدر البيانات
 
-شغّل Ryu باستخدام `mininet/traffic_monitor_merged.py`. يجب أن تكون صفوف Flow الناتجة التي تدخل الـdataset النهائية موسومة:
+شغّل Ryu باستخدام `traffic_monitor_merged.py`. يجب أن تكون صفوف Flow الناتجة التي تدخل الـdataset النهائية موسومة:
 
 ```text
 source=packetin_window

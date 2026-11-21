@@ -143,7 +143,7 @@ from zero_trust.zero_trust_decision import ZeroTrustDecision
 # REROUTE EVENT
 # =============================================================
 
-from topology_monitor import EventRerouteHost
+from topology_monitor import EventRerouteHost, EventPacketInObserved
 import uuid
 
 
@@ -167,7 +167,7 @@ STALE_FLOW_MAX_AGE = 60
 CSV_FLUSH_EVERY = 50
 
 # Dataset run lifecycle and durable run-scoped output.
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent
 ACTIVE_RUN_FILE = Path(os.environ.get("SECUREIOT_ACTIVE_RUN_FILE", str(PROJECT_ROOT / "New_Datasets" / "active_run.json"))).expanduser().resolve()
 RAW_DATA_ROOT = Path(os.environ.get("SECUREIOT_RAW_DATA_ROOT", str(PROJECT_ROOT / "New_Datasets" / "raw"))).expanduser().resolve()
 PACKET_DATA_DIR = RAW_DATA_ROOT / "packet"
@@ -690,7 +690,8 @@ class TrafficMonitorMerged(
         "wsgi": WSGIApplication
     }
     _EVENTS = [
-        EventRerouteHost
+        EventRerouteHost,
+        EventPacketInObserved
     ]
     def __init__(
         self,
@@ -991,11 +992,13 @@ class TrafficMonitorMerged(
             return {"success": not bool(self.dataset_error), "state": "idle",
                     "run_id": None, "generation": None,
                     "connected_switches": len(self._ready_datapaths_locked()),
+                    "forwarding_flows_reset": False,
                     "error": self.dataset_error, "closed": self.dataset_closed}
         return {
             "success": not bool(self.dataset_error or run["drain_errors"]),
             "state": run["state"], "run_id": run["run_id"],
             "generation": run["generation"],
+            "forwarding_flows_reset": run["forwarding_flows_reset"],
             "expected_switches": run["expected_switches"],
             "connected_switches": len(self._ready_datapaths_locked()),
             "switches": sorted(run["datapaths"]),
@@ -1009,6 +1012,15 @@ class TrafficMonitorMerged(
     def dataset_run_status(self):
         with self.dataset_lock:
             return self._dataset_status_locked()
+
+    def _reset_topology_forwarding_flows(self):
+        """Delete only forwarding rules tracked by TopologyMonitor."""
+        topology = self._get_topology_monitor()
+        clear_flows = getattr(topology, "clear_all_flows", None)
+        if not callable(clear_flows):
+            raise RuntimeError("TopologyMonitor.clear_all_flows is unavailable")
+        clear_flows()
+
     def start_dataset_run(self, run_id, generation, expected_switches=6):
         if (not self._valid_run_identity(run_id, generation)
                 or type(expected_switches) is not int or expected_switches < 1):
@@ -1050,6 +1062,18 @@ class TrafficMonitorMerged(
                 return 409, {"success": False, "message": message,
                              "connected_switches": len(datapaths),
                              "expected_switches": expected_switches}
+            topology_monitor = self._get_topology_monitor()
+            if topology_monitor is None:
+                return 503, {"success": False,
+                             "message": "TopologyMonitor unavailable for collection reset"}
+            try:
+                topology_monitor.reset_for_dataset_collection()
+                self._reset_topology_forwarding_flows()
+            except Exception as exc:
+                message = "Forwarding-flow reset failed before dataset run: %s" % exc
+                self.logger.exception(message)
+                return 503, {"success": False, "message": message,
+                             "forwarding_flows_reset": False}
             try:
                 packet_handle, flow_handle, packet_path, flow_path = self._open_run_csvs_locked(run_id)
                 with open(DATASET_RUN_LEDGER, "a", encoding="utf-8") as ledger:
@@ -1085,6 +1109,7 @@ class TrafficMonitorMerged(
             self.dataset_run = {
                 "run_id": run_id, "generation": generation, "state": "active",
                 "expected_switches": expected_switches, "datapaths": datapaths,
+                "forwarding_flows_reset": True,
                 "pending_final": {}, "final_done": set(), "last_sequence": {},
                 "drain_errors": {}, "issuing_final": False,
                 "started_at": time.time(), "stopped_at": None,
@@ -2191,6 +2216,7 @@ class TrafficMonitorMerged(
         datapath.send_msg(
             mod
         )
+    @handler.set_ev_cls(EventPacketInObserved)
     def packet_in_handler(
         self,
         ev

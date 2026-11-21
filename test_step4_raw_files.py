@@ -11,7 +11,7 @@ import uuid
 from contextlib import nullcontext
 from pathlib import Path
 
-SOURCE = Path("mininet/traffic_monitor_merged.py")
+SOURCE = Path("traffic_monitor_merged.py")
 source = SOURCE.read_text(encoding="utf-8")
 tree = ast.parse(source)
 constant_names = {
