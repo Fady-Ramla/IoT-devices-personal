@@ -617,6 +617,7 @@ class RuntimeNetworkController(ControllerBase):
         # evaluated even when runtime_app already owns the shared store.
         self.iot_store = getattr(runtime_app, "iot_store", None) or IoTTelemetryStore()
         self._traffic_counter_snapshot = getattr(runtime_app, "traffic_counter_snapshot", {})
+        self._lb_metrics_baseline = getattr(runtime_app, "lb_metrics_baseline", {})
 
     @staticmethod
     def _topology():
@@ -1069,6 +1070,8 @@ class RuntimeNetworkController(ControllerBase):
                               "algorithm": "round_robin", "backend_count": aggregate["total_backends"],
                               "frontends": [53] + list(LOAD_BALANCER_CONFIG.get("frontends", ())),
                               "requests_total": aggregate["requests_total"],
+                              "requests_active": aggregate["requests_active"],
+                              "inflight": aggregate["inflight"],
                               "last_backend": aggregate["last_backend"],
                               "backend_requests": aggregate["backend_requests"],
                               "healthy_backends": aggregate["healthy_backends"],
@@ -1094,6 +1097,8 @@ class RuntimeNetworkController(ControllerBase):
                               "healthy_backends": aggregate["healthy_backends"],
                               "failed_backends": aggregate["failed_backends"],
                               "total_backends": aggregate["total_backends"],
+                              "requests_active": aggregate["requests_active"],
+                              "inflight": aggregate["inflight"],
                               "failure_events_total": aggregate["failure_events_total"],
                               "active_failures": aggregate["active_failures"],
                               "recovery_events": aggregate["recovery_events"],
@@ -1169,9 +1174,8 @@ class RuntimeNetworkController(ControllerBase):
                 continue
         return result
 
-    @classmethod
-    def _aggregate_load_balancer_stats(cls):
-        snapshots = cls._load_balancer_stats_by_service()
+    def _aggregate_load_balancer_stats(self):
+        snapshots = self._load_balancer_stats_by_service()
         healthy, failed, backend_requests, backends = [], [], {}, []
         services = {}
         totals = {key: 0 for key in (
@@ -1182,13 +1186,22 @@ class RuntimeNetworkController(ControllerBase):
         last_check = None
         updated_at = None
         for service, stats in snapshots.items():
+            baseline = self._lb_metrics_baseline.get(service, {})
+            def session_value(key):
+                return max(0, int(stats.get(key, 0) or 0) - int(baseline.get(key, 0) or 0))
+
             for key in totals:
-                totals[key] += int(stats.get(key, 0) or 0)
+                if key == "requests_active" or key == "active_failures":
+                    totals[key] += int(stats.get(key, 0) or 0)
+                else:
+                    totals[key] += session_value(key)
             service_healthy = list(stats.get("healthy_backends", []))
             service_failed = list(stats.get("failed_backends", []))
             healthy.extend(service_healthy)
             failed.extend(service_failed)
-            backend_requests.update(stats.get("backend_requests", {}))
+            for backend, count in stats.get("backend_requests", {}).items():
+                baseline_count = baseline.get("backend_requests", {}).get(backend, 0)
+                backend_requests[backend] = max(0, int(count or 0) - int(baseline_count or 0))
             backends.extend(stats.get("backends", []))
             if stats.get("last_backend"):
                 last_backend = stats["last_backend"]
@@ -1202,15 +1215,18 @@ class RuntimeNetworkController(ControllerBase):
                 "backup": SERVICE_PAIRS.get(service, {}).get("backup"),
                 "healthy_backends": service_healthy,
                 "failed_backends": service_failed,
-                "requests_total": stats.get("requests_total", 0),
-                "backend_failovers": stats.get("backend_failovers", 0),
-                "failure_events_total": stats.get("failure_events_total", 0),
+                "requests_total": session_value("requests_total"),
+                "requests_active": stats.get("requests_active", 0),
+                "inflight": stats.get("requests_active", 0),
+                "backend_failovers": session_value("backend_failovers"),
+                "failure_events_total": session_value("failure_events_total"),
                 "active_failures": stats.get("active_failures", 0),
-                "recovery_events": stats.get("recovery_events", 0),
+                "recovery_events": session_value("recovery_events"),
                 "last_backend": stats.get("last_backend"),
                 "last_health_check": stats.get("last_health_check"),
             }
         totals["total_failover_requests"] = totals["backend_failovers"]
+        totals["inflight"] = totals["requests_active"]
         totals["total_backends"] = len(set(backends))
         totals["healthy_backends"] = sorted(set(healthy))
         totals["failed_backends"] = sorted(set(failed))
@@ -1432,6 +1448,7 @@ class RuntimeNetworkApi(app_manager.RyuApp):
         self.stats = StatsCache()
         self.iot_store = IoTTelemetryStore()
         self.paths = OrderedDict()
+        self.lb_metrics_baseline = RuntimeNetworkController._load_balancer_stats_by_service()
         # Do not assign to self.events: RyuApp owns that name for its event queue.
         self.network_events = []
         self.traffic_counter_snapshot = {}
