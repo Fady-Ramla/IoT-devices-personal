@@ -603,6 +603,24 @@ def start_project_https(net):
                shlex.quote(label), shlex.quote(server), label)
         )
 
+    for host_id, address, label in backends:
+        host = net.get(host_id)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            listening = host.cmd(
+                "ss -lntH '( sport = :443 )' 2>/dev/null | grep -F %s || true"
+                % shlex.quote("%s:443" % address)
+            )
+            if listening.strip():
+                break
+            time.sleep(0.25)
+        else:
+            log = host.cmd("tail -n 20 /tmp/%s.log 2>/dev/null" % label)
+            raise RuntimeError(
+                "HTTPS backend %s did not listen on %s:443: %s" %
+                (host_id, address, log.strip())
+            )
+
     lb_host = net.get("h38")
     lb_host.cmd("pkill -f '[l]oad_balancer.py --listen-port 443' >/dev/null 2>&1 || true")
     lb_host.cmd(
@@ -641,6 +659,25 @@ def start_project_dns(net):
             "python3 %s > /tmp/%s.log 2>&1 &"
             % (address, shlex.quote(server), label)
         )
+
+    for host_id, address, label in (("h1", "10.10.30.2", "dns_h1"),
+                                    ("h17", "10.10.30.17", "dns_h17")):
+        host = net.get(host_id)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            listening = host.cmd(
+                "ss -lunH '( sport = :53 )' 2>/dev/null | grep -F %s || true"
+                % shlex.quote("%s:53" % address)
+            )
+            if listening.strip():
+                break
+            time.sleep(0.25)
+        else:
+            log = host.cmd("tail -n 20 /tmp/%s.log 2>/dev/null" % label)
+            raise RuntimeError(
+                "DNS backend %s did not listen on %s:53: %s" %
+                (host_id, address, log.strip())
+            )
 
     lb_host = net.get("h38")
     lb_host.cmd("pkill -f '[d]ns_load_balancer.py' >/dev/null 2>&1 || true")
