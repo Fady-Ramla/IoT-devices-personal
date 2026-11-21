@@ -594,7 +594,6 @@ def start_project_https(net):
         web_root = "/tmp/%s-web" % label
         host.cmd(
             "mkdir -p %s && printf 'SecureIoT HTTPS backend: %s\\n' > %s/index.html; "
-            "pkill -f '[h]ttps_server.py' >/dev/null 2>&1 || true; "
             "env HTTPS_SERVER_IP=%s HTTPS_SERVER_PORT=443 HTTPS_CERT_FILE=%s "
             "HTTPS_KEY_FILE=%s HTTPS_WEB_ROOT=%s HTTPS_BACKEND_NAME=%s "
             "nohup python3 -u %s > /tmp/%s.log 2>&1 </dev/null &"
@@ -652,7 +651,6 @@ def start_project_dns(net):
     for host_id, address, label in (("h1", "10.10.30.2", "dns_h1"),
                                     ("h17", "10.10.30.17", "dns_h17")):
         host = net.get(host_id)
-        host.cmd("pkill -f '[d]ns_server.py' >/dev/null 2>&1 || true")
         host.cmd(
             "env DNS_SERVER_IP=%s DNS_PORT=53 DNS_INTERNAL_NAME=https.lab "
             "DNS_INTERNAL_IP=10.10.20.100 DNS_UPSTREAMS=1.1.1.1,8.8.8.8 "
