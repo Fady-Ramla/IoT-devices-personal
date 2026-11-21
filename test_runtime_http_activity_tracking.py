@@ -38,6 +38,8 @@ def test_http_flow_stats_refresh_activity():
             "ACTIVITY_TRACK_PRIORITY": 110,
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
+            "SERVICE_ACTIVITY_PORTS": frozenset({53, 22, 2222, 80, 443, 5000, 8080, 8081}),
             "time": SimpleNamespace(time=lambda: 125.0),
         },
     )
@@ -49,6 +51,8 @@ def test_http_flow_stats_refresh_activity():
             self.ping_traffic_last_seen = {}
             self.host_traffic_last_seen = {}
             self.web_traffic_last_seen = {}
+            self.ssh_traffic_last_seen = {}
+            self.service_traffic_last_seen = {}
             self.active_flows = {
                 "web": {
                     "src_ip": "10.10.20.21",
@@ -103,6 +107,7 @@ def test_http_packet_observation_marks_activity_immediately():
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
             "time": SimpleNamespace(time=lambda: 200.0),
         },
     )
@@ -147,6 +152,8 @@ def test_api_classifies_ping_web_and_ssh_services():
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
+            "SERVICE_ACTIVITY_PORTS": frozenset({53, 80, 443, 5000, 8080, 8081, 22, 2222}),
             "LOAD_BALANCER_PORTS": {443, 5000},
             "LOAD_BALANCER_IP": "10.10.20.100",
         },
@@ -168,7 +175,7 @@ def test_api_classifies_ping_web_and_ssh_services():
     assert classify({"ip_proto": 6, "tcp_dst_port": 80}) == "http"
     assert classify({"ip_proto": 6, "tcp_dst_port": 22}) == "ssh"
     assert classify({"ip_proto": 6, "tcp_src_port": 22}) == "ssh"
-    assert classify({"ip_proto": 17, "udp_dst_port": 53}) is None
+    assert classify({"ip_proto": 17, "udp_dst_port": 53}) == "dns"
 
 
 def test_hosts_endpoint_exposes_recent_load_balancer_activity():
@@ -179,6 +186,8 @@ def test_hosts_endpoint_exposes_recent_load_balancer_activity():
         namespace={
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
+            "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
+            "SERVICE_ACTIVITY_PORTS": frozenset({53, 80, 443, 5000, 8080, 8081, 22, 2222}),
             "LOAD_BALANCER_PORTS": {443, 5000},
             "LOAD_BALANCER_IP": "10.10.20.100",
         },

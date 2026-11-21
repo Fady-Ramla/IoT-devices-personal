@@ -37,6 +37,7 @@ def test_ssh_openflow_counter_delta_marks_hosts_and_switch():
             "HTTP_ACTIVITY_PORTS": frozenset({80, 443, 5000, 8080, 8081}),
             "SSH_ACTIVITY_PORT": 22,
             "SSH_ACTIVITY_PORTS": frozenset({22, 2222}),
+            "SERVICE_ACTIVITY_PORTS": frozenset({53, 22, 2222, 80, 443, 5000, 8080, 8081}),
             "time": SimpleNamespace(time=lambda: 300.0),
         },
     )
@@ -48,6 +49,7 @@ def test_ssh_openflow_counter_delta_marks_hosts_and_switch():
         host_traffic_last_seen = {}
         web_traffic_last_seen = {}
         ssh_traffic_last_seen = {}
+        service_traffic_last_seen = {}
         active_flows = {
             "flow": {
                 "src_ip": "10.10.40.36", "dst_ip": "10.10.20.4",
