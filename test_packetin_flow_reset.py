@@ -4,7 +4,7 @@ import ast
 from pathlib import Path
 
 
-SOURCE = Path("mininet/traffic_monitor_merged.py")
+SOURCE = Path("traffic_monitor_merged.py")
 tree = ast.parse(SOURCE.read_text(encoding="utf-8"))
 monitor = next(
     node for node in tree.body

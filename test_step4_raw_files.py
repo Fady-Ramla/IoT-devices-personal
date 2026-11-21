@@ -11,7 +11,7 @@ import uuid
 from contextlib import nullcontext
 from pathlib import Path
 
-SOURCE = Path("mininet/traffic_monitor_merged.py")
+SOURCE = Path("traffic_monitor_merged.py")
 source = SOURCE.read_text(encoding="utf-8")
 tree = ast.parse(source)
 constant_names = {
@@ -45,6 +45,7 @@ module = ast.fix_missing_locations(ast.Module(body=selected + [harness_class], t
 namespace = {
     "Path": Path, "os": os, "re": re, "uuid": uuid, "csv": csv,
     "json": json, "threading": threading, "__file__": str(SOURCE.resolve()),
+    "build_ai_flow_payload": lambda record: record,
 }
 exec(compile(module, "<step4-raw-test>", "exec"), namespace)
 Harness = namespace["Harness"]
@@ -58,6 +59,8 @@ def make_monitor():
     obj.packet_file = obj.flow_file = None
     obj.packet_writer = obj.flow_writer = None
     obj.packet_rows_since_flush = obj.flow_rows_since_flush = 0
+    obj.packet_flow_mac_observations = {}
+    obj.ai_flow_poster = type("Poster", (), {"enqueue": lambda self, payload: True})()
     obj.csv_lock = threading.Lock()
     obj.dataset_lock = nullcontext()
     obj.logger = type("Logger", (), {

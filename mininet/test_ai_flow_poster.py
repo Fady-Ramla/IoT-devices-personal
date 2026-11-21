@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-SOURCE = Path(__file__).with_name("traffic_monitor_merged.py")
+SOURCE = Path(__file__).resolve().parents[1] / "traffic_monitor_merged.py"
 FLOW_HEADER = [
     "run_id", "observation_id", "timestamp", "switch_dpid", "src_ip", "dst_ip",
     "src_port", "dst_port", "protocol", "priority", "packet_count", "byte_count",
@@ -24,7 +24,8 @@ FLOW_HEADER = [
 ]
 FEATURES = FLOW_HEADER[6:28]
 CONTEXT = ("run_id", "observation_id", "timestamp", "switch_dpid",
-           "src_ip", "dst_ip", "src_mac", "dst_mac")
+           "src_ip", "dst_ip", "src_mac", "dst_mac",
+           "mac_observations", "mac_observations_truncated")
 
 
 def load_subject():
@@ -146,12 +147,20 @@ class AIFlowPosterTest(unittest.TestCase):
     def test_payload_has_22_features_and_trace_context(self):
         _, build_payload = load_subject()
         record = {name: "sample" for name in FLOW_HEADER}
+        record["mac_observations"] = [{
+            "switch_dpid": 4,
+            "src_mac": "aa:bb:cc:dd:ee:01",
+            "dst_mac": "02:10:00:00:00:01",
+        }]
+        record["mac_observations_truncated"] = False
         payload = build_payload(record)
         self.assertEqual(set(payload), {"features", "context"})
         self.assertEqual(list(payload["features"]), FEATURES)
         self.assertEqual(len(payload["features"]), 22)
         self.assertEqual(set(payload["context"]), set(CONTEXT))
         self.assertEqual(payload["context"]["src_mac"], "sample")
+        self.assertEqual(len(payload["context"]["mac_observations"]), 1)
+        self.assertFalse(payload["context"]["mac_observations_truncated"])
 
     def test_missing_ambiguous_ports_match_dataset_zero_encoding(self):
         _, build_payload = load_subject()
@@ -171,7 +180,8 @@ class AIFlowPosterTest(unittest.TestCase):
     def test_flow_writer_posts_packetin_windows_only_after_csv_write(self):
         Harness = load_flow_writer()
         subject = Harness()
-        run = {"run_id": "run-1", "state": "active", "flow_observation_sequence": 0}
+        run = {"run_id": "run-1", "generation": 1, "state": "active",
+               "flow_observation_sequence": 0}
         subject.dataset_run = run
         subject.dataset_error = None
         subject.dataset_closed = False
@@ -182,8 +192,14 @@ class AIFlowPosterTest(unittest.TestCase):
         subject.flow_file = None
         subject.flow_rows_since_flush = 0
         subject.ai_flow_poster = CapturingPoster()
+        subject.packet_flow_mac_observations = {
+            ("run-1", 1, "10.10.10.5", "10.10.20.2", "tcp", "51514", "5000"):
+                {"items": [{"switch_dpid": 4, "src_mac": "aa:bb:cc:dd:ee:01",
+                            "dst_mac": "02:10:00:00:00:01"}], "truncated": False}
+        }
         row = [0] * (len(FLOW_HEADER) - 2)
         row[0:6] = [123.5, 4, "10.10.10.5", "10.10.20.2", 51514, 5000]
+        row[6] = "tcp"
         row[25] = "packetin_window"
         row[26:28] = ["aa:bb:cc:dd:ee:01", "02:10:00:00:00:01"]
         self.assertTrue(subject._write_flow_feature_locked(row, run))
@@ -191,6 +207,9 @@ class AIFlowPosterTest(unittest.TestCase):
         self.assertEqual(len(subject.ai_flow_poster.payloads), 1)
         self.assertEqual(subject.ai_flow_poster.payloads[0]["context"]["observation_id"],
                          "run-1_flow_00000001")
+        self.assertEqual(subject.ai_flow_poster.payloads[0]["context"]["mac_observations"],
+                         [{"switch_dpid": 4, "src_mac": "aa:bb:cc:dd:ee:01",
+                           "dst_mac": "02:10:00:00:00:01"}])
         row[25] = "switch_flow_stats"
         self.assertTrue(subject._write_flow_feature_locked(row, run))
         self.assertEqual(len(subject.flow_writer.rows), 2)

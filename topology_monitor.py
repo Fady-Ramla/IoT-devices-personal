@@ -108,6 +108,7 @@ HTTP_ACTIVITY_PORTS = frozenset(
         "SECUREIOT_HTTP_ACTIVITY_PORTS", "80,443,5000,8080,8081"
     ).split(",") if value.strip()
 )
+DNS_ACTIVITY_PORTS = frozenset({53})
 SSH_ACTIVITY_PORT = 22
 # SSH clients use the dedicated h38 TCP frontend; only that frontend may open
 # TCP/22 connections to the primary/standby SSH servers.
@@ -116,6 +117,9 @@ SSH_FRONTEND_IP = "10.10.20.100"
 SSH_FRONTEND_PORT = 2222
 SSH_BACKEND_SOURCE_IP = SSH_FRONTEND_IP
 SSH_ACTIVITY_PORTS = frozenset({SSH_ACTIVITY_PORT, SSH_FRONTEND_PORT})
+SERVICE_ACTIVITY_PORTS = frozenset(
+    HTTP_ACTIVITY_PORTS | SSH_ACTIVITY_PORTS | DNS_ACTIVITY_PORTS
+)
 SSH_MANAGEMENT_VLAN = 40
 SSH_MANAGEMENT_HOSTS = {
     "h36": "10.10.40.36",
@@ -280,6 +284,7 @@ class TopologyMonitor(app_manager.RyuApp):
         self.host_traffic_last_seen = {}
         self.web_traffic_last_seen = {}
         self.ssh_traffic_last_seen = {}
+        self.service_traffic_last_seen = {}
         self.flow_stats_previous = {}
 
         # Topology state.
@@ -794,16 +799,22 @@ class TopologyMonitor(app_manager.RyuApp):
                 icmp_type = match.get("icmpv4_type")
                 tcp_src = match.get("tcp_src")
                 tcp_dst = match.get("tcp_dst")
+                udp_src = match.get("udp_src")
+                udp_dst = match.get("udp_dst")
             except (AttributeError, TypeError, ValueError):
                 continue
             is_ping = ip_proto == 1 and str(icmp_type) == "8"
             try:
                 tcp_ports = {int(port) for port in (tcp_src, tcp_dst) if port is not None}
+                udp_ports = {int(port) for port in (udp_src, udp_dst) if port is not None}
             except (TypeError, ValueError):
                 tcp_ports = set()
+                udp_ports = set()
             is_web = ip_proto == 6 and bool(tcp_ports & HTTP_ACTIVITY_PORTS)
             is_ssh = ip_proto == 6 and bool(tcp_ports & SSH_ACTIVITY_PORTS)
-            if not (is_ping or is_web or is_ssh):
+            is_service = ((ip_proto == 6 and bool(tcp_ports & SERVICE_ACTIVITY_PORTS))
+                          or (ip_proto == 17 and bool(udp_ports & SERVICE_ACTIVITY_PORTS)))
+            if not (is_ping or is_service):
                 continue
             key = (
                 dpid,
@@ -831,6 +842,8 @@ class TopologyMonitor(app_manager.RyuApp):
                             self.web_traffic_last_seen[host_ip] = now
                         if is_ssh:
                             self.ssh_traffic_last_seen[host_ip] = now
+                        if is_service:
+                            self.service_traffic_last_seen[host_ip] = now
                 for flow in self.active_flows.values():
                     if not isinstance(flow, dict):
                         continue
@@ -2382,6 +2395,9 @@ class TopologyMonitor(app_manager.RyuApp):
 
         tcp_src_port = int(tcp_pkt.src_port) if tcp_pkt is not None else None
         tcp_dst_port = int(tcp_pkt.dst_port) if tcp_pkt is not None else None
+        udp_pkt = pkt.get_protocol(udp.udp)
+        udp_src_port = int(udp_pkt.src_port) if udp_pkt is not None else None
+        udp_dst_port = int(udp_pkt.dst_port) if udp_pkt is not None else None
         tracked_ssh_port = next(
             (port for port in (tcp_dst_port, tcp_src_port)
              if port in SSH_ACTIVITY_PORTS),
@@ -2409,6 +2425,30 @@ class TopologyMonitor(app_manager.RyuApp):
                     track_key=("activity-http", int(vlan_id), src_mac,
                                dst_mac, ip_pkt.src, ip_pkt.dst,
                                port_field, tracked_web_port),
+                )
+
+        tracked_dns_port = next(
+            (port for port in (udp_dst_port, udp_src_port)
+             if port in DNS_ACTIVITY_PORTS),
+            None,
+        )
+        if tracked_dns_port is not None and path:
+            destination_location = gateway_loc or dst_loc
+            if destination_location is not None:
+                port_field = "udp_dst" if udp_dst_port == tracked_dns_port else "udp_src"
+                self._install_direction(
+                    path, src_mac, dst_mac, destination_location[1], vlan_id,
+                    extra_match={
+                        "eth_type": 0x0800,
+                        "ip_proto": 17,
+                        "ipv4_src": ip_pkt.src,
+                        "ipv4_dst": ip_pkt.dst,
+                        port_field: tracked_dns_port,
+                    },
+                    priority=ACTIVITY_TRACK_PRIORITY,
+                    track_key=("activity-dns", int(vlan_id), src_mac,
+                               dst_mac, ip_pkt.src, ip_pkt.dst,
+                               port_field, tracked_dns_port),
                 )
 
         if tracked_ssh_port is not None and path:
@@ -2449,6 +2489,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 "ip_proto": int(ip_pkt.proto),
                 "tcp_src_port": tcp_src_port,
                 "tcp_dst_port": tcp_dst_port,
+                "udp_src_port": udp_src_port,
+                "udp_dst_port": udp_dst_port,
                 "icmp_type": int(icmp_pkt.type) if icmp_pkt is not None else None,
                 "path": path,
                 "path_type": path_type,
@@ -3603,6 +3645,7 @@ class TopologyMonitor(app_manager.RyuApp):
         self.host_traffic_last_seen.clear()
         self.web_traffic_last_seen.clear()
         self.ssh_traffic_last_seen.clear()
+        self.service_traffic_last_seen.clear()
         self.flow_stats_previous.clear()
         self.logger.info("Reset tracked forwarding state for dataset collection")
 

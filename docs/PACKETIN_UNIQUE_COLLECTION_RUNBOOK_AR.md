@@ -15,7 +15,7 @@
 
 ## مصدر البيانات
 
-شغّل Ryu باستخدام `mininet/traffic_monitor_merged.py`. يجب أن تكون صفوف Flow الناتجة التي تدخل الـdataset النهائية موسومة:
+شغّل Ryu باستخدام `traffic_monitor_merged.py` من جذر المشروع. نسخة `mininet/traffic_monitor_merged.py` حُذفت لتوحيد مصدر التشغيل. يجب أن تكون صفوف Flow الناتجة التي تدخل الـdataset النهائية موسومة:
 
 ```text
 source=packetin_window
@@ -143,7 +143,7 @@ Test:       15%
 
 ## ما يرسل إلى AI
 
-الـAI يستقبل features فقط:
+يرسل collector JSON فيه `features` (22 حقلًا من صف `packetin_window`) و`context` منفصل للتتبع. قد يتجاهل موديل التصنيف بعض الحقول الزائدة عن مدخلاته المطلوبة، لكن collector يرسل الصف كاملًا.
 
 ```text
 protocol
@@ -170,17 +170,17 @@ icmp_fraction
 source
 ```
 
-ولا يُرسل إليه:
+يحتوي `context` على بيانات التتبع، ومنها:
 
 ```text
-label
 run_id
 observation_id
 timestamp
-src_ip
-dst_ip
 switch_dpid
-MAC addresses
+src_ip / dst_ip
+src_mac / dst_mac للطرفين عند توافر mapping موثوق
+mac_observations: قائمة فريدة محدودة بحد أقصى 32 مشاهدة (switch_dpid, src_mac, dst_mac)
+mac_observations_truncated: true عند تجاوز الحد
 ```
 
 الـlabel يستخدم offline فقط للتدريب والتقييم.

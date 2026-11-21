@@ -1,6 +1,6 @@
 # Step 4 فقط: ملفات raw مستقلة لكل run
 
-تحتوي هذه الحزمة على تعديل `mininet/traffic_monitor_merged.py` واختبار غير شبكي `test_step4_raw_files.py`. لم يتغير `build_dataset.py`؛ ذلك ضمن Step 5.
+تحتوي هذه الحزمة على تعديل `traffic_monitor_merged.py` في جذر المشروع واختبار غير شبكي `test_step4_raw_files.py`. لم يتغير `build_dataset.py`؛ ذلك ضمن Step 5.
 
 الإخراج الافتراضي:
 
@@ -24,7 +24,7 @@ cd ~/IoT-devices
 tar -xzf ~/Downloads/person2_step4_per_run_csv.tar.gz -C ~/IoT-devices
 ```
 
-سيستبدل الأرشيف `mininet/traffic_monitor_merged.py` فقط، ويضيف `test_step4_raw_files.py` وملف التعليمات هذا.
+سيستبدل الأرشيف `traffic_monitor_merged.py` في جذر المشروع فقط، ويضيف `test_step4_raw_files.py` وملف التعليمات هذا.
 
 ## اختبار قبل Mininet
 
@@ -34,7 +34,7 @@ tar -xzf ~/Downloads/person2_step4_per_run_csv.tar.gz -C ~/IoT-devices
 cd ~/IoT-devices
 python3 - <<'PY'
 from pathlib import Path
-path = Path("mininet/traffic_monitor_merged.py")
+path = Path("traffic_monitor_merged.py")
 compile(path.read_text(encoding="utf-8"), str(path), "exec")
 print("Syntax OK:", path)
 PY

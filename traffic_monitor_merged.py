@@ -63,8 +63,11 @@ import hmac
 import ipaddress
 import os
 from pathlib import Path
+import queue
 import threading
 import time
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 
 from ryu.base import app_manager
@@ -186,6 +189,98 @@ FLOW_HEADER = [
     "unique_dst_ports", "failed_connection_count", "tcp_fraction", "udp_fraction",
     "icmp_fraction", "source", "src_mac", "dst_mac"
 ]
+MAX_MAC_OBSERVATIONS_PER_FLOW = 32
+MAX_MAC_OBSERVATION_FLOWS = 1024
+
+# Optional asynchronous AI delivery. No HTTP requests run in Ryu handlers.
+AI_API_URL = os.environ.get("SECUREIOT_AI_API_URL", "").strip()
+AI_API_TOKEN = os.environ.get("SECUREIOT_AI_API_TOKEN", "").strip()
+try:
+    AI_POST_TIMEOUT = max(0.2, min(float(os.environ.get("SECUREIOT_AI_POST_TIMEOUT", "2")), 10.0))
+except (TypeError, ValueError):
+    AI_POST_TIMEOUT = 2.0
+try:
+    AI_QUEUE_SIZE = max(1, int(os.environ.get("SECUREIOT_AI_QUEUE_SIZE", "1000")))
+except (TypeError, ValueError):
+    AI_QUEUE_SIZE = 1000
+AI_FEATURE_FIELDS = FLOW_HEADER[6:28]
+AI_CONTEXT_FIELDS = ("run_id", "observation_id", "timestamp", "switch_dpid",
+                     "src_ip", "dst_ip", "src_mac", "dst_mac",
+                     "mac_observations", "mac_observations_truncated")
+
+
+def build_ai_flow_payload(record):
+    """Split one FLOW_HEADER-shaped record into model features and trace context."""
+    features = {name: record.get(name, "") for name in AI_FEATURE_FIELDS}
+    for field in ("src_port", "dst_port"):
+        value = features.get(field)
+        try:
+            text = "" if value is None else str(value).strip()
+            port = 0 if text.lower() in ("", "none", "nan", "null", "*") else int(float(text))
+            features[field] = port if 0 <= port <= 65535 else 0
+        except (TypeError, ValueError, OverflowError):
+            features[field] = 0
+    context = {name: record.get(name, "") for name in AI_CONTEXT_FIELDS}
+    context["mac_observations"] = record.get("mac_observations", [])
+    context["mac_observations_truncated"] = bool(record.get("mac_observations_truncated", False))
+    return {"features": features, "context": context}
+
+
+class AIFlowPoster:
+    """Bounded, asynchronous JSON POST client; network failures never block Ryu."""
+    def __init__(self, logger, endpoint=AI_API_URL, token=AI_API_TOKEN,
+                 timeout=AI_POST_TIMEOUT, queue_size=AI_QUEUE_SIZE):
+        self.logger = logger
+        self.endpoint = endpoint
+        self.token = token
+        self.timeout = timeout
+        self.pending = queue.Queue(maxsize=queue_size)
+        if self.endpoint:
+            self.worker = threading.Thread(target=self._run, name="ai-flow-poster", daemon=True)
+            self.worker.start()
+            self.logger.info("AI flow POST enabled; endpoint configured (URL hidden)")
+        else:
+            self.worker = None
+            self.logger.info("AI flow POST disabled; SECUREIOT_AI_API_URL is not set")
+
+    def enqueue(self, payload):
+        if not self.endpoint:
+            return False
+        try:
+            self.pending.put_nowait(payload)
+            return True
+        except queue.Full:
+            self.logger.warning("AI flow POST queue is full; dropping observation")
+            return False
+
+    def _run(self):
+        while True:
+            payload = self.pending.get()
+            try:
+                body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                headers = {"Accept": "application/json", "Content-Type": "application/json",
+                           "User-Agent": "SecureIoT-Ryu/1.0"}
+                if self.token:
+                    headers["Authorization"] = "Bearer " + self.token
+                request = Request(self.endpoint, data=body, headers=headers, method="POST")
+                with urlopen(request, timeout=self.timeout) as response:
+                    status = getattr(response, "status", None)
+                    if status is None:
+                        status = response.getcode()
+                    status = int(status if status is not None else 200)
+                    response.read()
+                if 200 <= status < 300:
+                    self.logger.info("AI flow POST accepted observation_id=%s HTTP %d",
+                                     payload.get("context", {}).get("observation_id", ""), status)
+                else:
+                    self.logger.warning("AI flow POST returned HTTP %d", status)
+            except (OSError, ValueError, URLError) as exc:
+                self.logger.warning("AI flow POST failed: %s", exc)
+            except Exception:
+                self.logger.exception("Unexpected AI flow POST worker error")
+            finally:
+                self.pending.task_done()
+
 PACKET_FLOW_WINDOW = 10.0
 
 # -------------------------------------------------------------
@@ -762,6 +857,7 @@ class TrafficMonitorMerged(
         # PacketIn-derived flow windows used when FlowStats contains only
         # MAC forwarding matches. This is telemetry state, not forwarding.
         self.packet_flow_windows = {}
+        self.packet_flow_mac_observations = {}
 
         # -----------------------------------------------------
         # Action history
@@ -811,6 +907,7 @@ class TrafficMonitorMerged(
         self.flow_requests = {}
         self.flow_request_sequence = 0
         self.flow_used_xids = {}
+        self.ai_flow_poster = AIFlowPoster(self.logger)
 
         # -----------------------------------------------------
         # WSGI registration
@@ -1009,6 +1106,13 @@ class TrafficMonitorMerged(
     def dataset_run_status(self):
         with self.dataset_lock:
             return self._dataset_status_locked()
+    def _reset_topology_forwarding_flows(self):
+        """Delete forwarding rules owned and tracked by TopologyMonitor."""
+        topology = self._get_topology_monitor()
+        clear_flows = getattr(topology, "clear_all_flows", None)
+        if not callable(clear_flows):
+            raise RuntimeError("TopologyMonitor.clear_all_flows is unavailable")
+        clear_flows()
     def start_dataset_run(self, run_id, generation, expected_switches=6):
         if (not self._valid_run_identity(run_id, generation)
                 or type(expected_switches) is not int or expected_switches < 1):
@@ -1050,6 +1154,17 @@ class TrafficMonitorMerged(
                 return 409, {"success": False, "message": message,
                              "connected_switches": len(datapaths),
                              "expected_switches": expected_switches}
+            topology_monitor = self._get_topology_monitor()
+            if topology_monitor is None:
+                return 503, {"success": False,
+                             "message": "TopologyMonitor unavailable for collection reset"}
+            try:
+                topology_monitor.reset_for_dataset_collection()
+                self._reset_topology_forwarding_flows()
+            except Exception as exc:
+                message = "Forwarding reset failed before dataset run: %s" % exc
+                self.logger.exception(message)
+                return 503, {"success": False, "message": message}
             try:
                 packet_handle, flow_handle, packet_path, flow_path = self._open_run_csvs_locked(run_id)
                 with open(DATASET_RUN_LEDGER, "a", encoding="utf-8") as ledger:
@@ -1078,6 +1193,7 @@ class TrafficMonitorMerged(
             self.flow_baselines.clear()
             self.flow_last_seen.clear()
             self.packet_flow_windows.clear()
+            self.packet_flow_mac_observations.clear()
             self.flow_requests.clear()  # unknown/old replies are dropped, never relabelled
             self.packet_file, self.flow_file = packet_handle, flow_handle
             self.packet_writer, self.flow_writer = csv.writer(packet_handle), csv.writer(flow_handle)
@@ -1546,6 +1662,14 @@ class TrafficMonitorMerged(
             if self.flow_rows_since_flush >= CSV_FLUSH_EVERY:
                 self.flow_file.flush()
                 self.flow_rows_since_flush = 0
+        if row[25] == "packetin_window":
+            record = dict(zip(FLOW_HEADER, [run["run_id"], observation_id] + list(row)))
+            mac_key = (run["run_id"], run["generation"], str(row[2]), str(row[3]),
+                       str(row[6]), str(row[4] or ""), str(row[5] or ""))
+            tracker = self.packet_flow_mac_observations.get(mac_key, {})
+            record["mac_observations"] = list(tracker.get("items", []))
+            record["mac_observations_truncated"] = bool(tracker.get("truncated", False))
+            self.ai_flow_poster.enqueue(build_ai_flow_payload(record))
         return True
     def _get_topology_monitor(self):
 
@@ -2408,7 +2532,8 @@ class TrafficMonitorMerged(
         if packet_run is not None and ipv4_pkt is not None:
             self._update_packet_flow_window(
                 packet_timestamp, packet_run, dpid, src_ip, dst_ip,
-                src_port, dst_port, protocol, packet_length, tcp_flags
+                src_port, dst_port, protocol, packet_length, tcp_flags,
+                src_mac, dst_mac
             )
 
         # -----------------------------------------------------
@@ -2512,7 +2637,7 @@ class TrafficMonitorMerged(
             return False
     def _update_packet_flow_window(self, now, run, dpid, src_ip, dst_ip,
                                    src_port, dst_port, protocol,
-                                   packet_length, tcp_flags):
+                                   packet_length, tcp_flags, src_mac="", dst_mac=""):
         """Aggregate observed IPv4 packets into run-scoped flow windows."""
         try:
             protocol = int(protocol)
@@ -2524,7 +2649,27 @@ class TrafficMonitorMerged(
                 or protocol not in (1, 6, 17)):
             return
         identity = (run["run_id"], run["generation"])
-        key = identity + (dpid, str(src_addr), str(dst_addr), protocol)
+        src_port_key = "" if src_port in (None, "") else str(src_port)
+        dst_port_key = "" if dst_port in (None, "") else str(dst_port)
+        protocol_name = {6: "tcp", 17: "udp", 1: "icmp"}.get(protocol, str(protocol))
+        mac_key = (run["run_id"], run["generation"], str(src_addr), str(dst_addr),
+                   protocol_name, src_port_key, dst_port_key)
+        tracker = self.packet_flow_mac_observations.get(mac_key)
+        if tracker is None:
+            if len(self.packet_flow_mac_observations) >= MAX_MAC_OBSERVATION_FLOWS:
+                self.packet_flow_mac_observations.pop(next(iter(self.packet_flow_mac_observations)))
+            tracker = {"items": [], "seen": set(), "truncated": False}
+            self.packet_flow_mac_observations[mac_key] = tracker
+        observed = (int(dpid), str(src_mac or "").lower(), str(dst_mac or "").lower())
+        if observed not in tracker["seen"]:
+            if len(tracker["items"]) < MAX_MAC_OBSERVATIONS_PER_FLOW:
+                tracker["seen"].add(observed)
+                tracker["items"].append({"switch_dpid": observed[0],
+                                          "src_mac": observed[1], "dst_mac": observed[2]})
+            else:
+                tracker["truncated"] = True
+        key = identity + (dpid, str(src_addr), str(dst_addr), protocol,
+                          src_port_key, dst_port_key)
         state = self.packet_flow_windows.get(key)
         if state is None or now - state["start_time"] >= PACKET_FLOW_WINDOW:
             if state is not None:
@@ -2548,7 +2693,7 @@ class TrafficMonitorMerged(
     def _write_packet_flow_window(self, key, state, lock_held=False):
         if not state or state["packet_count"] <= 0:
             return False
-        _, _, dpid, src_ip, dst_ip, protocol = key
+        _, _, dpid, src_ip, dst_ip, protocol, src_port_key, dst_port_key = key
         run = state["run"]
         if self.dataset_run is not run or run["state"] not in ("active", "draining"):
             return False
@@ -2557,6 +2702,10 @@ class TrafficMonitorMerged(
         packets, byte_count = state["packet_count"], state["byte_count"]
         syn, ack, rst = state["syn_count"], state["ack_count"], state["rst_count"]
         name = {6: "tcp", 17: "udp", 1: "icmp"}.get(protocol, str(protocol))
+        topology = self._get_topology_monitor()
+        learned = getattr(topology, "ip_to_mac", {}) if topology is not None else {}
+        src_mac = str(learned.get(src_ip, "") or "").lower()
+        dst_mac = str(learned.get(dst_ip, "") or "").lower()
         row = [end_time, dpid, src_ip, dst_ip,
                next(iter(state["src_ports"])) if len(state["src_ports"]) == 1 else "",
                next(iter(state["dst_ports"])) if len(state["dst_ports"]) == 1 else "",
@@ -2564,7 +2713,7 @@ class TrafficMonitorMerged(
                duration, byte_count / max(packets, 1), syn, ack, rst, state["fin_count"],
                syn / max(ack, 1), rst / max(packets, 1), len(state["dst_ports"]),
                max(syn - ack, 0), float(protocol == 6), float(protocol == 17),
-               float(protocol == 1), "packetin_window", "", ""]
+               float(protocol == 1), "packetin_window", src_mac, dst_mac]
         if lock_held:
             return self._write_flow_feature_locked(row, run)
         return self._write_flow_feature(row, run)

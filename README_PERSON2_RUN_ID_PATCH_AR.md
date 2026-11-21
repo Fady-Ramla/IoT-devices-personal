@@ -4,7 +4,7 @@
 
 تحتوي الحزمة على أربعة ملفات لتسجيل دورة كل تجربة وربط الصفوف بها:
 
-- `mininet/traffic_monitor_merged.py`: يضيف عمود `run_id` إلى آخر الأعمدة. ويضيف إلى `traffic_features.csv` الحقلين `src_mac` و`dst_mac`. إذا كانت قاعدة OpenFlow MAC-only، يملأ IP من mapping تعلّمه المراقب من IP/MAC الفعليين في الحزم؛ وإذا لم يتعلم mapping يترك IP فارغًا بدل اختراعه. لا يغيّر قواعد التوجيه. الجهاز يمكن أن يكون لديه IP وMAC معًا، لكن قاعدة السويتش الحالية تطابق MAC فقط. يرفض الترويسات القديمة بدل خلط البيانات، ويتأكد من السويتشات الستة والتصريف النهائي.
+- `traffic_monitor_merged.py` (جذر المشروع): مصدر المراقبة الموحد بعد نقل التكامل إليه وحذف النسخة القديمة داخل `mininet/`.
 - `mininet/attack_manager.py`: ينشئ UUID واحدًا، ويسجّل حالات `planned → running → completed/failed` في manifest، ولا يبدأ أمر الحركة إذا لم يحصل على إقرار مطابق من Ryu. يشغّل تجربة واحدة في كل مرة، ويوقف الدفعة عند الفشل.
 - `mininet/Real_network_topology.py`: يربط أوامر `attack` و`normal` بدورة التسجيل والتصريف نفسها. يزيل `--flood` ويقيّد SYN إلى 10–200 حزمة/ثانية و5–20 ثانية. يحتفظ بمدد Normal الموجودة في الخطة حتى 45 ثانية، ويختار اسم الخدمة الاحتياطية الصحيح للمضيف `h8`. أوامر CLI ترجع إلى `mininet>` بعد الانتهاء بدل إغلاق الشبكة، مع بقاء دفعة الجمع متوقفة عند أي فشل.
 - `New_Datasets/scripts/register_run.py`: تسجيل/تحديث manifest بقفل وكتابة ذرية؛ manifest الصحيح هو `New_Datasets/experiments/run_manifest.csv`. ملف manifest الناتج قابل للقراءة من المستخدم (0644) حتى عند تشغيل Mininet بصلاحيات root؛ ملف الاسترداد المؤقت يبقى خاصًا (0600).
@@ -26,7 +26,7 @@ cd ~/IoT-devices
 STAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP="$HOME/person2-before-runid-$STAMP.tar.gz"
 tar -czf "$BACKUP" \
-  mininet/traffic_monitor_merged.py \
+  traffic_monitor_merged.py \
   mininet/attack_manager.py \
   mininet/Real_network_topology.py \
   New_Datasets/scripts/register_run.py
@@ -41,7 +41,7 @@ cd ~/IoT-devices
 python3 - <<'PY'
 from pathlib import Path
 files = [
-    Path('mininet/traffic_monitor_merged.py'),
+    Path('traffic_monitor_merged.py'),
     Path('mininet/attack_manager.py'),
     Path('mininet/Real_network_topology.py'),
     Path('New_Datasets/scripts/register_run.py'),
@@ -64,7 +64,7 @@ echo "مجلد الاختبار الجديد: $PILOT_DIR"
 cd "$PILOT_DIR"
 PYTHONPATH="$PROJECT:$PROJECT/mininet${PYTHONPATH:+:$PYTHONPATH}" \
   ryu-manager "$PROJECT/topology_monitor.py" \
-              "$PROJECT/mininet/traffic_monitor_merged.py"
+              "$PROJECT/traffic_monitor_merged.py"
 ```
 
 اترك Ryu يعمل قليلًا ثم أوقفه بـ`Ctrl+C`. هذا الاختبار لا يرسل حركة؛ نتوقع ظهور الملفات بالترويسات الجديدة فقط. في طرفية ثانية، استبدل المسار أدناه بالقيمة التي طبعها الأمر السابق:
