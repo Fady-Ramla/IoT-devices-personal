@@ -1172,7 +1172,6 @@ class RuntimeNetworkController(ControllerBase):
                               "frontends": [53] + list(LOAD_BALANCER_CONFIG.get("frontends", ())),
                               "requests_total": aggregate["requests_total"],
                               "requests_active": aggregate["requests_active"],
-                              "inflight": aggregate["inflight"],
                               "last_backend": aggregate["last_backend"],
                               "backend_requests": aggregate["backend_requests"],
                               "healthy_backends": aggregate["healthy_backends"],
@@ -1199,7 +1198,6 @@ class RuntimeNetworkController(ControllerBase):
                               "failed_backends": aggregate["failed_backends"],
                               "total_backends": aggregate["total_backends"],
                               "requests_active": aggregate["requests_active"],
-                              "inflight": aggregate["inflight"],
                               "failure_events_total": aggregate["failure_events_total"],
                               "active_failures": aggregate["active_failures"],
                               "recovery_events": aggregate["recovery_events"],
@@ -1318,7 +1316,6 @@ class RuntimeNetworkController(ControllerBase):
                 "failed_backends": service_failed,
                 "requests_total": session_value("requests_total"),
                 "requests_active": stats.get("requests_active", 0),
-                "inflight": stats.get("requests_active", 0),
                 "backend_failovers": session_value("backend_failovers"),
                 "failure_events_total": session_value("failure_events_total"),
                 "active_failures": stats.get("active_failures", 0),
@@ -1327,7 +1324,6 @@ class RuntimeNetworkController(ControllerBase):
                 "last_health_check": stats.get("last_health_check"),
             }
         totals["total_failover_requests"] = totals["backend_failovers"]
-        totals["inflight"] = totals["requests_active"]
         totals["total_backends"] = len(set(backends))
         totals["healthy_backends"] = sorted(set(healthy))
         totals["failed_backends"] = sorted(set(failed))
