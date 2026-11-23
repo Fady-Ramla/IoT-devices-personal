@@ -566,6 +566,9 @@ def test_load_balancer_api_exposes_ssh_frontend_separately_from_aggregates():
     assert response["ssh_frontend"]["listen_host"] == "10.10.20.100"
     assert response["ssh_frontend"]["listen_port"] == 2222
     assert response["ssh_frontend"]["backend_failovers"] == 1
+    assert response["ssh_frontend"]["backends"] == [
+        "10.10.20.4:22", "10.10.20.20:22",
+    ]
 
 
 def test_ssh_frontend_restart_pattern_matches_listener_command():

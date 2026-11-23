@@ -1349,6 +1349,7 @@ class RuntimeNetworkController(ControllerBase):
             "strategy": ssh_stats.get("strategy", "primary-backup"),
             "primary": ssh_pair.get("primary"),
             "standby": ssh_pair.get("backup"),
+            "backends": list(ssh_stats.get("backends", [])),
         })
         totals["ssh_frontend"] = ssh_frontend
         return totals
