@@ -177,15 +177,9 @@ class TcpLoadBalancer:
         backend, is_failover = self.choose_backend()
         if backend is None:
             client.close()
-            self.update(requests_active=-1, backend_failovers=1)
+            self.update(requests_active=-1)
             print(f"NO_HEALTHY_BACKEND client={address}", flush=True)
             return
-        if is_failover:
-            # Count each request served by a backup because the configured
-            # primary failed its health check. Normal round-robin selection
-            # while the primary is healthy is not a failover.
-            self.update(backend_failovers=1)
-        self.record_backend(backend)
         try:
             upstream = socket.create_connection(backend, timeout=self.health_timeout)
         except OSError:
@@ -200,14 +194,18 @@ class TcpLoadBalancer:
                     except OSError:
                         continue
                     backend = candidate
-                    self.record_backend(backend)
-                    self.update(backend_failovers=1)
+                    is_failover = backend != self.backends[0]
                     break
             if upstream is None:
                 client.close()
-                self.update(requests_active=-1, backend_failovers=1)
+                self.update(requests_active=-1)
                 print(f"BACKEND_CONNECT_FAILED backend={backend}", flush=True)
                 return
+        if is_failover:
+            # Count failover only after a standby has accepted this client;
+            # a health-based selection that cannot connect is not served.
+            self.update(backend_failovers=1)
+        self.record_backend(backend)
         print(f"FORWARD listen={self.listen_port} backend={backend} client={address}", flush=True)
         try:
             self.relay(client, upstream)

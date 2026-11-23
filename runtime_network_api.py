@@ -1180,6 +1180,7 @@ class RuntimeNetworkController(ControllerBase):
                               "active_failures": aggregate["active_failures"],
                               "recovery_events": aggregate["recovery_events"],
                               "total_failover_requests": aggregate["total_failover_requests"],
+                              "ssh_frontend": aggregate["ssh_frontend"],
                               "services": aggregate["services"]})
 
     @api_auth_required
@@ -1204,6 +1205,7 @@ class RuntimeNetworkController(ControllerBase):
                               "total_failover_requests": aggregate["total_failover_requests"],
                               "last_check": aggregate["last_check"],
                               "updated_at": aggregate["updated_at"],
+                              "ssh_frontend": aggregate["ssh_frontend"],
                               "services": aggregate["services"],
                               "source": "aggregated-load-balancer-stats"})
 
@@ -1337,6 +1339,18 @@ class RuntimeNetworkController(ControllerBase):
         totals["status"] = ("unavailable" if not snapshots else
                              ("degraded" if totals["active_failures"] else "running"))
         totals["services"] = services
+        ssh_stats = snapshots.get("ssh", {})
+        ssh_frontend = dict(services.get("ssh", {}))
+        ssh_pair = SERVICE_PAIRS.get("ssh", {})
+        ssh_frontend.update({
+            "status": ssh_frontend.get("status", "unavailable"),
+            "listen_host": LOAD_BALANCER_IP,
+            "listen_port": int(ssh_stats.get("listen_port", 2222) or 2222),
+            "strategy": ssh_stats.get("strategy", "primary-backup"),
+            "primary": ssh_pair.get("primary"),
+            "standby": ssh_pair.get("backup"),
+        })
+        totals["ssh_frontend"] = ssh_frontend
         return totals
 
     @api_auth_required

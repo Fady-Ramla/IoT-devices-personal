@@ -420,8 +420,15 @@ def start_demo_services(net, live_iot_api=False):
             f"> /tmp/{name}.log 2>&1 &"
         )
     lb = net.get("h38")
-    lb.cmd("pkill -f '[l]oad_balancer.py --listen-port 2222' >/dev/null 2>&1 || true")
-    lb.cmd("sleep 0.2")
+    lb.cmd("pkill -f '[l]oad_balancer.py.*--listen-port 2222' >/dev/null 2>&1 || true")
+    stop_deadline = time.monotonic() + 2
+    listening = "still listening"
+    while time.monotonic() < stop_deadline and listening.strip():
+        listening = lb.cmd("ss -lntH '( sport = :2222 )' 2>/dev/null || true")
+        if listening.strip():
+            time.sleep(0.1)
+    if listening.strip():
+        raise RuntimeError("Could not stop existing SSH load balancer on h38:2222")
     lb.cmd(
         f"python3 {load_balancer} --listen-port 5000 "
         "--backends 10.10.20.2:5000,10.10.20.8:5000 "

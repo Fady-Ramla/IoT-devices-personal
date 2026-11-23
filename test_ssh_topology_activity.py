@@ -511,6 +511,78 @@ def test_gateway_ssh_allowlist_is_exact_and_preserves_other_it_services():
     assert "22" not in application_rule
 
 
+def test_load_balancer_api_exposes_ssh_frontend_separately_from_aggregates():
+    source_path = ROOT / "runtime_network_api.py"
+    service_pairs = {
+        "dns": {"primary": "h1", "backup": "h17", "port": 53},
+        "http_api": {"primary": "h2", "backup": "h18", "port": 5000},
+        "https": {"primary": "h3", "backup": "h19", "port": 443},
+        "ssh": {"primary": "h4", "backup": "h20", "port": 22},
+    }
+    aggregate_fn = extract_function(
+        source_path, "_aggregate_load_balancer_stats", "RuntimeNetworkController",
+        {"SERVICE_PAIRS": service_pairs, "LOAD_BALANCER_IP": "10.10.20.100"},
+    )
+    endpoint = extract_function(
+        source_path, "load_balancer", "RuntimeNetworkController",
+        {
+            "LOAD_BALANCER_CONFIG": {"host": "h38", "frontends": (5000, 443, 2222)},
+            "LOAD_BALANCER_IP": "10.10.20.100",
+            "json_response": lambda value: value,
+        },
+    )
+    snapshots = {}
+    for service, backends in {
+        "dns": ["10.10.30.2:53", "10.10.30.17:53"],
+        "http_api": ["10.10.20.2:5000", "10.10.20.18:5000"],
+        "https": ["10.10.20.3:443", "10.10.20.19:443"],
+        "ssh": ["10.10.20.4:22", "10.10.20.20:22"],
+    }.items():
+        snapshots[service] = {
+            "backends": backends, "healthy_backends": backends,
+            "failed_backends": [], "backend_requests": {b: 1 for b in backends},
+            "requests_total": 2, "requests_active": 0, "backend_failovers": 0,
+            "failure_events_total": 0, "active_failures": 0, "recovery_events": 0,
+            "health_checks_performed": True, "last_health_check": 123.0,
+        }
+    snapshots["ssh"].update({
+        "strategy": "primary-backup", "listen_port": 2222,
+        "last_backend": "10.10.20.4:22", "backend_failovers": 1,
+    })
+    controller = SimpleNamespace(
+        _load_balancer_stats_by_service=lambda: snapshots,
+        _lb_metrics_baseline={},
+    )
+    aggregate = aggregate_fn(controller)
+    response = endpoint(
+        SimpleNamespace(_aggregate_load_balancer_stats=lambda: aggregate),
+        SimpleNamespace(GET={}),
+    )
+    assert set(response["services"]) == {"dns", "http_api", "https", "ssh"}
+    assert response["requests_total"] == 8
+    assert response["ssh_frontend"]["strategy"] == "primary-backup"
+    assert response["ssh_frontend"]["primary"] == "h4"
+    assert response["ssh_frontend"]["standby"] == "h20"
+    assert response["ssh_frontend"]["listen_host"] == "10.10.20.100"
+    assert response["ssh_frontend"]["listen_port"] == 2222
+    assert response["ssh_frontend"]["backend_failovers"] == 1
+
+
+def test_ssh_frontend_restart_pattern_matches_listener_command():
+    pattern = r"[l]oad_balancer.py.*--listen-port 2222"
+    listener_command = (
+        "python3 /project/mininet/load_balancer.py --listen-host 10.10.20.100 "
+        "--listen-port 2222 --backends 10.10.20.4:22,10.10.20.20:22"
+    )
+    assert re.search(pattern, listener_command)
+    for relative_path in (
+            "mininet/Real_network_topology.py",
+            "mininet/Real_network_topology_http_feature_candidate.py"):
+        source = (ROOT / relative_path).read_text(encoding="utf-8")
+        assert "pkill -f '%s'" % pattern in source
+        assert "Could not stop existing SSH load balancer on h38:2222" in source
+
+
 if __name__ == "__main__":
     test_ssh_openflow_counter_delta_marks_hosts_and_switch()
     test_ssh_log_events_are_sanitized_and_map_client_server()
@@ -518,4 +590,6 @@ if __name__ == "__main__":
     test_ssh_access_policy_drops_nonmanagement_vlan_traffic()
     test_ssh_denial_audit_is_bounded_and_installs_exact_drop_cache()
     test_gateway_ssh_allowlist_is_exact_and_preserves_other_it_services()
+    test_load_balancer_api_exposes_ssh_frontend_separately_from_aggregates()
+    test_ssh_frontend_restart_pattern_matches_listener_command()
     print("PASS: SSH host allow-list, SDN deny audit, counters, and gateway ACL")

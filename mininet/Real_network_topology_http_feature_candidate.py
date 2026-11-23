@@ -316,12 +316,63 @@ def start_live_iot_web_api(net, ingest_token):
     raise RuntimeError("live IoT Web/API did not become healthy on h2:5000; " + tail.strip())
 
 
+def start_ssh_backends(net):
+    """Ensure h4/h20 accept TCP/22 and write sanitized sshd audit logs."""
+    for host_id in ("h4", "h20"):
+        host = net.get(host_id)
+        address = HOSTS[host_id]["ip"].split("/", 1)[0]
+        listening = host.cmd(
+            "ss -lntH '( sport = :22 )' 2>/dev/null | grep -F "
+            + shlex.quote(address + ":22") + " || true"
+        )
+        if not listening.strip():
+            binaries = host.cmd(
+                "test -x /usr/sbin/sshd && test -x /usr/bin/ssh-keygen "
+                "&& printf available"
+            )
+            if "available" not in binaries:
+                raise RuntimeError(
+                    "%s requires /usr/sbin/sshd and /usr/bin/ssh-keygen; "
+                    "install openssh-server on the Mininet VM and restart" % host_id
+                )
+            audit_log = "/run/secureiot/ssh/secureiot-sshd-%s.log" % host_id
+            launch = (
+                "mkdir -p /run/sshd && /usr/bin/ssh-keygen -A && "
+                "install -d -m 700 /run/secureiot/ssh && "
+                "touch %s && chmod 600 %s && umask 077; "
+                "( /usr/sbin/sshd -D -e -o ListenAddress=%s "
+                "-o PidFile=/tmp/sshd-%s.pid 2>&1 | "
+                "while IFS= read -r line; do "
+                "printf '%%s %%s\\n' \"$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)\" "
+                "\"$line\" >> %s; done ) >/dev/null 2>&1 &"
+                % (audit_log, audit_log, address, host_id, audit_log)
+            )
+            host.cmd(launch)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            listening = host.cmd(
+                "ss -lntH '( sport = :22 )' 2>/dev/null | grep -F "
+                + shlex.quote(address + ":22") + " || true"
+            )
+            if listening.strip():
+                break
+            time.sleep(0.25)
+        if not listening.strip():
+            tail = host.cmd(
+                "tail -n 20 /run/secureiot/ssh/secureiot-sshd-%s.log 2>/dev/null" % host_id
+            )
+            raise RuntimeError("%s sshd did not listen on %s:22; %s" %
+                               (host_id, address, tail.strip()))
+    info("*** SSH backends ready: h4:22 primary, h20:22 standby.\n")
+
+
 def start_demo_services(net, live_iot_api=False):
-    """Start local HTTP backends and the TCP load-balancer listener."""
+    """Start local HTTP services plus separate Web/API and SSH frontends."""
     global LIVE_IOT_INGEST_TOKEN
     project_dir = os.path.dirname(os.path.abspath(__file__))
     service_stub = os.path.join(project_dir, "service_stub.py")
     load_balancer = os.path.join(project_dir, "load_balancer.py")
+    start_ssh_backends(net)
     if live_iot_api:
         LIVE_IOT_INGEST_TOKEN = secrets.token_urlsafe(32)
         start_live_iot_web_api(net, LIVE_IOT_INGEST_TOKEN)
@@ -335,12 +386,40 @@ def start_demo_services(net, live_iot_api=False):
             f"> /tmp/{name}.log 2>&1 &"
         )
     lb = net.get("h38")
+    lb.cmd("pkill -f '[l]oad_balancer.py.*--listen-port 2222' >/dev/null 2>&1 || true")
+    stop_deadline = time.monotonic() + 2
+    listening = "still listening"
+    while time.monotonic() < stop_deadline and listening.strip():
+        listening = lb.cmd("ss -lntH '( sport = :2222 )' 2>/dev/null || true")
+        if listening.strip():
+            time.sleep(0.1)
+    if listening.strip():
+        raise RuntimeError("Could not stop existing SSH load balancer on h38:2222")
     lb.cmd(
         f"python3 {load_balancer} --listen-port 5000 "
         "--backends 10.10.20.2:5000,10.10.20.8:5000 "
         "> /tmp/lb-5000.log 2>&1 &"
     )
-    info("*** Demo Web/API backends and h38:5000 load balancer started.\n")
+    lb.cmd(
+        f"SECUREIOT_LB_STATS_FILE=/tmp/secureiot-lb-ssh-stats.json "
+        f"python3 {load_balancer} --listen-host 10.10.20.100 --listen-port 2222 "
+        "--backends 10.10.20.4:22,10.10.20.20:22 "
+        "--strategy primary-backup --idle-timeout 0 "
+        "> /tmp/lb-2222.log 2>&1 &"
+    )
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        listening = lb.cmd(
+            "ss -lntH '( sport = :2222 )' 2>/dev/null | grep -F "
+            "'10.10.20.100:2222' || true"
+        )
+        if listening.strip():
+            break
+        time.sleep(0.25)
+    if not listening.strip():
+        tail = lb.cmd("tail -n 20 /tmp/lb-2222.log 2>/dev/null")
+        raise RuntimeError("SSH load balancer did not listen on h38:2222: " + tail.strip())
+    info("*** Demo Web/API LB on h38:5000 unchanged; SSH primary/backup LB on h38:2222 started.\n")
 
 
 def wait_for_controller_ready(timeout_sec=60):
