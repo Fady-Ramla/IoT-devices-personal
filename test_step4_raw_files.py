@@ -17,6 +17,7 @@ tree = ast.parse(source)
 constant_names = {
     "PROJECT_ROOT", "ACTIVE_RUN_FILE", "RAW_DATA_ROOT", "PACKET_DATA_DIR",
     "FLOW_DATA_DIR", "DATASET_RUN_LEDGER", "PACKET_HEADER", "FLOW_HEADER",
+    "LEGACY_FLOW_HEADER",
     "CSV_FLUSH_EVERY",
 }
 selected = []
@@ -98,7 +99,8 @@ def main():
                          6, 123, 5000, 60, "SYN", 0, 0]
         flow_values = ["t", 1, "10.0.0.1", "10.0.0.2", 123, 5000, 6, 10,
                        5, 300, 5, 300, 1, 60, 2, 1, 0, 0, 2.0, 0.0,
-                       1, 0, 1.0, 0.0, 0.0, "packetin_window", "aa", "bb"]
+                       1, 0, 1.0, 0.0, 0.0, "packetin_window", "aa", "bb",
+                       "00:00:00:00:00:06", "00:00:00:00:00:03"]
         assert monitor._write_packet_feature(packet_values, monitor.dataset_run)
         assert monitor._write_flow_feature_locked(flow_values, monitor.dataset_run)
         assert monitor.dataset_run["packet_observation_sequence"] == 1
@@ -137,6 +139,27 @@ def main():
         assert run_id in rescan.used_run_ids
         print("PASS: existing files validated and existing run_id reserved")
         print("PASS: existing run files are not overwritten")
+
+        # Old flow files remain valid when the current schema appends optional
+        # endpoint metadata columns; new runs still use the expanded header.
+        legacy_root = Path(temp) / "legacy"
+        legacy_packet_dir = legacy_root / "packet"
+        legacy_flow_dir = legacy_root / "flow"
+        legacy_packet_dir.mkdir(parents=True)
+        legacy_flow_dir.mkdir(parents=True)
+        legacy_id = str(uuid.uuid4())
+        legacy_observation_id = legacy_id + "_flow_00000001"
+        with (legacy_packet_dir / (legacy_id + ".csv")).open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(namespace["PACKET_HEADER"])
+            writer.writerow([legacy_id, legacy_id + "_packet_00000001"] + [""] * (len(namespace["PACKET_HEADER"]) - 2))
+        with (legacy_flow_dir / (legacy_id + ".csv")).open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(namespace["LEGACY_FLOW_HEADER"])
+            writer.writerow([legacy_id, legacy_observation_id] + [""] * (len(namespace["LEGACY_FLOW_HEADER"]) - 2))
+        assert Harness()._validate_run_files(legacy_packet_dir, namespace["PACKET_HEADER"]) == {legacy_id}
+        assert Harness()._validate_run_files(legacy_flow_dir, namespace["FLOW_HEADER"]) == {legacy_id}
+        print("PASS: legacy flow CSV schema is accepted for existing runs")
 
         # Corrupt one row's run_id, then ensure startup fails closed.
         packet_path.write_text(packet_path.read_text(encoding="utf-8").replace(

@@ -181,14 +181,20 @@ PACKET_HEADER = [
     "src_mac", "dst_mac", "src_ip", "dst_ip", "protocol", "src_port",
     "dst_port", "packet_length", "tcp_flags", "icmp_type", "arp_operation"
 ]
+# In switch-scoped flow rows, src_mac/dst_mac are link-local values: Packet-In
+# windows emit a value only when it is unique for that DPID; FlowStats rows
+# carry that switch's eth_src/eth_dst match. Endpoint identity is separate and
+# only populated when topology confirms the MAC is on a host-facing access port.
 FLOW_HEADER = [
     "run_id", "observation_id", "timestamp", "switch_dpid", "src_ip", "dst_ip",
     "src_port", "dst_port", "protocol", "priority", "packet_count", "byte_count",
     "packet_rate", "byte_rate", "duration_sec", "avg_packet_size", "syn_count",
     "ack_count", "rst_count", "fin_count", "syn_ack_ratio", "rst_ratio",
     "unique_dst_ports", "failed_connection_count", "tcp_fraction", "udp_fraction",
-    "icmp_fraction", "source", "src_mac", "dst_mac"
+    "icmp_fraction", "source", "src_mac", "dst_mac",
+    "src_endpoint_mac", "dst_endpoint_mac"
 ]
+LEGACY_FLOW_HEADER = FLOW_HEADER[:-2]
 MAX_MAC_OBSERVATIONS_PER_FLOW = 32
 MAX_MAC_OBSERVATION_FLOWS = 1024
 
@@ -206,7 +212,60 @@ except (TypeError, ValueError):
 AI_FEATURE_FIELDS = FLOW_HEADER[6:28]
 AI_CONTEXT_FIELDS = ("run_id", "observation_id", "timestamp", "switch_dpid",
                      "src_ip", "dst_ip", "src_mac", "dst_mac",
+                     "src_endpoint_mac", "dst_endpoint_mac",
                      "mac_observations", "mac_observations_truncated")
+
+
+def resolve_endpoint_mac(topology, local_mac_to_ip, ip):
+    """Resolve an IP to an endpoint MAC, excluding gateway/trunk identities."""
+    if topology is None or not ip:
+        return ""
+    ip_to_mac = getattr(topology, "ip_to_mac", {}) or {}
+    mac_to_ip = getattr(topology, "mac_to_ip", {}) or {}
+    host_locations = getattr(topology, "host_location", {}) or {}
+    ip_vlans = getattr(topology, "ip_vlan", {}) or {}
+    mac_vlans = getattr(topology, "mac_vlan", {}) or {}
+    vlan_port_map = getattr(topology, "vlan_port_map", {}) or {}
+    normalized_locations = {str(mac).lower(): location
+                            for mac, location in host_locations.items()}
+    # IP/MAC learning alone can point at a router or a stale next hop. Without
+    # both a learned location and the port inventory, there is no safe way to
+    # prove that the MAC belongs to an endpoint rather than a gateway.
+    if not normalized_locations or not vlan_port_map:
+        return ""
+    target_vlan = ip_vlans.get(ip)
+
+    def is_endpoint(mac):
+        normalized = str(mac or "").lower()
+        if not normalized:
+            return False
+        location = normalized_locations.get(normalized)
+        if location is None:
+            return False
+        if target_vlan is not None and mac_vlans.get(normalized) != target_vlan:
+            return False
+        try:
+            port_entry = vlan_port_map.get((int(location[0]), int(location[1])))
+        except (TypeError, ValueError, IndexError):
+            return False
+        # Only access ports face end devices. A router/gateway connected to a
+        # VLAN trunk must never be represented as the IP endpoint.
+        if not port_entry or port_entry.get("kind") != "access":
+            return False
+        return True
+
+    candidates = {
+        str(mac).lower()
+        for mapping in (mac_to_ip, local_mac_to_ip or {})
+        for mac, mapped_ip in mapping.items()
+        if str(mapped_ip) == str(ip) and is_endpoint(mac)
+    }
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    if len(candidates) > 1:
+        return ""
+    candidate = str(ip_to_mac.get(ip, "") or "").lower()
+    return candidate if is_endpoint(candidate) else ""
 
 
 def build_ai_flow_payload(record):
@@ -1288,11 +1347,15 @@ class TrafficMonitorMerged(
             with path.open(newline="", encoding="utf-8") as handle:
                 reader = csv.reader(handle, strict=True)
                 actual = next(reader, None)
-                if actual != header:
+                valid_headers = [header]
+                if header == FLOW_HEADER:
+                    valid_headers.append(LEGACY_FLOW_HEADER)
+                if actual not in valid_headers:
                     raise ValueError("CSV header mismatch: %s" % path)
+                expected_width = len(actual)
                 observation_ids = set()
                 for row in reader:
-                    if (len(row) != len(header) or row[0] != run_id
+                    if (len(row) != expected_width or row[0] != run_id
                             or not row[1] or row[1] in observation_ids):
                         raise ValueError("Invalid row/run_id/observation_id in %s" % path)
                     observation_ids.add(row[1])
@@ -1604,6 +1667,7 @@ class TrafficMonitorMerged(
             # Write feature row.
             # -------------------------------------------------
 
+            topology = self._get_topology_monitor()
             self._write_flow_feature_locked([
                 now,
                 dpid,
@@ -1621,7 +1685,9 @@ class TrafficMonitorMerged(
                 byte_count / max(packet_count, 1),
                 0, 0, 0, 0, 0.0, 0.0, 0, 0,
                 float(protocol == 6), float(protocol == 17), float(protocol == 1),
-                "switch_flow_stats", src_mac, dst_mac
+                "switch_flow_stats", src_mac, dst_mac,
+                resolve_endpoint_mac(topology, self.mac_to_ip, src_ip),
+                resolve_endpoint_mac(topology, self.mac_to_ip, dst_ip)
             ], run)
     def _flush_packet_flow_windows_locked(self, run=None):
         """Flush windows while dataset_lock is already held."""
@@ -2703,46 +2769,21 @@ class TrafficMonitorMerged(
         syn, ack, rst = state["syn_count"], state["ack_count"], state["rst_count"]
         name = {6: "tcp", 17: "udp", 1: "icmp"}.get(protocol, str(protocol))
         topology = self._get_topology_monitor()
-        learned = getattr(topology, "ip_to_mac", {}) if topology is not None else {}
-        host_locations = getattr(topology, "host_location", {}) if topology is not None else {}
-        topology_mac_to_ip = getattr(topology, "mac_to_ip", {}) if topology is not None else {}
-        ip_vlans = getattr(topology, "ip_vlan", {}) if topology is not None else {}
-        mac_vlans = getattr(topology, "mac_vlan", {}) if topology is not None else {}
-        local_mac_to_ip = getattr(self, "mac_to_ip", {})
+        src_endpoint_mac = resolve_endpoint_mac(topology, getattr(self, "mac_to_ip", {}), src_ip)
+        dst_endpoint_mac = resolve_endpoint_mac(topology, getattr(self, "mac_to_ip", {}), dst_ip)
+        tracker_key = (run["run_id"], run["generation"], str(src_ip), str(dst_ip),
+                       name, str(src_port_key), str(dst_port_key))
+        tracker = getattr(self, "packet_flow_mac_observations", {}).get(tracker_key, {})
+        local_observations = [item for item in tracker.get("items", [])
+                              if int(item.get("switch_dpid", -1)) == int(dpid)]
 
-        def endpoint_mac(ip):
-            # Prefer TopologyMonitor's IP map, but do not mistake an
-            # inter-switch/router MAC for the endpoint when host locations
-            # are available. When VLAN learning is available, require the
-            # MAC to belong to the destination IP's VLAN. Fall back to reverse
-            # learned maps only when exactly one endpoint remains.
-            target_vlan = ip_vlans.get(ip)
-            candidate = str(learned.get(ip, "") or "").lower()
-            known_hosts = {str(mac).lower() for mac in host_locations}
+        def unique_link_mac(field):
+            values = {str(item.get(field, "") or "").lower()
+                      for item in local_observations if item.get(field)}
+            return next(iter(values)) if len(values) == 1 else ""
 
-            def is_endpoint(mac):
-                normalized = str(mac).lower()
-                if known_hosts and normalized not in known_hosts:
-                    return False
-                if target_vlan is not None:
-                    return mac_vlans.get(normalized) == target_vlan
-                return True
-
-            candidates = {
-                str(mac).lower()
-                for mapping in (topology_mac_to_ip, local_mac_to_ip)
-                for mac, mapped_ip in mapping.items()
-                if str(mapped_ip) == str(ip)
-                and is_endpoint(mac)
-            }
-            if len(candidates) == 1:
-                return next(iter(candidates))
-            if candidates:
-                return ""
-            return candidate if candidate and is_endpoint(candidate) else ""
-
-        src_mac = endpoint_mac(src_ip)
-        dst_mac = endpoint_mac(dst_ip)
+        src_link_mac = unique_link_mac("src_mac")
+        dst_link_mac = unique_link_mac("dst_mac")
         row = [end_time, dpid, src_ip, dst_ip,
                next(iter(state["src_ports"])) if len(state["src_ports"]) == 1 else "",
                next(iter(state["dst_ports"])) if len(state["dst_ports"]) == 1 else "",
@@ -2750,7 +2791,8 @@ class TrafficMonitorMerged(
                duration, byte_count / max(packets, 1), syn, ack, rst, state["fin_count"],
                syn / max(ack, 1), rst / max(packets, 1), len(state["dst_ports"]),
                max(syn - ack, 0), float(protocol == 6), float(protocol == 17),
-               float(protocol == 1), "packetin_window", src_mac, dst_mac]
+               float(protocol == 1), "packetin_window", src_link_mac, dst_link_mac,
+               src_endpoint_mac, dst_endpoint_mac]
         if lock_held:
             return self._write_flow_feature_locked(row, run)
         return self._write_flow_feature(row, run)

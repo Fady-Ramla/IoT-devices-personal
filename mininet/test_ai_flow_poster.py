@@ -20,11 +20,19 @@ FLOW_HEADER = [
     "packet_rate", "byte_rate", "duration_sec", "avg_packet_size", "syn_count",
     "ack_count", "rst_count", "fin_count", "syn_ack_ratio", "rst_ratio",
     "unique_dst_ports", "failed_connection_count", "tcp_fraction", "udp_fraction",
-    "icmp_fraction", "source", "src_mac", "dst_mac"
+    "icmp_fraction", "source", "src_mac", "dst_mac",
+    "src_endpoint_mac", "dst_endpoint_mac"
 ]
-FEATURES = FLOW_HEADER[6:28]
+FEATURES = [
+    "src_port", "dst_port", "protocol", "priority", "packet_count", "byte_count",
+    "packet_rate", "byte_rate", "duration_sec", "avg_packet_size", "syn_count",
+    "ack_count", "rst_count", "fin_count", "syn_ack_ratio", "rst_ratio",
+    "unique_dst_ports", "failed_connection_count", "tcp_fraction", "udp_fraction",
+    "icmp_fraction", "source",
+]
 CONTEXT = ("run_id", "observation_id", "timestamp", "switch_dpid",
            "src_ip", "dst_ip", "src_mac", "dst_mac",
+           "src_endpoint_mac", "dst_endpoint_mac",
            "mac_observations", "mac_observations_truncated")
 
 
@@ -146,6 +154,7 @@ class AIFlowPosterTest(unittest.TestCase):
 
     def test_payload_has_22_features_and_trace_context(self):
         _, build_payload = load_subject()
+        self.assertEqual(FLOW_HEADER[6:28], FEATURES)
         record = {name: "sample" for name in FLOW_HEADER}
         record["mac_observations"] = [{
             "switch_dpid": 4,
@@ -159,6 +168,8 @@ class AIFlowPosterTest(unittest.TestCase):
         self.assertEqual(len(payload["features"]), 22)
         self.assertEqual(set(payload["context"]), set(CONTEXT))
         self.assertEqual(payload["context"]["src_mac"], "sample")
+        self.assertEqual(payload["context"]["src_endpoint_mac"], "sample")
+        self.assertEqual(payload["context"]["dst_endpoint_mac"], "sample")
         self.assertEqual(len(payload["context"]["mac_observations"]), 1)
         self.assertFalse(payload["context"]["mac_observations_truncated"])
 
@@ -201,13 +212,21 @@ class AIFlowPosterTest(unittest.TestCase):
         row[0:6] = [123.5, 4, "10.10.10.5", "10.10.20.2", 51514, 5000]
         row[6] = "tcp"
         row[25] = "packetin_window"
-        row[26:28] = ["aa:bb:cc:dd:ee:01", "02:10:00:00:00:01"]
+        row[26:30] = [
+            "aa:bb:cc:dd:ee:01", "02:10:00:00:00:01",
+            "00:00:00:00:00:06", "00:00:00:00:00:03",
+        ]
         self.assertTrue(subject._write_flow_feature_locked(row, run))
         self.assertEqual(len(subject.flow_writer.rows), 1)
         self.assertEqual(len(subject.ai_flow_poster.payloads), 1)
         self.assertEqual(subject.ai_flow_poster.payloads[0]["context"]["observation_id"],
                          "run-1_flow_00000001")
-        self.assertEqual(subject.ai_flow_poster.payloads[0]["context"]["mac_observations"],
+        payload_context = subject.ai_flow_poster.payloads[0]["context"]
+        self.assertEqual(payload_context["src_mac"], "aa:bb:cc:dd:ee:01")
+        self.assertEqual(payload_context["dst_mac"], "02:10:00:00:00:01")
+        self.assertEqual(payload_context["src_endpoint_mac"], "00:00:00:00:00:06")
+        self.assertEqual(payload_context["dst_endpoint_mac"], "00:00:00:00:00:03")
+        self.assertEqual(payload_context["mac_observations"],
                          [{"switch_dpid": 4, "src_mac": "aa:bb:cc:dd:ee:01",
                            "dst_mac": "02:10:00:00:00:01"}])
         row[25] = "switch_flow_stats"
@@ -229,7 +248,9 @@ class AIFlowPosterTest(unittest.TestCase):
             record.update({"run_id": "run-1", "observation_id": "obs-1",
                            "src_ip": "10.10.10.5", "dst_ip": "10.10.20.2",
                            "src_mac": "aa:bb:cc:dd:ee:01",
-                           "dst_mac": "02:20:00:00:00:01"})
+                           "dst_mac": "02:20:00:00:00:01",
+                           "src_endpoint_mac": "00:00:00:00:00:06",
+                           "dst_endpoint_mac": "00:00:00:00:00:03"})
             payload = build_payload(record)
             self.assertTrue(poster.enqueue(payload))
             poster.pending.join()
