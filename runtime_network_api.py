@@ -1438,8 +1438,9 @@ class RuntimeNetworkController(ControllerBase):
         blocked_devices = getattr(topology, "blocked_devices", {}) if topology is not None else {}
         blocked_device_count = len(blocked_devices) if isinstance(blocked_devices, dict) else 0
         configured_hosts = len(HOSTS)
-        observed_hosts = topology_status.get("host_count") if isinstance(topology_status, dict) else None
-        total_hosts = int(observed_hosts or configured_hosts)
+        # topology_status.host_count is discovery progress. It may be 21 while
+        # the configured SecureIoT inventory is the full 38-host topology.
+        total_hosts = configured_hosts
         hosts_count = self._active_hosts_count(total_hosts, blocked_device_count)
         blocked = sum(1 for event in events if self._is_blocked_flow(event))
         return json_response({"status": "active" if topology is not None else "unavailable",

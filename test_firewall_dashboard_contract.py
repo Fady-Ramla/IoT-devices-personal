@@ -95,7 +95,9 @@ def test_firewall_status_reports_active_hosts_and_all_blocked_events():
 
     class Controller:
         def _topology_status(self):
-            return Topology(), {"host_count": 38}
+            # Runtime discovery can report only learned hosts; the API contract
+            # must still use the configured 38-host inventory.
+            return Topology(), {"host_count": 21}
 
         def _firewall_events(self):
             return [
