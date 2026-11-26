@@ -708,6 +708,82 @@ class RuntimeNetworkController(ControllerBase):
         return events
 
     @staticmethod
+    def _firewall_event_reason(event):
+        """Return a stable, scenario-specific reason for a firewall event."""
+        reason = str(event.get("reason") or "").strip()
+        if reason:
+            return reason
+        event_type = str(event.get("event_type") or "").lower()
+        action = str(event.get("action") or "").upper()
+        destination_port = event.get("destination_port")
+        try:
+            destination_port = int(destination_port)
+        except (TypeError, ValueError):
+            destination_port = None
+        if event_type == "ssh_access_denied":
+            if destination_port == 2222 or event.get("destination_ip") == "10.10.20.100":
+                return "SSH frontend access is restricted to management hosts h36 and h37"
+            return "Backend SSH access is restricted to the SSH load balancer"
+        if action == "BLOCK_DEVICE" or event.get("blocked") is True:
+            return "Source host was quarantined by the firewall block action"
+        if action == "UNBLOCK_DEVICE":
+            return "Source host firewall block was removed"
+        return "Firewall policy denied the flow"
+
+    @classmethod
+    def _dedupe_firewall_events(cls, events):
+        """Merge mirrored provider/action records while preserving real attempts."""
+        unique = []
+        seen = set()
+        for raw_event in events:
+            if not isinstance(raw_event, dict):
+                continue
+            event = dict(raw_event)
+            event["reason"] = cls._firewall_event_reason(event)
+            action = str(event.get("action") or "").upper()
+            if event.get("event_id"):
+                key = ("event_id", event["event_id"])
+            elif action in {"BLOCK_DEVICE", "UNBLOCK_DEVICE"} and event.get("request_id"):
+                key = ("request", action, event.get("request_id"))
+            else:
+                key = (
+                    "flow", event.get("event_type"), action,
+                    event.get("source_ip"), event.get("destination_ip"),
+                    event.get("destination_port"), event.get("mac"),
+                    round(float(event.get("timestamp", 0) or 0), 3),
+                )
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(event)
+        unique.sort(key=lambda item: float(item.get("timestamp", 0) or 0))
+        return unique
+
+    def _firewall_events(self):
+        """Collect all existing firewall sources used by the dashboard."""
+        topology = self._topology()
+        provider_events = _call(topology, ["get_firewall_events"], []) if topology else []
+        events = list(provider_events) if isinstance(provider_events, list) else []
+        events.extend(event for event in self.network_event_store
+                      if isinstance(event, dict) and any(
+                          key in event for key in ("action", "blocked", "rule_id")))
+        events.extend(self._firewall_action_events())
+        return self._dedupe_firewall_events(events)
+
+    @staticmethod
+    def _is_blocked_flow(event):
+        action = str(event.get("action") or "").upper()
+        return bool(
+            event.get("blocked") is True
+            or action in {"BLOCK_DEVICE", "BLOCK", "DROP"}
+            or str(event.get("event_type") or "").lower() == "ssh_access_denied"
+        )
+
+    @staticmethod
+    def _active_hosts_count(total_hosts, blocked_device_count):
+        return max(0, int(total_hosts or 0) - int(blocked_device_count or 0))
+
+    @staticmethod
     def _service(*names):
         for name in names:
             service = app_manager.lookup_service_brick(name)
@@ -1358,23 +1434,21 @@ class RuntimeNetworkController(ControllerBase):
     @route("firewall_status", "/firewall/status", methods=["GET"])
     def firewall_status(self, req, **kwargs):
         topology, topology_status = self._topology_status()
-        action_events = self._firewall_action_events()
-        blocked = 0
-        for name in ("blocked_flows", "blocked_devices", "blocked_macs"):
-            value = getattr(topology, name, None) if topology is not None else None
-            if isinstance(value, dict):
-                blocked = max(blocked, len(value))
-            elif isinstance(value, (list, set, tuple)):
-                blocked = max(blocked, len(value))
-            elif isinstance(value, int):
-                blocked = max(blocked, value)
-        blocked = max(blocked, sum(1 for event in action_events if event.get("blocked")))
+        events = self._firewall_events()
+        blocked_devices = getattr(topology, "blocked_devices", {}) if topology is not None else {}
+        blocked_device_count = len(blocked_devices) if isinstance(blocked_devices, dict) else 0
+        configured_hosts = len(HOSTS)
+        observed_hosts = topology_status.get("host_count") if isinstance(topology_status, dict) else None
+        total_hosts = int(observed_hosts or configured_hosts)
+        hosts_count = self._active_hosts_count(total_hosts, blocked_device_count)
+        blocked = sum(1 for event in events if self._is_blocked_flow(event))
         return json_response({"status": "active" if topology is not None else "unavailable",
                               "default_policy": "DROP", "protected_vlans": sorted(VLAN_NETWORKS),
-                              "blocked_flows": blocked, "controller_connected": topology is not None,
+                              "hosts_count": hosts_count, "blocked_flows": blocked,
+                              "controller_connected": topology is not None,
                               "topology_status": topology_status, "last_update": now_utc(),
                               "source": "topology-monitor-and-traffic-monitor",
-                              "event_count": len(action_events)})
+                              "event_count": len(events)})
 
     @api_auth_required
     @route("firewall_rules", "/firewall/rules", methods=["GET"])
@@ -1404,13 +1478,7 @@ class RuntimeNetworkController(ControllerBase):
     @api_auth_required
     @route("firewall_events", "/firewall/events", methods=["GET"])
     def firewall_events(self, req, **kwargs):
-        topology = self._topology()
-        provider_events = _call(topology, ["get_firewall_events"], []) if topology else []
-        events = list(provider_events) if isinstance(provider_events, list) else []
-        events.extend(event for event in self.network_event_store
-                      if isinstance(event, dict) and any(key in event for key in ("action", "blocked", "rule_id")))
-        events.extend(self._firewall_action_events())
-        events.sort(key=lambda item: float(item.get("timestamp", 0) or 0))
+        events = self._firewall_events()
         return json_response(events[-200:])
 
     @api_auth_required
