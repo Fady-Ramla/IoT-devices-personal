@@ -48,6 +48,7 @@ def test_three_blocking_scenarios_have_distinct_reasons_and_count_once():
         {
             "event_type": "firewall_action",
             "action": "BLOCK_DEVICE",
+            "mac": "02:00:00:00:00:21",
             "request_id": "block-h21-1",
             "timestamp": 3.0,
         },
@@ -96,14 +97,18 @@ def test_firewall_status_reports_active_hosts_and_all_blocked_events():
     class Controller:
         def _topology_status(self):
             # Runtime discovery can report only learned hosts; the API contract
-            # must still use the configured 38-host inventory.
+            # must still use the configured 38-host inventory in host_count.
             return Topology(), {"host_count": 21}
 
         def _firewall_events(self):
             return [
                 {"event_type": "ssh_access_denied", "action": "DROP"},
                 {"event_type": "ssh_access_denied", "action": "DROP"},
-                {"event_type": "firewall_action", "action": "BLOCK_DEVICE"},
+                {
+                    "event_type": "firewall_action",
+                    "action": "BLOCK_DEVICE",
+                    "mac": "02:00:00:00:00:21",
+                },
             ]
 
         @staticmethod
@@ -116,7 +121,8 @@ def test_firewall_status_reports_active_hosts_and_all_blocked_events():
 
     response = status(Controller(), None)
 
-    assert response["hosts_count"] == 37
+    assert "hosts_count" not in response
+    assert response["topology_status"]["host_count"] == 37
     assert response["blocked_flows"] == 3
     assert response["event_count"] == 3
 

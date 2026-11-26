@@ -1438,14 +1438,32 @@ class RuntimeNetworkController(ControllerBase):
         blocked_devices = getattr(topology, "blocked_devices", {}) if topology is not None else {}
         blocked_device_count = len(blocked_devices) if isinstance(blocked_devices, dict) else 0
         configured_hosts = len(HOSTS)
-        # topology_status.host_count is discovery progress. It may be 21 while
-        # the configured SecureIoT inventory is the full 38-host topology.
-        total_hosts = configured_hosts
-        hosts_count = self._active_hosts_count(total_hosts, blocked_device_count)
-        blocked = sum(1 for event in events if self._is_blocked_flow(event))
+        # Keep the existing response field as the dashboard's active inventory
+        # count. Runtime discovery may learn fewer hosts than the configured
+        # 38-host topology, so it must not determine this value.
+        topology_status = dict(topology_status) if isinstance(topology_status, dict) else {}
+        topology_status["host_count"] = self._active_hosts_count(
+            configured_hosts, blocked_device_count
+        )
+        blocked_events = [event for event in events if self._is_blocked_flow(event)]
+        blocked = len(blocked_events)
+        # A provider may expose the active blocked-device state without also
+        # retaining the corresponding action event. Count that block once, but
+        # do not duplicate a BLOCK_DEVICE event already represented by its MAC.
+        represented_macs = {
+            str(event.get("mac")).lower()
+            for event in blocked_events
+            if str(event.get("action") or "").upper() in {"BLOCK_DEVICE", "BLOCK"}
+            and event.get("mac")
+        }
+        if isinstance(blocked_devices, dict):
+            blocked += sum(
+                1 for mac in blocked_devices
+                if str(mac).lower() not in represented_macs
+            )
         return json_response({"status": "active" if topology is not None else "unavailable",
                               "default_policy": "DROP", "protected_vlans": sorted(VLAN_NETWORKS),
-                              "hosts_count": hosts_count, "blocked_flows": blocked,
+                              "blocked_flows": blocked,
                               "controller_connected": topology is not None,
                               "topology_status": topology_status, "last_update": now_utc(),
                               "source": "topology-monitor-and-traffic-monitor",
