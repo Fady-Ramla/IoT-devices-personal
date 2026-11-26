@@ -2704,8 +2704,45 @@ class TrafficMonitorMerged(
         name = {6: "tcp", 17: "udp", 1: "icmp"}.get(protocol, str(protocol))
         topology = self._get_topology_monitor()
         learned = getattr(topology, "ip_to_mac", {}) if topology is not None else {}
-        src_mac = str(learned.get(src_ip, "") or "").lower()
-        dst_mac = str(learned.get(dst_ip, "") or "").lower()
+        host_locations = getattr(topology, "host_location", {}) if topology is not None else {}
+        topology_mac_to_ip = getattr(topology, "mac_to_ip", {}) if topology is not None else {}
+        ip_vlans = getattr(topology, "ip_vlan", {}) if topology is not None else {}
+        mac_vlans = getattr(topology, "mac_vlan", {}) if topology is not None else {}
+        local_mac_to_ip = getattr(self, "mac_to_ip", {})
+
+        def endpoint_mac(ip):
+            # Prefer TopologyMonitor's IP map, but do not mistake an
+            # inter-switch/router MAC for the endpoint when host locations
+            # are available. When VLAN learning is available, require the
+            # MAC to belong to the destination IP's VLAN. Fall back to reverse
+            # learned maps only when exactly one endpoint remains.
+            target_vlan = ip_vlans.get(ip)
+            candidate = str(learned.get(ip, "") or "").lower()
+            known_hosts = {str(mac).lower() for mac in host_locations}
+
+            def is_endpoint(mac):
+                normalized = str(mac).lower()
+                if known_hosts and normalized not in known_hosts:
+                    return False
+                if target_vlan is not None:
+                    return mac_vlans.get(normalized) == target_vlan
+                return True
+
+            candidates = {
+                str(mac).lower()
+                for mapping in (topology_mac_to_ip, local_mac_to_ip)
+                for mac, mapped_ip in mapping.items()
+                if str(mapped_ip) == str(ip)
+                and is_endpoint(mac)
+            }
+            if len(candidates) == 1:
+                return next(iter(candidates))
+            if candidates:
+                return ""
+            return candidate if candidate and is_endpoint(candidate) else ""
+
+        src_mac = endpoint_mac(src_ip)
+        dst_mac = endpoint_mac(dst_ip)
         row = [end_time, dpid, src_ip, dst_ip,
                next(iter(state["src_ports"])) if len(state["src_ports"]) == 1 else "",
                next(iter(state["dst_ports"])) if len(state["dst_ports"]) == 1 else "",

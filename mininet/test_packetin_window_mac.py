@@ -58,6 +58,7 @@ class PacketInWindowMacTest(unittest.TestCase):
         self.subject.dataset_run = self.run
         self.subject.packet_flow_windows = {}
         self.subject.packet_flow_mac_observations = {}
+        self.subject.mac_to_ip = {}
         self.subject._get_topology_monitor = lambda: SimpleNamespace(
             ip_to_mac={
                 "10.10.10.5": "00:00:00:00:00:06",
@@ -123,6 +124,75 @@ class PacketInWindowMacTest(unittest.TestCase):
         )
         row = self.flush_row()
         self.assertEqual(row[-2:], ["", ""])
+
+    def test_missing_destination_ip_map_uses_unique_known_endpoint_mac(self):
+        self.subject._get_topology_monitor = lambda: SimpleNamespace(
+            ip_to_mac={"10.10.10.5": "00:00:00:00:00:06"},
+            host_location={
+                "00:00:00:00:00:06": (4, 1),
+                "00:00:00:00:00:03": (1, 2),
+            },
+            mac_to_ip={"00:00:00:00:00:03": "10.10.20.2"},
+        )
+        self.subject._update_packet_flow_window(
+            100.0, self.run, 4, "10.10.10.5", "10.10.20.2",
+            51514, 5000, 6, 100, 0x02,
+            "00:00:00:00:00:06", "02:10:00:00:00:01"
+        )
+        row = self.flush_row()
+        self.assertEqual(row[-2:], ["00:00:00:00:00:06", "00:00:00:00:00:03"])
+
+    def test_untrusted_inter_switch_mac_is_not_used_as_endpoint(self):
+        self.subject._get_topology_monitor = lambda: SimpleNamespace(
+            ip_to_mac={},
+            host_location={"00:00:00:00:00:06": (4, 1)},
+            mac_to_ip={
+                "00:00:00:00:00:03": "10.10.20.2",
+                "00:00:00:00:00:06": "10.10.10.5",
+            },
+        )
+        self.subject.mac_to_ip = {
+            "00:00:00:00:00:03": "10.10.20.2",
+            "00:00:00:00:00:06": "10.10.10.5",
+        }
+        self.subject._update_packet_flow_window(
+            100.0, self.run, 4, "10.10.10.5", "10.10.20.2",
+            51514, 5000, 6, 100, 0x02,
+            "00:00:00:00:00:06", "02:10:00:00:00:01"
+        )
+        row = self.flush_row()
+        self.assertEqual(row[-2:], ["00:00:00:00:00:06", ""])
+
+    def test_destination_mac_must_match_destination_ip_vlan(self):
+        self.subject._get_topology_monitor = lambda: SimpleNamespace(
+            ip_to_mac={
+                "10.10.10.5": "00:00:00:00:00:06",
+                # Stale/next-hop mapping must not win over the endpoint VLAN.
+                "10.10.20.2": "02:10:00:00:00:01",
+            },
+            host_location={
+                "00:00:00:00:00:06": (4, 1),
+                "00:00:00:00:00:03": (1, 2),
+                "02:10:00:00:00:01": (4, 3),
+            },
+            mac_to_ip={
+                "00:00:00:00:00:03": "10.10.20.2",
+                "00:00:00:00:00:06": "10.10.10.5",
+            },
+            ip_vlan={"10.10.10.5": 10, "10.10.20.2": 20},
+            mac_vlan={
+                "00:00:00:00:00:06": 10,
+                "00:00:00:00:00:03": 20,
+                "02:10:00:00:00:01": 10,
+            },
+        )
+        self.subject._update_packet_flow_window(
+            100.0, self.run, 4, "10.10.10.5", "10.10.20.2",
+            51514, 5000, 6, 100, 0x02,
+            "00:00:00:00:00:06", "02:10:00:00:00:01"
+        )
+        row = self.flush_row()
+        self.assertEqual(row[-2:], ["00:00:00:00:00:06", "00:00:00:00:00:03"])
 
 
 if __name__ == "__main__":
