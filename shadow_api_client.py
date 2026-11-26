@@ -23,10 +23,25 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
 LOG = logging.getLogger("ShadowAPI")
+
+
+def _env_float(name, default, minimum, maximum):
+    """Read a bounded float setting; fall back to the default if invalid."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    if not math.isfinite(value):
+        return default
+    return min(max(value, minimum), maximum)
 
 # ---------------------------------------------------------------------
 # Configuration
@@ -34,13 +49,21 @@ LOG = logging.getLogger("ShadowAPI")
 
 API_URL = os.environ.get("SHADOW_API_URL", "").strip()
 
-TIMEOUT = 2.0
-WORKER_COUNT = 4
-MAX_QUEUE_SIZE = 256
+# A tunnelled endpoint (e.g. ngrok) adds TLS + relay latency on every new
+# connection, so the old 2 s limit caused spurious fail-open timeouts.
+TIMEOUT = _env_float("SHADOW_API_TIMEOUT", 5.0, 0.5, 30.0)
+WORKER_COUNT = 8
+MAX_QUEUE_SIZE = 2048
 
 # Minimum interval between request starts.
 # This is a shared limit across all workers.
-MIN_REQUEST_INTERVAL = 0.2
+MIN_REQUEST_INTERVAL = _env_float("SHADOW_API_MIN_INTERVAL", 0.05, 0.0, 10.0)
+
+# Set when the API / tunnel answers 429 or 5xx with Retry-After; all workers
+# pause until then (monotonic seconds). Flows queued meanwhile stay fail-open.
+MAX_BACKOFF_SECONDS = 30.0
+_BACKOFF_UNTIL = 0.0
+USER_AGENT = "SecureIoT-ShadowClient/1.0"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 SHADOW_API_DATA_DIR = (
@@ -56,6 +79,16 @@ _RESULT_LOCK = threading.Lock()
 _JSONL_LOCK = threading.Lock()
 
 _LAST_REQUEST_AT = 0.0
+_URL_FILE_CACHE = (0.0, "")
+
+VERDICT_MAP = {
+    "BLOCK": "BLOCK_DEVICE",
+    "BLOCK_DEVICE": "BLOCK_DEVICE",
+    "UNBLOCK": "UNBLOCK_DEVICE",
+    "UNBLOCK_DEVICE": "UNBLOCK_DEVICE",
+    "NOT_BLOCK": "NOT_BLOCK",
+    "ALLOW": "NOT_BLOCK",
+}
 
 # Latest response diagnostics.
 # These are global diagnostics, not per-flow results.
@@ -79,7 +112,60 @@ def _utc_now():
 
 def _get_api_url():
     """Read the API URL from the environment."""
-    return os.environ.get("SHADOW_API_URL", API_URL).strip()
+    configured = os.environ.get("SHADOW_API_URL", API_URL).strip()
+    if configured:
+        return configured
+    global _URL_FILE_CACHE
+    now = time.monotonic()
+    if now - _URL_FILE_CACHE[0] < 5.0:
+        return _URL_FILE_CACHE[1]
+    try:
+        path = PROJECT_ROOT / "shadow_api_url.txt"
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        value = ""
+    _URL_FILE_CACHE = (now, value)
+    return value
+
+
+def _is_ngrok_url(url):
+    """True when the configured API URL points at an ngrok tunnel."""
+    try:
+        host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return False
+    return "ngrok" in host
+
+
+def _request_headers(url, api_key):
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": USER_AGENT,
+        "X-API-Key": api_key,
+    }
+    if _is_ngrok_url(url):
+        # Skips ngrok's browser-warning interstitial HTML page.
+        headers["ngrok-skip-browser-warning"] = "true"
+    return headers
+
+
+def _note_backoff(status, headers):
+    """Pause all workers after 429/502/503/504 (honours Retry-After)."""
+    global _BACKOFF_UNTIL
+    if status not in (429, 502, 503, 504):
+        return
+    delay = 2.0
+    try:
+        retry_after = headers.get("Retry-After") if headers else None
+        if retry_after:
+            delay = float(retry_after)
+    except (TypeError, ValueError):
+        pass
+    delay = min(max(delay, 1.0), MAX_BACKOFF_SECONDS)
+    with _RATE_LOCK:
+        _BACKOFF_UNTIL = max(_BACKOFF_UNTIL, time.monotonic() + delay)
+    LOG.warning("SHADOW_API_LIVE backing off %.1fs after HTTP %s", delay, status)
 
 
 def _valid_run_id(run_id):
@@ -295,10 +381,7 @@ def _send_payload(payload, api_key):
             payload,
             allow_nan=False,
         ).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "X-API-Key": api_key,
-        },
+        headers=_request_headers(url, api_key),
         method="POST",
     )
 
@@ -375,13 +458,14 @@ def _send_payload(payload, api_key):
                     latency_ms=latency_ms,
                 )
 
-            decision = str(
-                result.get("decision", "")
-            ).strip().upper()
+            decision = VERDICT_MAP.get(str(
+                result.get("decision", result.get("verdict", ""))
+            ).strip().upper(), "")
 
             if decision not in (
                 "BLOCK_DEVICE",
                 "UNBLOCK_DEVICE",
+                "NOT_BLOCK",
             ):
                 error = "invalid_verdict"
                 _set_response_state(
@@ -402,7 +486,7 @@ def _send_payload(payload, api_key):
 
             reason = result.get("reason")
             confidence = result.get("confidence")
-            response_src_ip = result.get("src_ip")
+            response_src_ip = result.get("src_ip") or payload.get("src_ip")
             response_timestamp = result.get("timestamp")
 
             _set_response_state(
@@ -454,14 +538,22 @@ def _send_payload(payload, api_key):
 
         error = "http_error"
 
+        # ngrok answers with an ERR_NGROK_* code when the tunnel is offline
+        # or the upstream service is not reachable through it.
+        ngrok_code = exc.headers.get("ngrok-error-code") if exc.headers else None
+        if ngrok_code:
+            error = "ngrok_tunnel_error_" + str(ngrok_code)[:32]
+
         _set_response_state(
             status=exc.code,
             error=error,
         )
+        _note_backoff(exc.code, exc.headers)
 
         LOG.warning(
-            "SHADOW_API_LIVE HTTP %s; fail-open",
+            "SHADOW_API_LIVE HTTP %s error=%s; fail-open",
             exc.code,
+            error,
         )
 
         return _build_result(
@@ -481,9 +573,9 @@ def _send_payload(payload, api_key):
         _set_response_state(error=error)
 
         LOG.warning(
-            "SHADOW_API_LIVE connection_error=%s; fail-open",
-            type(exc.reason).__name__
-            if exc.reason else "unknown",
+            "SHADOW_API_LIVE connection_error=%s detail=%s; fail-open",
+            type(exc.reason).__name__ if exc.reason else "unknown",
+            str(exc.reason)[:300] if exc.reason else "unknown",
         )
 
         return _build_result(
@@ -501,8 +593,9 @@ def _send_payload(payload, api_key):
         _set_response_state(error=error)
 
         LOG.warning(
-            "SHADOW_API_LIVE request_failed=%s; fail-open",
+            "SHADOW_API_LIVE request_failed=%s detail=%s; fail-open",
             error,
+            str(exc)[:300],
         )
 
         return _build_result(
@@ -566,7 +659,23 @@ def _apply_shadow_verdict(request_payload, result, metadata):
                 "network_result": response_body,
             }
     except urllib.error.HTTPError as exc:
-        return {"status": "network_api_error", "http_status": exc.code}
+        try:
+            error_text = exc.read(8192).decode(
+                "utf-8",
+                errors="replace",
+            )
+            try:
+                error_body = json.loads(error_text)
+            except ValueError:
+                error_body = {"raw_response": error_text}
+        except Exception:
+            error_body = None
+
+        return {
+            "status": "network_api_error",
+            "http_status": exc.code,
+            "network_result": error_body,
+        }
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         return {"status": "network_api_unreachable", "error": type(exc).__name__}
 
@@ -587,7 +696,10 @@ def _worker_loop():
 
             with _RATE_LOCK:
                 now = time.monotonic()
-                wait = MIN_REQUEST_INTERVAL - (now - _LAST_REQUEST_AT)
+                wait = max(
+                    MIN_REQUEST_INTERVAL - (now - _LAST_REQUEST_AT),
+                    _BACKOFF_UNTIL - now,
+                )
                 if wait > 0:
                     time.sleep(wait)
                 _LAST_REQUEST_AT = time.monotonic()
@@ -640,7 +752,7 @@ def _worker_loop():
 # ---------------------------------------------------------------------
 
 def submit_flow_live(flow):
-    """Validate and queue one TCP/UDP flow for Shadow API analysis.
+    """Validate and queue one TCP/UDP/ICMP flow for Shadow API analysis.
 
     Required local metadata:
         run_id
@@ -695,6 +807,7 @@ def submit_flow_live(flow):
         byte_count = int(flow["byte_count"])
 
         duration = float(flow["duration_sec"])
+        flow_duration = float(flow.get("flow_duration", duration))
         packet_rate = float(flow["packet_rate"])
         byte_rate = float(flow["byte_rate"])
 
@@ -729,10 +842,14 @@ def submit_flow_live(flow):
         )
         return False
 
-    if proto not in (6, 17):
+    # SECUREIOT_ICMP_FLOWSTATS_V1: ICMP uses dst_port=0 because it has no ports.
+    if proto not in (1, 6, 17):
         return False
 
-    if not 1 <= dst_port <= 65535:
+    if proto == 1:
+        if dst_port != 0:
+            return False
+    elif not 1 <= dst_port <= 65535:
         return False
 
     if packets <= 0 or byte_count < 0:
@@ -741,13 +858,16 @@ def submit_flow_live(flow):
     if not _json_safe_number(duration):
         return False
 
+    if not _json_safe_number(flow_duration):
+        return False
+
     if not _json_safe_number(packet_rate):
         return False
 
     if not _json_safe_number(byte_rate):
         return False
 
-    if duration <= 0:
+    if duration <= 0 or flow_duration < 0:
         return False
 
     if packet_rate < 0 or byte_rate < 0:
@@ -763,6 +883,7 @@ def submit_flow_live(flow):
         "dst_ip": dst_ip,
         "dst_port": dst_port,
         "protocol": {
+            1: "ICMP",
             6: "TCP",
             17: "UDP",
         }[proto],
@@ -775,7 +896,7 @@ def submit_flow_live(flow):
         "priority": priority,
         "timestamp": _utc_now(),
         "ip_proto": proto,
-        "flow_duration": duration,
+        "flow_duration": flow_duration,
         "total_pkts": packets,
         "avg_packet_size": byte_count / max(packets, 1),
     }

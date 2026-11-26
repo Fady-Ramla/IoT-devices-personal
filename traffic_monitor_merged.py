@@ -329,6 +329,8 @@ class NetworkActionController(ControllerBase):
 
         host_ip = data.get("ip") or data.get("host_ip")
         mac = data.get("mac")
+        target_type = data.get("target_type") or data.get("target")
+        service = data.get("service")
 
         action = data.get(
             "action"
@@ -366,7 +368,22 @@ class NetworkActionController(ControllerBase):
         try:
 
             action = str(action).strip().upper()
-            if action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            normalized_target = str(target_type or "device").strip().lower()
+            if normalized_target == "service":
+                if not service:
+                    return Response(status=400, content_type="application/json",
+                                    charset="utf-8", body=json.dumps({
+                                        "success": False, "status": "error",
+                                        "message": "service is required for service actions"
+                                    }).encode("utf-8"))
+            elif normalized_target in ("load_balancer", "load-balancer", "lb"):
+                if action.startswith("BLOCK") and not host_ip:
+                    return Response(status=400, content_type="application/json",
+                                    charset="utf-8", body=json.dumps({
+                                        "success": False, "status": "error",
+                                        "message": "ip (or host_ip) is required for load balancer actions"
+                                    }).encode("utf-8"))
+            elif action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
                 if not mac:
                     return Response(
                         status=400, content_type="application/json",
@@ -391,7 +408,9 @@ class NetworkActionController(ControllerBase):
                 request_id=request_id,
                 trust_state=trust_state,
                 trust_score=trust_score,
-                reason=reason
+                reason=reason,
+                target_type=target_type,
+                service=service
             )
 
             status_code = 200
@@ -1166,8 +1185,15 @@ class TrafficMonitorMerged(
     def _packet_run_context(self):
         with self.dataset_lock:
             run = self.dataset_run
-            return run if (run and run["state"] == "active"
-                           and not self.dataset_error and not self.dataset_closed) else None
+            if run and run["state"] == "active":
+                return run if not self.dataset_error and not self.dataset_closed else None
+            if run and run["state"] == "draining":
+                return None
+            if (os.environ.get("SHADOW_API_LIVE") == "1"
+                    and os.environ.get("SHADOW_API_CONTINUOUS") == "1"
+                    and not self.dataset_closed):
+                return self.shadow_live_run
+            return None
     def _validate_run_files(self, directory, header):
         run_ids = set()
         for path in sorted(directory.glob("*.csv")):
@@ -1521,16 +1547,24 @@ class TrafficMonitorMerged(
 
             # Submit only a single valid TCP/UDP destination port; never select an
             # arbitrary port from an ambiguous flow. Enforcement is separately guarded.
-            if (flow_row_written
+            # SECUREIOT_ICMP_FLOWSTATS_V1: TCP, UDP and ICMP are submitted
+            # from switch counters only. ICMP has no TCP/UDP destination port.
+            if ((flow_row_written or run is self.shadow_live_run)
                    and submit_flow_live is not None
-                   and protocol_number in (6, 17)
+                   and protocol_number in (1, 6, 17)
                    and src_ip and dst_ip and time_delta > 0 and packet_delta > 0):
-                try:
-                    destination_port = int(dst_port)
-                except (TypeError, ValueError):
+                if protocol_number == 1:
                     destination_port = 0
-                if 1 <= destination_port <= 65535:
+                else:
                     try:
+                        destination_port = int(dst_port)
+                    except (TypeError, ValueError):
+                        destination_port = 0
+                valid_port = (destination_port == 0 if protocol_number == 1
+                              else 1 <= destination_port <= 65535)
+                if valid_port:
+                    try:
+                        protocol_name = {1: "ICMP", 6: "TCP", 17: "UDP"}[protocol_number]
                         queued = submit_flow_live({
                             "run_id": run["run_id"],
                             "observation_id": "%s_switch_%d_%s" % (
@@ -1538,7 +1572,7 @@ class TrafficMonitorMerged(
                             "src_ip": str(src_ip),
                             "dst_ip": str(dst_ip),
                             "dst_port": destination_port,
-                            "protocol": "TCP" if protocol_number == 6 else "UDP",
+                            "protocol": protocol_name,
                             "ip_proto": protocol_number,
                             "packet_count": int(packet_delta),
                             "byte_count": int(byte_delta),
@@ -1568,7 +1602,19 @@ class TrafficMonitorMerged(
         with self.dataset_lock:
             for key, state in list(self.packet_flow_windows.items()):
                 run = state["run"]
-                if (self.dataset_run is run and run["state"] in ("active", "draining")
+                live_ok = (
+                    run is self.shadow_live_run
+                    and os.environ.get("SHADOW_API_LIVE") == "1"
+                    and os.environ.get("SHADOW_API_CONTINUOUS") == "1"
+                    and not self.dataset_closed
+                    and not (self.dataset_run and
+                             self.dataset_run["state"] in ("active", "draining"))
+                )
+                dataset_ok = (
+                    self.dataset_run is run
+                    and run["state"] in ("active", "draining")
+                )
+                if ((live_ok or dataset_ok)
                         and now - state["start_time"] >= PACKET_FLOW_WINDOW):
                     self._write_packet_flow_window(key, state, lock_held=True)
                     self.packet_flow_windows.pop(key, None)
@@ -2620,7 +2666,30 @@ class TrafficMonitorMerged(
             return False
         _, _, dpid, src_ip, dst_ip, protocol, _, _ = key
         run = state["run"]
-        if self.dataset_run is not run or run["state"] not in ("active", "draining"):
+        shadow_live = run is self.shadow_live_run
+        if shadow_live:
+            if lock_held:
+                active_run = self.dataset_run
+                ready = (
+                    not self.dataset_closed
+                    and os.environ.get("SHADOW_API_LIVE") == "1"
+                    and os.environ.get("SHADOW_API_CONTINUOUS") == "1"
+                    and not (active_run and
+                             active_run["state"] in ("active", "draining"))
+                )
+            else:
+                with self.dataset_lock:
+                    active_run = self.dataset_run
+                    ready = (
+                        not self.dataset_closed
+                        and os.environ.get("SHADOW_API_LIVE") == "1"
+                        and os.environ.get("SHADOW_API_CONTINUOUS") == "1"
+                        and not (active_run and
+                                 active_run["state"] in ("active", "draining"))
+                    )
+            if not ready:
+                return False
+        elif self.dataset_run is not run or run["state"] not in ("active", "draining"):
             return False
         end_time = state["last_time"]
         duration = max(end_time - state["start_time"], 0.001)
@@ -2635,49 +2704,18 @@ class TrafficMonitorMerged(
                syn / max(ack, 1), rst / max(packets, 1), len(state["dst_ports"]),
                max(syn - ack, 0), float(protocol == 6), float(protocol == 17),
                float(protocol == 1), "packetin_window", "", ""]
-        if lock_held:
-            written = self._write_flow_feature_locked(row, run)
+        if shadow_live:
+            written = "%s_packetin_%s" % (run["run_id"], uuid.uuid4().hex)
         else:
-            written = self._write_flow_feature(row, run)
-        if not written:
-            return False
+            if lock_held:
+                written = self._write_flow_feature_locked(row, run)
+            else:
+                written = self._write_flow_feature(row, run)
+            if not written:
+                return False
 
-        # Submit only complete TCP/UDP observations. The API client queues
-        # asynchronously and separately audits any guarded enforcement result.
-        if protocol in (6, 17) and submit_flow_live is not None:
-            try:
-                source_port = int(next(iter(state["src_ports"])))
-                destination_port = int(next(iter(state["dst_ports"])))
-            except (StopIteration, TypeError, ValueError):
-                source_port = destination_port = 0
-
-            if (1 <= source_port <= 65535
-                    and 1 <= destination_port <= 65535):
-                try:
-                    queued = submit_flow_live({
-                        "run_id": run["run_id"],
-                        "observation_id": written,
-                        "src_ip": str(src_ip),
-                        "dst_ip": str(dst_ip),
-                        "dst_port": destination_port,
-                        "protocol": "TCP" if protocol == 6 else "UDP",
-                        "ip_proto": int(protocol),
-                        "packet_count": int(packets),
-                        "byte_count": int(byte_count),
-                        "packet_rate": float(packets / duration),
-                        "byte_rate": float(byte_count / duration),
-                        "duration_sec": float(duration),
-                        "switch_dpid": int(dpid),
-                        "priority": 0,
-                    })
-                    if not queued:
-                        self.logger.debug(
-                            "Shadow API did not queue PacketIn observation"
-                        )
-                except Exception as exc:
-                    self.logger.warning(
-                        "Shadow API PacketIn submission failed: %s", exc
-                    )
+        # SECUREIOT_ICMP_FLOWSTATS_V1: PacketIn windows remain local dataset
+        # features only. Shadow API submissions are made from OpenFlow FlowStats.
 
         return True
     def _flow_stats_loop(self):
@@ -2904,19 +2942,7 @@ class TrafficMonitorMerged(
             return {"success": False, "status": "rejected",
                     "message": "API source IP does not match the submitted flow"}
 
-        allow_ips = set()
-        for value in os.environ.get("SHADOW_ENFORCEMENT_IPS", "").split(","):
-            value = value.strip()
-            if value:
-                try:
-                    allow_ips.add(str(ipaddress.ip_address(value)))
-                except ValueError:
-                    return {"success": False, "status": "rejected",
-                            "message": "invalid SHADOW_ENFORCEMENT_IPS configuration"}
-        if requested_ip not in allow_ips:
-            return {"success": False, "status": "rejected",
-                    "message": "source IP is not explicitly allowlisted for enforcement"}
-
+        # Protected infrastructure is checked before either enforcement mode.
         protected_ips = set()
         for value in os.environ.get("SECUREIOT_PROTECTED_IPS", "").split(","):
             value = value.strip()
@@ -2930,6 +2956,21 @@ class TrafficMonitorMerged(
             return {"success": False, "status": "rejected",
                     "message": "source IP is protected"}
 
+        all_access = os.environ.get("SHADOW_ENFORCEMENT_ALL_ACCESS") == "1"
+
+        allow_ips = set()
+        for value in os.environ.get("SHADOW_ENFORCEMENT_IPS", "").split(","):
+            value = value.strip()
+            if value:
+                try:
+                    allow_ips.add(str(ipaddress.ip_address(value)))
+                except ValueError:
+                    return {"success": False, "status": "rejected",
+                            "message": "invalid SHADOW_ENFORCEMENT_IPS configuration"}
+        if not all_access and requested_ip not in allow_ips:
+            return {"success": False, "status": "rejected",
+                    "message": "source IP is not explicitly allowlisted for enforcement"}
+
         try:
             allowed_vlans = {int(v.strip()) for v in
                              os.environ.get("SHADOW_ENFORCEMENT_VLANS", "10").split(",")
@@ -2942,11 +2983,54 @@ class TrafficMonitorMerged(
         if topology is None:
             return {"success": False, "status": "unavailable",
                     "message": "TopologyMonitor is not available"}
+
+        if all_access and not getattr(topology, "vlan_map_ready", False):
+            return {"success": False, "status": "unavailable",
+                    "message": "VLAN port inventory is not ready"}
+
         mac = topology.ip_to_mac.get(requested_ip)
         if not mac or mac not in topology.host_location:
             return {"success": False, "status": "rejected",
                     "message": "source IP has no current learned host identity"}
-        if topology.ip_vlan.get(requested_ip) not in allowed_vlans:
+
+        vlan_id = topology.ip_vlan.get(requested_ip)
+
+        if all_access:
+            if vlan_id not in allowed_vlans:
+                return {"success": False, "status": "rejected",
+                        "message": "source host VLAN is outside enforcement scope"}
+            location = topology.host_location.get(mac)
+            try:
+                location_key = (int(location[0]), int(location[1]))
+            except (TypeError, ValueError, IndexError):
+                return {"success": False, "status": "rejected",
+                        "message": "source host location is invalid"}
+
+            entry = getattr(topology, "vlan_port_map", {}).get(location_key)
+            if (not isinstance(entry, dict)
+                    or entry.get("kind") != "access"
+                    or entry.get("role") not in ("endpoint", "infrastructure")):
+                return {"success": False, "status": "rejected",
+                        "message": "ALL_ACCESS only permits learned host access ports"}
+
+            if topology.mac_vlan.get(mac) != vlan_id:
+                return {"success": False, "status": "rejected",
+                        "message": "source MAC/VLAN identity does not match"}
+
+        classifier = getattr(topology, "classify_security_target", None)
+        if callable(classifier):
+            resolved_target = classifier(ip=requested_ip, mac=mac)
+        else:
+            resolved_target = {"target_type": "device", "service": None}
+
+        if all_access and resolved_target.get("target_type") not in (
+                "device", "service", "load_balancer"):
+            return {"success": False, "status": "rejected",
+                    "message": "Unsupported Security target classification"}
+
+        if (not all_access
+                and resolved_target.get("target_type") == "device"
+                and vlan_id not in allowed_vlans):
             return {"success": False, "status": "rejected",
                     "message": "source host VLAN is outside enforcement scope"}
         try:
@@ -2965,10 +3049,17 @@ class TrafficMonitorMerged(
 
         reason = str(payload.get("reason") or "Shadow API verdict")[:300]
         current_block = topology.blocked_devices.get(mac)
+        target_type = resolved_target.get("target_type", "device")
+        service = resolved_target.get("service")
         if decision == ACTION_BLOCK_DEVICE:
-            if current_block:
-                if current_block.get("source") == "shadow_api":
+            service_blocked = service in topology.blocked_services if service else False
+            endpoint_blocked = target_type == "load_balancer" and "load_balancer" in topology.blocked_endpoints
+            if current_block or service_blocked or endpoint_blocked:
+                if current_block and current_block.get("source") == "shadow_api":
                     self.shadow_seen_request_ids.add(request_id)
+                    return {"success": True, "status": "already_blocked_by_shadow",
+                            "request_id": request_id, "ip": requested_ip, "mac": mac}
+                if service_blocked or endpoint_blocked:
                     return {"success": True, "status": "already_blocked_by_shadow",
                             "request_id": request_id, "ip": requested_ip, "mac": mac}
                 return {"success": False, "status": "rejected",
@@ -2977,13 +3068,18 @@ class TrafficMonitorMerged(
             if os.environ.get("SHADOW_AUTO_UNBLOCK") != "1":
                 return {"success": False, "status": "rejected",
                         "message": "automatic unblocking is not enabled"}
-            if not current_block or current_block.get("source") != "shadow_api":
+            if target_type == "service" and service in topology.blocked_services:
+                pass
+            elif target_type == "load_balancer" and "load_balancer" in topology.blocked_endpoints:
+                pass
+            elif not current_block or current_block.get("source") != "shadow_api":
                 return {"success": False, "status": "rejected",
                         "message": "only a block previously issued by Shadow API may be removed"}
 
         result = self.execute_security_action(
             host_ip=requested_ip, mac=mac, action=decision,
-            request_id="SHADOW-" + request_id, reason=reason)
+            request_id="SHADOW-" + request_id, reason=reason,
+            target_type=target_type, service=service)
         # Keep ownership metadata for any block this path created, including
         # a partial switch failure, so it cannot be mistaken for a manual block.
         if decision == ACTION_BLOCK_DEVICE:
@@ -3012,6 +3108,8 @@ class TrafficMonitorMerged(
         src = payload.get("src") or payload.get("source_ip")
         dst = payload.get("dst") or payload.get("destination_ip")
         mac = payload.get("mac")
+        target_type = str(payload.get("target_type") or payload.get("target") or "device").strip().lower()
+        service = payload.get("service")
 
         telemetry = {
             "src": src, "dst": dst,
@@ -3020,6 +3118,7 @@ class TrafficMonitorMerged(
             "packets": payload.get("packets"),
             "rate": payload.get("rate"),
             "mac": mac, "decision": decision,
+            "target_type": target_type, "service": service,
             "reason": payload.get("reason"),
             "request_id": request_id, "timestamp": time.time()
         }
@@ -3037,13 +3136,18 @@ class TrafficMonitorMerged(
                 "request_id": request_id, "telemetry": telemetry
             }
 
-        if not mac:
+        is_service = target_type == "service"
+        is_load_balancer = target_type in {"load_balancer", "load-balancer", "lb"}
+        if is_service and not service:
+            return {"success": False, "status": "rejected",
+                    "message": "service is required for a service decision"}
+        if not is_service and not is_load_balancer and not mac:
             return {
                 "success": False, "status": "rejected",
                 "message": "mac is required for BLOCK and UNBLOCK"
             }
 
-        if decision == "BLOCK" and not src:
+        if decision == "BLOCK" and not src and not is_service and not is_load_balancer:
             return {
                 "success": False, "status": "rejected",
                 "message": "src is required for BLOCK"
@@ -3059,7 +3163,9 @@ class TrafficMonitorMerged(
             mac=mac,
             action=action,
             request_id=request_id,
-            reason=payload.get("reason")
+            reason=payload.get("reason"),
+            target_type=target_type,
+            service=service
         )
 
         telemetry["action"] = action
@@ -3070,11 +3176,39 @@ class TrafficMonitorMerged(
 
     def execute_security_action(
         self, host_ip=None, action=None, request_id=None, trust_state=None,
-        trust_score=None, reason=None, mac=None
+        trust_score=None, reason=None, mac=None, target_type=None, service=None
     ):
         action = str(action or "").strip().upper()
+        target_type = str(target_type or "device").strip().lower()
+        if target_type in {"load-balancer", "lb"}:
+            target_type = "load_balancer"
+
+        # Security does not need to know whether an identity is an IoT host,
+        # a primary backend, or the LB. Resolve the current inventory before
+        # validating/executing the action. Explicit target_type still wins for
+        # callers that already use the newer service contract.
+        if target_type == "device" and action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            topology = self._get_topology_monitor()
+            if topology is not None and hasattr(topology, "classify_security_target"):
+                resolved = topology.classify_security_target(ip=host_ip, mac=mac)
+                target_type = resolved.get("target_type", "device")
+                host_ip = resolved.get("ip") or host_ip
+                service = resolved.get("service") or service
+
+        target_action = action
+        if target_type == "service" and action in ("BLOCK_SERVICE", ACTION_BLOCK_DEVICE):
+            target_action = ACTION_BLOCK_DEVICE
+        elif target_type == "service" and action in ("UNBLOCK_SERVICE", ACTION_UNBLOCK_DEVICE):
+            target_action = ACTION_UNBLOCK_DEVICE
+        elif target_type == "load_balancer" and action in ("BLOCK_LOAD_BALANCER", ACTION_BLOCK_DEVICE):
+            target_action = ACTION_BLOCK_DEVICE
+        elif target_type == "load_balancer" and action in ("UNBLOCK_LOAD_BALANCER", ACTION_UNBLOCK_DEVICE):
+            target_action = ACTION_UNBLOCK_DEVICE
+        validation_mac = mac
+        if target_type in {"service", "load_balancer"} and not validation_mac:
+            validation_mac = "02:00:00:00:00:00"
         validation = self._validate_network_decision(
-            host_ip=host_ip, mac=mac, action=action,
+            host_ip=host_ip, mac=validation_mac, action=target_action,
             trust_state=trust_state, trust_score=trust_score, reason=reason)
         if not validation["valid"]:
             self.logger.warning("Security decision rejected: %s", validation["message"])
@@ -3083,9 +3217,50 @@ class TrafficMonitorMerged(
                     "mac": mac, "action": action}
 
         host_ip = validation["host_ip"]
-        mac = validation["mac"]
+        mac = mac if target_type in {"service", "load_balancer"} else validation["mac"]
 
         # Explicit enforcement actions do not alter Trust Score or state.
+        if target_type == "service" and target_action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            topology = self._get_topology_monitor()
+            if topology is None:
+                return {"success": False, "status": "unavailable",
+                        "message": "TopologyMonitor is not available", "service": service}
+            method = topology.block_service if target_action == ACTION_BLOCK_DEVICE else topology.unblock_service
+            result = method(service=service, request_id=request_id, reason=reason)
+            self._record_action(request_id, service, action,
+                                result.get("status", "failed"), reason)
+            result.update({"target_type": "service", "service": service,
+                           "request_id": request_id,
+                           "trust_state_unchanged": True,
+                           "trust_score_unchanged": True})
+            return result
+
+        if target_type == "load_balancer" and target_action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
+            topology = self._get_topology_monitor()
+            if topology is None:
+                return {"success": False, "status": "unavailable",
+                        "message": "TopologyMonitor is not available", "action": action}
+            if target_action == ACTION_BLOCK_DEVICE:
+                if service:
+                    result = topology.block_load_balancer_service(
+                        service=service, ip=host_ip, mac=mac,
+                        request_id=request_id, reason=reason)
+                else:
+                    result = topology.block_load_balancer(
+                        ip=host_ip, mac=mac, request_id=request_id, reason=reason)
+            else:
+                if service:
+                    result = topology.unblock_load_balancer_service(
+                        service=service, request_id=request_id, reason=reason)
+                else:
+                    result = topology.unblock_load_balancer(request_id=request_id, reason=reason)
+            self._record_action(request_id, host_ip, action,
+                                result.get("status", "failed"), reason, mac)
+            result.update({"target_type": "load_balancer", "request_id": request_id,
+                           "trust_state_unchanged": True,
+                           "trust_score_unchanged": True})
+            return result
+
         if action in (ACTION_BLOCK_DEVICE, ACTION_UNBLOCK_DEVICE):
             topology = self._get_topology_monitor()
             if topology is None:

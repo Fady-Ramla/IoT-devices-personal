@@ -642,6 +642,49 @@ class RuntimeNetworkController(ControllerBase):
                               "last_event": result.get("last_event"), "last_error": None if service else "ResilienceEngine unavailable"})
 
 
+    @api_auth_required
+    @route("vip_takeover_activate", "/vip/takeover/activate", methods=["POST"])
+    def vip_takeover_activate(self, req, **kwargs):
+        topology = self._topology()
+        if topology is None:
+            return json_response({"success": False, "status": "topology_unavailable"}, status=503)
+
+        if getattr(topology, "lb_health_takeover_active", False):
+            return json_response({"success": False, "status": "watchdog_takeover_active"}, status=409)
+
+        reasons = set(getattr(topology, "vip_takeover_reasons", set()))
+        if reasons - {"lb_health"}:
+            return json_response({
+                "success": False,
+                "status": "another_takeover_reason_active",
+                "active_reasons": sorted(reasons),
+            }, status=409)
+
+        try:
+            result = topology.activate_vip_takeover(reason="lb_health")
+        except Exception as exc:
+            return json_response({"success": False, "status": "activation_error", "error": str(exc)}, status=500)
+
+        return json_response(result, status=200 if result.get("success") else 409)
+
+    @api_auth_required
+    @route("vip_takeover_deactivate", "/vip/takeover/deactivate", methods=["POST"])
+    def vip_takeover_deactivate(self, req, **kwargs):
+        topology = self._topology()
+        if topology is None:
+            return json_response({"success": False, "status": "topology_unavailable"}, status=503)
+
+        if getattr(topology, "lb_health_takeover_active", False):
+            return json_response({"success": False, "status": "watchdog_takeover_active"}, status=409)
+
+        try:
+            result = topology.deactivate_vip_takeover(reason="lb_health")
+        except Exception as exc:
+            return json_response({"success": False, "status": "deactivation_error", "error": str(exc)}, status=500)
+
+        return json_response(result, status=200 if result.get("success") else 409)
+
+
 class RuntimeNetworkApi(app_manager.RyuApp):
     _CONTEXTS = {"wsgi": WSGIApplication}
 

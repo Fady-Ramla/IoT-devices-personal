@@ -75,12 +75,58 @@ IOT_DEVICE_PROFILES = {
 
 # Service names match Real_network_topology's attack/normal-traffic naming.
 SERVICE_PAIRS = {
-    "dns":      {"primary": "h1", "backup": "h17", "port": 53,   "vlan": VLAN_DNS},
-    "http_api": {"primary": "h2", "backup": "h18", "port": 5000, "vlan": VLAN_SERVICES},
-    "https":    {"primary": "h3", "backup": "h19", "port": 443,  "vlan": VLAN_SERVICES},
-    "ssh":      {"primary": "h4", "backup": "h20", "port": 22,   "vlan": VLAN_SERVICES},
+    "dns": {
+        "primary": "h1",
+        "backup": "h17",
+        "port": 53,
+        "vlan": VLAN_DNS,
+        "vip": "10.10.30.100",
+        "transports": ("udp", "tcp"),
+    },
+    "http_api": {
+        "primary": "h2",
+        "backup": "h18",
+        "port": 5000,
+        "vlan": VLAN_SERVICES,
+        "vip": "10.10.20.100",
+        "transports": ("tcp",),
+    },
+    "https": {
+        "primary": "h3",
+        "backup": "h19",
+        "port": 443,
+        "vlan": VLAN_SERVICES,
+        "vip": "10.10.20.100",
+        "transports": ("tcp",),
+    },
+    "ssh": {
+        "primary": "h4",
+        "backup": "h20",
+        "port": 22,
+        "vlan": VLAN_SERVICES,
+        "vip": "10.10.20.100",
+        "transports": ("tcp",),
+    },
 }
-LOAD_BALANCER = {"host": "h38", "frontends": (5000, 443)}
+LOAD_BALANCER = {
+    "host": "h38",
+    "frontends": (5000, 443, 22, 53),
+    "vip_by_vlan": {
+        VLAN_SERVICES: "10.10.20.100",
+        VLAN_DNS: "10.10.30.100",
+    },
+}
+
+# DNS clients use the VLAN30 VIP; the gateway DNATs it to h38's
+# VLAN20 frontend. h38 itself does not need a VLAN30 interface.
+H38_DNS_VIP = {
+    "address": "10.10.30.100",
+    "vlan": VLAN_DNS,
+    "port": 53,
+    "transports": ("udp", "tcp"),
+    "frontend_address": "10.10.20.100",
+    "host": "h38",
+}
 
 HOSTS = {}
 

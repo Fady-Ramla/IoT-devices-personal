@@ -50,8 +50,55 @@ FORWARD_RULES = (
     # IT admins to approved service and management ports.
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.20 -p tcp -m multiport --dports 22,443,5000 -j ACCEPT",
     "iptables -A FORWARD -i gw-eth0.40 -o gw-eth0.10 -p tcp --dport 5000 -j ACCEPT",
+    # DNS clients reach the logical VLAN30 VIP; the gateway forwards it to
+    # h38's real VLAN20 frontend. Replies are SNATed to the gateway so h38
+    # needs no VLAN30 interface or policy route.
+    "iptables -A FORWARD -i gw-eth0.30 -o gw-eth0.20 -p udp -d 10.10.20.100 --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.30 -o gw-eth0.20 -p tcp -d 10.10.20.100 --dport 53 -j ACCEPT",
+    # VLAN10/VLAN50 DNS clients reach the VIP, DNATed to h38 on VLAN20.
+    "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -d 10.10.20.100 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.10 -o gw-eth0.20 -d 10.10.20.100 -p tcp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.20 -d 10.10.20.100 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.50 -o gw-eth0.20 -d 10.10.20.100 -p tcp --dport 53 -j ACCEPT",
+    # Permit h38 to query only the two DNS backends.
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.30 -s 10.10.20.100 -d 10.10.30.2 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.30 -s 10.10.20.100 -d 10.10.30.2 -p tcp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.30 -s 10.10.20.100 -d 10.10.30.17 -p udp --dport 53 -j ACCEPT",
+    "iptables -A FORWARD -i gw-eth0.20 -o gw-eth0.30 -s 10.10.20.100 -d 10.10.30.17 -p tcp --dport 53 -j ACCEPT",
+    # VLAN10/VLAN50 DNS clients reach the VIP, DNATed to h38 on VLAN20.
+    # Permit h38 to query only the two DNS backends.
     # Services-to-IoT and all other unlisted forwarding are denied by policy.
 )
+
+DNS_NAT_RULES = (
+    # DNS UDP VIP on VLAN30 -> h38 frontend on VLAN20.
+    "iptables -t nat -A PREROUTING "
+    "-i gw-eth0.30 -p udp -d 10.10.30.100 --dport 53 "
+    "-j DNAT --to-destination 10.10.20.100:53",
+
+    # DNS TCP VIP on VLAN30 -> h38 frontend on VLAN20.
+    "iptables -t nat -A PREROUTING "
+    "-i gw-eth0.30 -p tcp -d 10.10.30.100 --dport 53 "
+    "-j DNAT --to-destination 10.10.20.100:53",
+    "iptables -t nat -A PREROUTING -i gw-eth0.10 -p udp -d 10.10.30.100 --dport 53 -j DNAT --to-destination 10.10.20.100:53",
+    "iptables -t nat -A PREROUTING -i gw-eth0.10 -p tcp -d 10.10.30.100 --dport 53 -j DNAT --to-destination 10.10.20.100:53",
+    "iptables -t nat -A PREROUTING -i gw-eth0.50 -p udp -d 10.10.30.100 --dport 53 -j DNAT --to-destination 10.10.20.100:53",
+    "iptables -t nat -A PREROUTING -i gw-eth0.50 -p tcp -d 10.10.30.100 --dport 53 -j DNAT --to-destination 10.10.20.100:53",
+
+    # Return translation; h38 remains VLAN20-only.
+    "iptables -t nat -A POSTROUTING "
+    "-o gw-eth0.20 -s 10.10.30.0/24 -d 10.10.20.100 "
+    "-p udp --dport 53 -j SNAT --to-source 10.10.20.1",
+
+    "iptables -t nat -A POSTROUTING "
+    "-o gw-eth0.20 -s 10.10.30.0/24 -d 10.10.20.100 "
+    "-p tcp --dport 53 -j SNAT --to-source 10.10.20.1",
+    "iptables -t nat -A POSTROUTING -o gw-eth0.20 -s 10.10.10.0/24 -d 10.10.20.100 -p udp --dport 53 -j SNAT --to-source 10.10.20.1",
+    "iptables -t nat -A POSTROUTING -o gw-eth0.20 -s 10.10.10.0/24 -d 10.10.20.100 -p tcp --dport 53 -j SNAT --to-source 10.10.20.1",
+    "iptables -t nat -A POSTROUTING -o gw-eth0.20 -s 10.10.50.0/24 -d 10.10.20.100 -p udp --dport 53 -j SNAT --to-source 10.10.20.1",
+    "iptables -t nat -A POSTROUTING -o gw-eth0.20 -s 10.10.50.0/24 -d 10.10.20.100 -p tcp --dport 53 -j SNAT --to-source 10.10.20.1",
+)
+
 
 _RC_MARKER = "__SECUREIOT_GATEWAY_RC__"
 
@@ -183,12 +230,34 @@ def configure_gateway(gateway):
         _run(gateway, "ip addr flush dev %s" % interface)
         _run(gateway, "ip addr replace %s dev %s" % (address, interface))
 
+    # Assign DNS VIP to Gateway for VLAN30 ARP ownership.
+    _run(
+        gateway,
+        "ip addr replace 10.10.30.100/32 dev gw-eth0.30"
+    )
+
     _run(gateway, "sysctl -w net.ipv4.ip_forward=1")
 
     # The gateway is an isolated Mininet host namespace. Reset its forwarding
     # and NAT rules so repeated lab starts are deterministic and idempotent.
     _run(gateway, "iptables -F")
     _run(gateway, "iptables -t nat -F")
+
+    for rule in DNS_NAT_RULES:
+        _run(gateway, rule)
+
+    # Explicitly permit ping to each gateway address. Keep this limited to
+    # ICMP echo requests; the existing inter-zone forwarding policy remains
+    # restrictive for application traffic.
+    for vlan_id in sorted(GATEWAY_VLAN_INTERFACES):
+        interface = GATEWAY_VLAN_INTERFACES[vlan_id][0]
+        _run(
+            gateway,
+            "iptables -C INPUT -i %s -p icmp --icmp-type echo-request -j ACCEPT "
+            "2>/dev/null || iptables -A INPUT -i %s -p icmp --icmp-type echo-request -j ACCEPT"
+            % (interface, interface),
+        )
+
     _run(gateway, "iptables -P FORWARD DROP")
     for rule in FORWARD_RULES:
         _run(gateway, rule)

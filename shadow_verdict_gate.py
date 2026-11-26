@@ -3,7 +3,8 @@
 This module is intentionally not wired into the live collector. Integrate it
 only after the Ryu app supplies a current, unambiguous IP->MAC mapping. Dry-run
 is the default; live blocking requires SHADOW_ENFORCE=1. Unblocking additionally
-requires SHADOW_ALLOW_UNBLOCK=1.
+requires SHADOW_AUTO_UNBLOCK=1 (same switch used by traffic_monitor_merged.py;
+the legacy name SHADOW_ALLOW_UNBLOCK is still honoured).
 """
 from __future__ import annotations
 
@@ -33,14 +34,10 @@ def _normalize_mac(value: object) -> str:
     return value.strip().lower()
 
 
-def _protected_ips() -> set[str]:
-    raw = os.getenv("SECUREIOT_PROTECTED_IPS", "")
-    result: set[str] = set()
-    for item in raw.split(","):
-        item = item.strip()
-        if item:
-            result.add(_normalize_ip(item))
-    return result
+def _unblock_enabled() -> bool:
+    """Single unblock switch shared with the Ryu app (SHADOW_AUTO_UNBLOCK)."""
+    return (os.getenv("SHADOW_AUTO_UNBLOCK") == "1"
+            or os.getenv("SHADOW_ALLOW_UNBLOCK") == "1")
 
 
 def process_verdict(
@@ -71,9 +68,6 @@ def process_verdict(
     if requested_src != returned_src:
         return {"status": "rejected", "reason": "src_ip_mismatch"}
 
-    if requested_src in _protected_ips():
-        return {"status": "rejected", "reason": "protected_ip"}
-
     # Do not silently accept an ambiguous/stale mapping. Require the caller to
     # provide a current, exact key for the observed source address.
     candidate = ip_to_mac.get(requested_src)
@@ -81,7 +75,7 @@ def process_verdict(
         return {"status": "rejected", "reason": "unknown_source_ip"}
     mac = _normalize_mac(candidate)
 
-    if decision == "UNBLOCK_DEVICE" and os.getenv("SHADOW_ALLOW_UNBLOCK") != "1":
+    if decision == "UNBLOCK_DEVICE" and not _unblock_enabled():
         return {"status": "rejected", "reason": "unblock_not_enabled"}
 
     if dry_run is None:
@@ -102,7 +96,9 @@ def process_verdict(
         return {"status": "rejected", "reason": "missing_control_token"}
 
     url = action_url or os.getenv("SECUREIOT_NETWORK_ACTION_URL", DEFAULT_ACTION_URL)
-    if not url.startswith("http://127.0.0.1:") and not url.startswith("http://localhost:") and not url.startswith("https://"):
+    # The control token must never leave the controller host: loopback only
+    # (same rule as shadow_api_client.py's SHADOW_ENFORCEMENT_URL).
+    if not url.startswith("http://127.0.0.1:") and not url.startswith("http://localhost:"):
         return {"status": "rejected", "reason": "unsafe_action_url"}
 
     req = urllib.request.Request(

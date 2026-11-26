@@ -1,0 +1,22 @@
+[Unit]
+Description=SecureIoT mirrored packet sender over Tailscale
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/security_packet_sender.py --config /etc/secureiot/security_sender_config.json
+Restart=on-failure
+RestartSec=5
+User=root
+Group=root
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/run /var/log
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target

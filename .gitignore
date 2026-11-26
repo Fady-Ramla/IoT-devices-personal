@@ -171,3 +171,11 @@ old_dataset_backup_before_new_pipeline/
 
 # Keep trained ML models locally, not in Git
 *.joblib
+
+# SecureIoT local environments and backups
+.venv/
+*.bak
+*.bak_*
+*.before_*
+security_sender_config.json
+vpn-packet-sender/__pycache__/

@@ -13,6 +13,13 @@ against the VLAN-aware Ryu forwarding implementation before production tests.
 
 import os
 import sys
+
+# Prefer modules located beside this topology over legacy root-level copies.
+MININET_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if not sys.path or sys.path[0] != MININET_SCRIPT_DIR:
+    if MININET_SCRIPT_DIR in sys.path:
+        sys.path.remove(MININET_SCRIPT_DIR)
+    sys.path.insert(0, MININET_SCRIPT_DIR)
 import time
 import csv
 import json
@@ -38,8 +45,16 @@ from mininet.node import OVSSwitch, RemoteController
 from mininet.topo import Topo
 
 from configure_gateway import configure_gateway, configure_wan
+from service_lifecycle import (
+    ensure_listener_group,
+    listener_group_state,
+    http_service_is_healthy,
+    load_balancer_heartbeat_is_valid,
+)
+
 from vlan_config_38host import (
-    HOSTS, INTER_SWITCH_LINKS, NETWORKS, SWITCH_NAMES, host_cidr, gateway_for,
+    HOSTS, IOT_DEVICE_PROFILES, INTER_SWITCH_LINKS, NETWORKS,
+    SWITCH_NAMES, host_cidr, gateway_for,
 )
 
 
@@ -79,6 +94,38 @@ def clear_vlan_port_map():
         os.unlink(VLAN_PORT_MAP_FILE)
     except FileNotFoundError:
         pass
+
+
+def configure_ovs_lldp_forwarding(net):
+    """Allow reserved LLDP link-local frames to reach the OpenFlow pipeline.
+
+    OVS drops reserved destination MAC frames unless forward-bpdu is enabled.
+    STP remains disabled because SecureIoT uses controller-managed CLFF instead.
+    """
+    for switch_name in SWITCH_NAMES:
+        switch = net.get(switch_name)
+        bridge = shlex.quote(switch_name)
+        command = (
+            f"ovs-vsctl set Bridge {bridge} "
+            "other_config:forward-bpdu=true stp_enable=false"
+        )
+        output = switch.cmd(command)
+        if output.strip():
+            raise RuntimeError(
+                "Failed to enable LLDP forwarding on %s: %s"
+                % (switch_name, output.strip())
+            )
+
+        configured = switch.cmd(
+            f"ovs-vsctl get Bridge {bridge} other_config:forward-bpdu"
+        ).strip().strip('"').lower()
+        if configured != "true":
+            raise RuntimeError(
+                "OVS did not enable forward-bpdu on %s (reported %r)"
+                % (switch_name, configured)
+            )
+
+        info("*** OVS LLDP delivery enabled on %s\n", switch_name)
 
 
 def _switch_port_for_node(switch, node, node_intf_name=None):
@@ -132,7 +179,8 @@ def _write_vlan_port_map(net):
     allowed_vlans = sorted(int(vlan_id) for vlan_id in NETWORKS)
     records = []
 
-    def add_record(switch, node, kind, vlan_id=None, role="endpoint", node_intf_name=None):
+    def add_record(switch, node, kind, vlan_id=None, role="endpoint", node_intf_name=None,
+                   host_id=None, service=None):
         record = {
             "dpid": _switch_dpid(switch),
             "switch": switch.name,
@@ -142,10 +190,23 @@ def _write_vlan_port_map(net):
             "vlan_id": int(vlan_id) if vlan_id is not None else None,
             "allowed_vlans": allowed_vlans if kind == "trunk" else [],
         }
+        if host_id is not None:
+            record["host_id"] = host_id
+        if service is not None:
+            record["service"] = service
         records.append(record)
 
     for host_id, spec in HOSTS.items():
-        add_record(net.get(spec["switch"]), net.get(host_id), "access", spec["vlan"])
+        role = "endpoint" if (
+            host_id in IOT_DEVICE_PROFILES
+            or spec["role"] == "employee"
+        ) else "infrastructure"
+        add_record(
+            net.get(spec["switch"]), net.get(host_id), "access", spec["vlan"],
+            node_intf_name=host_id + "-eth0", host_id=host_id,
+            role=role,
+            service="load_balancer" if host_id == "h38" else spec["role"],
+        )
 
     gateway = net.get("gw")
     add_record(
@@ -203,16 +264,18 @@ def configure_ovs_zones(net):
     for host_id, spec in HOSTS.items():
         switch = net.get(spec["switch"])
         host = net.get(host_id)
-        connections = switch.connectionsTo(host)
-        if not connections:
-            raise RuntimeError(f"No link found for {host_id} on {switch.name}")
-        switch_intf, _ = connections[0]
+        node_intf_name = host_id + "-eth0"
+        switch_intf = _switch_interface_for_node_interface(
+            switch, host, node_intf_name
+        )
         result = switch.cmd(
             f"ovs-vsctl set Port {switch_intf.name} tag={spec['vlan']}"
         )
         if result.strip():
             info("[vlan] %s", result)
 
+    # h38 has only VLAN20. DNS VIP 10.10.30.100 is terminated by the
+    # gateway and DNATed to h38's real frontend 10.10.20.100.
     # Configure one Core-to-gateway 802.1Q trunk for all five VLANs.
     trunk_vlans = ",".join(str(vlan) for vlan in sorted(NETWORKS))
     gateway = net.get("gw")
@@ -284,60 +347,332 @@ def print_inventory():
     info("VLAN 50 Employees:    10.10.50.0/24\n")
     info("Primary: h1-h4 | IoT: h5-h16 | Backup: h17-h20\n")
     info("Employees: h21-h35 | IT Admin: h36-h37 | LB: h38\n")
-    info("Load balancer: h38:5000 -> h2/h18, h38:443 -> h3/h19\n")
+    info("Load balancer: h38 10.10.20.100:5000 -> h2/h18, :443 -> h3/h19\n")
+    info("DNS service VIP: 10.10.30.100:53 via gateway DNAT -> h38 10.10.20.100:53\n")
     info("\nUseful checks: pingall, net, links, nodes, gw iptables -L -n -v\n\n")
 
 
 def start_live_iot_web_api(net, ingest_token):
-    """Start the real Flask Web/API on h2 with shared persistent IoT storage."""
+    """Reuse or start the real Flask Web/API without rotating its token."""
     host = net.get("h2")
     project_dir = os.path.dirname(os.path.abspath(__file__))
     server = os.path.join(project_dir, "servers", "web_api_server.py")
-    db_path = os.environ.get("SECUREIOT_IOT_DB", "/var/lib/secureiot/iot-telemetry.sqlite3")
-    host.cmd("pkill -f '[w]eb_api_server.py' >/dev/null 2>&1 || true")
-    host.cmd("sleep 0.3")
-    launch = (
-        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s WEB_API_PORT=5000 python3 %s "
-        "> /tmp/web_api_h2_iot_live.log 2>&1 &"
-        % (shlex.quote(db_path), shlex.quote(ingest_token), shlex.quote(server))
+    db_path = os.environ.get(
+        "SECUREIOT_IOT_DB",
+        "/var/lib/secureiot/iot-telemetry.sqlite3",
     )
-    host.cmd(launch)
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        response = host.cmd("curl -fsS --max-time 1 http://127.0.0.1:5000/health 2>/dev/null")
-        if '"healthy"' in response:
-            info("*** Live IoT Web/API ready on h2:5000; shared store=%s\n", db_path)
-            return
-        time.sleep(0.5)
-    tail = host.cmd("tail -n 20 /tmp/web_api_h2_iot_live.log 2>/dev/null")
-    raise RuntimeError("live IoT Web/API did not become healthy on h2:5000; " + tail.strip())
+
+    launch = (
+        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s WEB_API_PORT=5000 "
+        "python3 %s > /tmp/web_api_h2_iot_live.log 2>&1 &"
+        % (
+            shlex.quote(db_path),
+            shlex.quote(ingest_token),
+            shlex.quote(server),
+        )
+    )
+
+    def health_check(_pid, _commandline):
+        response = host.cmd(
+            "curl -fsS --max-time 2 "
+            "http://127.0.0.1:5000/health 2>/dev/null"
+        )
+        return '"healthy"' in response
+
+    pid, started = ensure_listener_group(
+        host,
+        (("tcp", "0.0.0.0", 5000),),
+        ("web_api_server.py",),
+        launch,
+        timeout=20,
+        health_check=health_check,
+    )
+
+    if started:
+        info(
+            "*** Live IoT Web/API started on h2:5000; shared store=%s\n",
+            db_path,
+        )
+        return ingest_token
+
+    # The API may have been started by an earlier topology invocation.
+    # Recover its existing token rather than replacing it with a new one.
+    active_token = host.cmd(
+        "tr '\\0' '\\n' < /proc/%d/environ 2>/dev/null "
+        "| sed -n 's/^IOT_INGEST_TOKEN=//p' | head -n 1"
+        % pid
+    ).strip()
+
+    if not active_token:
+        raise RuntimeError(
+            "Existing h2 Web/API is healthy, but its ingest token "
+            "could not be recovered safely; refusing to rotate it."
+        )
+
+    info(
+        "*** Existing Live IoT Web/API reused on h2:5000; shared store=%s\n",
+        db_path,
+    )
+    return active_token
+
+
+
+def start_live_iot_web_api_backup(net, ingest_token):
+    """Start or reuse the real backup IoT Web/API on h18."""
+    host = net.get("h18")
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    server = os.path.join(project_dir, "servers", "web_api_server.py")
+    db_path = os.environ.get(
+        "SECUREIOT_IOT_DB",
+        "/var/lib/secureiot/iot-telemetry.sqlite3",
+    )
+
+    launch = (
+        "env SECUREIOT_IOT_DB=%s IOT_INGEST_TOKEN=%s "
+        "WEB_API_SERVER_IP=10.10.20.8 WEB_API_PORT=5000 "
+        "python3 %s > /tmp/web_api_h18_iot_live.log 2>&1 &"
+        % (
+            shlex.quote(db_path),
+            shlex.quote(ingest_token),
+            shlex.quote(server),
+        )
+    )
+
+    def health_check(_pid, _commandline):
+        response = host.cmd(
+            "curl -fsS --max-time 2 "
+            "http://127.0.0.1:5000/health 2>/dev/null"
+        )
+        return '"healthy"' in response
+
+    pid, started = ensure_listener_group(
+        host,
+        (("tcp", "0.0.0.0", 5000),),
+        ("web_api_server.py",),
+        launch,
+        timeout=20,
+        health_check=health_check,
+    )
+
+    if started:
+        info(
+            "*** Live IoT Web/API backup started on h18:5000; shared store=%s\\n",
+            db_path,
+        )
+    else:
+        info(
+            "*** Existing Live IoT Web/API backup reused on h18:5000\\n"
+        )
+
+    return pid
 
 
 def start_demo_services(net, live_iot_api=False):
-    """Start local HTTP backends and the TCP load-balancer listener."""
+    """Idempotently start or reuse the HTTP, HTTPS, DNS, SSH and LB services."""
     global LIVE_IOT_INGEST_TOKEN
+
     project_dir = os.path.dirname(os.path.abspath(__file__))
     service_stub = os.path.join(project_dir, "service_stub.py")
     load_balancer = os.path.join(project_dir, "load_balancer.py")
+
     if live_iot_api:
-        LIVE_IOT_INGEST_TOKEN = secrets.token_urlsafe(32)
-        start_live_iot_web_api(net, LIVE_IOT_INGEST_TOKEN)
-        stub_backends = (("h18", 5000, "backup-web-api"),)
-    else:
-        stub_backends = (("h2", 5000, "primary-web-api"),
-                         ("h18", 5000, "backup-web-api"))
-    for host_id, port, name in stub_backends:
-        net.get(host_id).cmd(
-            f"python3 {service_stub} --host 0.0.0.0 --port {port} --name {name} "
-            f"> /tmp/{name}.log 2>&1 &"
+        candidate_token = (
+            LIVE_IOT_INGEST_TOKEN or secrets.token_urlsafe(32)
         )
+        LIVE_IOT_INGEST_TOKEN = start_live_iot_web_api(
+            net, candidate_token
+        )
+        start_live_iot_web_api_backup(net, LIVE_IOT_INGEST_TOKEN)
+        stub_backends = ()
+    else:
+        stub_backends = (
+            ("h2", 5000, "primary-web-api"),
+            ("h18", 5000, "backup-web-api"),
+        )
+
+    # HTTP demo backends: reuse a matching healthy listener, otherwise start it.
+    for host_id, port, name in stub_backends:
+        host = net.get(host_id)
+        launch = (
+            "python3 %s --host 0.0.0.0 --port %d --name %s "
+            "> %s 2>&1 &"
+            % (
+                shlex.quote(service_stub),
+                port,
+                shlex.quote(name),
+                shlex.quote("/tmp/%s.log" % name),
+            )
+        )
+
+        def http_health(
+            _pid, _commandline, host=host, port=port, name=name
+        ):
+            response = host.cmd(
+                "curl -fsS --max-time 2 "
+                "http://127.0.0.1:%d/health 2>/dev/null" % port
+            )
+            return http_service_is_healthy(response, name)
+
+        ensure_listener_group(
+            host,
+            (("tcp", "0.0.0.0", port),),
+            (
+                "service_stub.py",
+                "--host", "0.0.0.0",
+                "--port", str(port),
+                "--name", name,
+            ),
+            launch,
+            timeout=10,
+            health_check=http_health,
+        )
+        info("*** HTTP backend ready/reused: %s on %s:%s\n",
+             name, host_id, port)
+
+    # Independent HTTPS, DNS and SSH primary/backup services.
+    start_project_https(net)
+    start_demo_dns_backends(net)
+    start_demo_ssh_backends(net)
+
+    # All frontend sockets must belong to one correctly configured LB process.
     lb = net.get("h38")
-    lb.cmd(
-        f"python3 {load_balancer} --listen-port 5000 "
-        "--backends 10.10.20.2:5000,10.10.20.8:5000 "
-        "> /tmp/lb-5000.log 2>&1 &"
+    lb_endpoints = (
+        ("tcp", "0.0.0.0", 5000),
+        ("tcp", "0.0.0.0", 443),
+        ("tcp", "0.0.0.0", 22),
+        ("tcp", "10.10.20.100", 53),
+        ("udp", "10.10.20.100", 53),
     )
-    info("*** Demo Web/API backends and h38:5000 load balancer started.\n")
+
+    lb_expected = (
+        "load_balancer.py",
+        "--http-backends",
+        "10.10.20.2:5000,10.10.20.8:5000",
+        "--https-backends",
+        "10.10.20.3:443,10.10.20.19:443",
+        "--ssh-backends",
+        "10.10.20.4:22,10.10.20.20:22",
+        "--dns-backends",
+        "10.10.30.2:53,10.10.30.17:53",
+        "--dns-bind-address",
+        "10.10.20.100",
+        "--check-interval",
+        "1",
+    )
+
+    lb_launch = (
+        "LB_LISTEN_IP=0.0.0.0 "
+        "SECUREIOT_LB_HEARTBEAT_FILE=/tmp/secureiot_lb_heartbeat.json "
+        "python3 %s "
+        "--http-backends 10.10.20.2:5000,10.10.20.8:5000 "
+        "--https-backends 10.10.20.3:443,10.10.20.19:443 "
+        "--ssh-backends 10.10.20.4:22,10.10.20.20:22 "
+        "--dns-backends 10.10.30.2:53,10.10.30.17:53 "
+        "--dns-bind-address 10.10.20.100 "
+        "--check-interval 1 "
+        "> /tmp/load_balancer.log 2>&1 &"
+        % shlex.quote(load_balancer)
+    )
+
+    def lb_health(pid, commandline):
+        heartbeat = lb.cmd(
+            "cat /tmp/secureiot_lb_heartbeat.json 2>/dev/null"
+        )
+        return load_balancer_heartbeat_is_valid(
+            heartbeat,
+            commandline,
+            lb_expected,
+            expected_pid=pid,
+        )
+
+    ensure_listener_group(
+        lb,
+        lb_endpoints,
+        lb_expected,
+        lb_launch,
+        timeout=20,
+        health_check=lb_health,
+    )
+    info("*** h38 Load Balancer ready/reused; listeners and heartbeat verified.\n")
+
+    # Keep the existing policy-aware VIP smoke test.
+    client_host = net.get("h38")
+    dns_client = net.get("h5")
+    ssh_client = net.get("h38")
+
+    deadline = time.monotonic() + 20
+    http_status = https_status = ""
+    dns_udp_ok = dns_tcp_ok = ssh_ok = False
+
+    while time.monotonic() < deadline:
+        http_status = client_host.cmd(
+            "curl -4 -sS --connect-timeout 1 --max-time 2 "
+            "-o /dev/null -w '%{http_code}' "
+            "http://10.10.20.100:5000/health 2>/dev/null"
+        ).strip()
+
+        https_status = client_host.cmd(
+            "curl -4 -k -sS --connect-timeout 1 --max-time 2 "
+            "-o /dev/null -w '%{http_code}' "
+            "https://10.10.20.100/ 2>/dev/null"
+        ).strip()
+
+        dns_udp = dns_client.cmd(
+            "dig @10.10.30.100 example.test A +time=1 +tries=1 2>/dev/null"
+        )
+        dns_tcp = dns_client.cmd(
+            "dig +tcp @10.10.30.100 example.test A "
+            "+time=1 +tries=1 2>/dev/null"
+        )
+
+        ssh_banner = ssh_client.cmd(
+            "python3 -c 'import socket; "
+            "s=socket.create_connection((\"10.10.20.100\",22),2); "
+            "s.settimeout(2); "
+            "print(s.recv(128).decode(errors=\"ignore\")); s.close()' "
+            "2>/dev/null"
+        )
+
+        dns_udp_ok = "10.10.20.100" in dns_udp
+        dns_tcp_ok = "10.10.20.100" in dns_tcp
+        ssh_ok = "SSH-" in ssh_banner
+
+        if (
+            http_status == "200"
+            and https_status == "200"
+            and dns_udp_ok
+            and dns_tcp_ok
+            and ssh_ok
+        ):
+            info(
+                "*** VIP smoke-tested (DNS from h5): "
+                "HTTP=200 HTTPS=200 DNS=UDP/TCP SSH=banner.\n"
+            )
+            break
+
+        time.sleep(0.5)
+    else:
+        tail = lb.cmd(
+            "tail -n 30 /tmp/load_balancer.log 2>/dev/null"
+        )
+        print(
+            "[warning] VIP frontend smoke test did not pass completely. "
+            "Services and Load Balancer remain running. "
+            "HTTP=%r HTTPS=%r DNS_UDP(h5)=%s DNS_TCP(h5)=%s "
+            "SSH(h38)=%s\n%s"
+            % (
+                http_status,
+                https_status,
+                dns_udp_ok,
+                dns_tcp_ok,
+                ssh_ok,
+                tail.strip(),
+            )
+        )
+
+    info(
+        "*** Demo HTTP/HTTPS/DNS/SSH backends and h38 VIP listeners are ready.\n"
+    )
 
 
 def wait_for_controller_ready(timeout_sec=60):
@@ -454,46 +789,253 @@ def start_project_web_api(net):
 
 
 def start_project_https(net):
-    """Start and verify the real HTTPS server on h3:443 with a lab-local cert."""
-    server_host = net.get("h3")
-    client_host = net.get("h5")
+    """Start or reuse the primary h3 and backup h19 HTTPS backends."""
+    client_host = net.get("h38")
     project_dir = os.path.dirname(os.path.abspath(__file__))
     server = os.path.join(project_dir, "servers", "https_server.py")
-    cert_dir = "/tmp/https_server"
-    cert = cert_dir + "/cert.pem"
-    key = cert_dir + "/key.pem"
-    make_cert = server_host.cmd(
-        "mkdir -p %s && openssl req -x509 -nodes -days 2 -newkey rsa:2048 "
-        "-subj '/CN=10.10.20.3' -keyout %s -out %s "
-        ">/tmp/https_cert.log 2>&1 && test -s %s && test -s %s && echo CERT_READY"
-        % (shlex.quote(cert_dir), shlex.quote(key), shlex.quote(cert),
-           shlex.quote(key), shlex.quote(cert))
-    )
-    if "CERT_READY" not in make_cert:
-        raise RuntimeError("could not prepare lab HTTPS certificate: " + make_cert.strip())
 
-    server_host.cmd(
-        "env HTTPS_SERVER_IP=10.10.20.3 HTTPS_SERVER_PORT=443 "
-        "HTTPS_CERT_FILE=%s HTTPS_KEY_FILE=%s python3 %s "
-        "> /tmp/https_h3.log 2>&1 &"
-        % (shlex.quote(cert), shlex.quote(key), shlex.quote(server))
+    backends = (
+        ("h3", "10.10.20.3", "primary"),
+        ("h19", "10.10.20.19", "backup"),
     )
-    deadline = time.monotonic() + 20
-    last_response = ""
-    while time.monotonic() < deadline:
-        last_response = client_host.cmd(
-            "curl -4 -k -sS --connect-timeout 1 --max-time 2 "
-            "-o /dev/null -w '%{http_code}' https://10.10.20.3/ 2>/dev/null"
-        ).strip()
-        if last_response == "200":
-            info("*** Project HTTPS ready on h3:443; reachable from h5.\n")
-            return
-        time.sleep(0.5)
-    tail = server_host.cmd("tail -n 20 /tmp/https_h3.log /tmp/https_cert.log 2>/dev/null")
-    raise RuntimeError(
-        "project HTTPS did not become healthy from h5 (last HTTP status=%r): %s"
-        % (last_response, tail.strip())
-    )
+
+    for host_id, address, role in backends:
+        server_host = net.get(host_id)
+        endpoints = (("tcp", address, 443),)
+        expected = ("https_server.py",)
+
+        state, _pid, detail = listener_group_state(
+            server_host, endpoints, expected
+        )
+
+        if state == "conflict":
+            raise RuntimeError(
+                "HTTPS startup refused on %s: %s" % (host_id, detail)
+            )
+
+        cert_dir = "/tmp/https_server_" + host_id
+        cert = cert_dir + "/cert.pem"
+        key = cert_dir + "/key.pem"
+
+        launch = None
+
+        if state == "absent":
+            make_cert = server_host.cmd(
+                "mkdir -p %s && openssl req -x509 -nodes -days 2 "
+                "-newkey rsa:2048 -subj '/CN=%s' "
+                "-keyout %s -out %s "
+                ">/tmp/https_cert_%s.log 2>&1 "
+                "&& test -s %s && test -s %s && echo CERT_READY"
+                % (
+                    shlex.quote(cert_dir),
+                    address,
+                    shlex.quote(key),
+                    shlex.quote(cert),
+                    host_id,
+                    shlex.quote(key),
+                    shlex.quote(cert),
+                )
+            )
+
+            if "CERT_READY" not in make_cert:
+                raise RuntimeError(
+                    "could not prepare HTTPS certificate on %s: %s"
+                    % (host_id, make_cert.strip())
+                )
+
+            launch = (
+                "env HTTPS_SERVER_IP=%s HTTPS_SERVER_PORT=443 "
+                "HTTPS_CERT_FILE=%s HTTPS_KEY_FILE=%s "
+                "python3 %s > /tmp/https_%s.log 2>&1 &"
+                % (
+                    address,
+                    shlex.quote(cert),
+                    shlex.quote(key),
+                    shlex.quote(server),
+                    host_id,
+                )
+            )
+
+        def https_health(_pid, _commandline):
+            response = server_host.cmd(
+                "curl -4 -k -fsS --connect-timeout 1 --max-time 2 "
+                "https://%s/health 2>/dev/null" % address
+            )
+            try:
+                payload = json.loads(response)
+            except (TypeError, ValueError):
+                return False
+            return (
+                payload.get("status") == "healthy"
+                and payload.get("backend") == address
+            )
+
+        ensure_listener_group(
+            server_host,
+            endpoints,
+            expected,
+            launch,
+            timeout=20,
+            health_check=https_health,
+        )
+
+        # Retain the existing external reachability check from h38.
+        deadline = time.monotonic() + 20
+        last_response = ""
+
+        while time.monotonic() < deadline:
+            last_response = client_host.cmd(
+                "curl -4 -k -sS --connect-timeout 1 --max-time 2 "
+                "-o /dev/null -w '%%{http_code}' "
+                "https://%s/ 2>/dev/null" % address
+            ).strip()
+
+            if last_response == "200":
+                info(
+                    "*** HTTPS %s backend ready/reused on %s:443.\n",
+                    role,
+                    host_id,
+                )
+                break
+
+            time.sleep(0.5)
+        else:
+            tail = server_host.cmd(
+                "tail -n 20 /tmp/https_%s.log "
+                "/tmp/https_cert_%s.log 2>/dev/null"
+                % (host_id, host_id)
+            )
+            raise RuntimeError(
+                "HTTPS %s backend on %s is locally healthy but "
+                "not reachable from h38 (HTTP=%r): %s"
+                % (role, host_id, last_response, tail.strip())
+            )
+
+
+def start_demo_dns_backends(net):
+    """Start or reuse h1/h17 DNS backends on UDP and TCP port 53."""
+    project_dir = os.path.dirname(os.path.abspath(__file__))
+    server = os.path.join(project_dir, "servers", "dns_server.py")
+
+    for host_id, address in (
+        ("h1", "10.10.30.2"),
+        ("h17", "10.10.30.17"),
+    ):
+        host = net.get(host_id)
+
+        launch = (
+            "env DNS_SERVER_IP=%s DNS_PORT=53 "
+            "DNS_ANSWER_IP=10.10.20.100 "
+            "python3 %s > /tmp/dns_%s.log 2>&1 &"
+            % (address, shlex.quote(server), host_id)
+        )
+
+        def dns_health(_pid, _commandline):
+            answer = host.cmd(
+                "dig @%s example.test A +short +time=1 +tries=1 "
+                "2>/dev/null" % address
+            )
+            return "10.10.20.100" in answer
+
+        ensure_listener_group(
+            host,
+            (
+                ("udp", address, 53),
+                ("tcp", address, 53),
+            ),
+            ("dns_server.py",),
+            launch,
+            timeout=10,
+            health_check=dns_health,
+        )
+
+        info("*** DNS backend ready/reused: %s UDP/TCP 53.\n", host_id)
+
+
+def start_demo_ssh_backends(net):
+    """Start or reuse SSH daemons on h4 and h20."""
+    for host_id, address in (
+        ("h4", "10.10.20.4"),
+        ("h20", "10.10.20.20"),
+    ):
+        host = net.get(host_id)
+        endpoints = (("tcp", address, 22),)
+        expected = (
+            "sshd",
+            "-D",
+            "/dev/null",
+            "ListenAddress=%s" % address,
+        )
+
+        state, _pid, detail = listener_group_state(
+            host, endpoints, expected
+        )
+
+        if state == "conflict":
+            raise RuntimeError(
+                "SSH startup refused on %s: %s" % (host_id, detail)
+            )
+
+        launch = None
+
+        if state == "absent":
+            check = host.cmd(
+                "test -x /usr/sbin/sshd && echo SSHD_READY"
+            )
+            if "SSHD_READY" not in check:
+                raise RuntimeError(
+                    "OpenSSH server is not installed for %s "
+                    "(/usr/sbin/sshd)" % host_id
+                )
+
+            host.cmd(
+                "mkdir -p /run/sshd && "
+                "ssh-keygen -A >/dev/null 2>&1"
+            )
+
+            key = "/etc/ssh/ssh_host_ed25519_key"
+            key_ready = host.cmd(
+                "test -s %s && echo KEY_READY" % shlex.quote(key)
+            )
+            if "KEY_READY" not in key_ready:
+                raise RuntimeError(
+                    "SSH host key is unavailable on %s" % host_id
+                )
+
+            launch = (
+                "/usr/sbin/sshd -D -e -f /dev/null -p 22 "
+                "-o ListenAddress=%s "
+                "-o PidFile=/tmp/sshd_%s.pid "
+                "-h %s "
+                "-o PasswordAuthentication=no "
+                "-o KbdInteractiveAuthentication=no "
+                "-o PubkeyAuthentication=yes "
+                "-o PermitRootLogin=prohibit-password "
+                "-o UsePAM=no -o StrictModes=no "
+                ">/tmp/sshd_%s.log 2>&1 &"
+                % (address, host_id, shlex.quote(key), host_id)
+            )
+
+        def ssh_health(_pid, _commandline):
+            banner = host.cmd(
+                "python3 -c 'import socket; "
+                "s=socket.create_connection((\"%s\",22),2); "
+                "s.settimeout(2); "
+                "print(s.recv(128).decode(errors=\"ignore\")); "
+                "s.close()' 2>/dev/null" % address
+            )
+            return "SSH-" in banner
+
+        ensure_listener_group(
+            host,
+            endpoints,
+            expected,
+            launch,
+            timeout=10,
+            health_check=ssh_health,
+        )
+
+        info("*** SSH backend ready/reused: %s TCP 22.\n", host_id)
 
 
 def service_name_for_target(target_name, attack_type, dst_port):
@@ -664,7 +1206,7 @@ class AttackCLI(CLI):
         body = json.dumps(payload, separators=(",", ":"))
         command = (
             "curl -4 -sS --connect-timeout 2 --max-time 5 -o /tmp/secureiot-iot-test-response.json "
-            "-w 'HTTP=%{http_code}' -H 'Content-Type: application/json' "
+            "-w 'HTTP=%%{http_code}' -H 'Content-Type: application/json' "
             "-H %s --data-binary %s http://10.10.20.2:5000/api/iot/telemetry"
             % (shlex.quote("Authorization: Bearer " + ingest_token), shlex.quote(body))
         )
@@ -817,6 +1359,9 @@ def run():
     try:
         net.start()
         started = True
+        # Must be enabled immediately after OVS bridges are created so the
+        # reserved LLDP destination MAC is not discarded before OpenFlow.
+        configure_ovs_lldp_forwarding(net)
         time.sleep(5)
 
         configure_gateway(net.get("gw"))
