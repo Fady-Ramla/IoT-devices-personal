@@ -3753,5 +3753,8 @@
     "test_load_balancer_failover.py",
     "topology_monitor.py",
     "traffic_monitor_merged.py"
+  ],
+  "preserved_operation_paths": [
+    "mininet/vlan_config.py -> mininet/vlan_config_iot_compat.py"
   ]
 }

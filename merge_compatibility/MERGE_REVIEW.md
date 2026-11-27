@@ -9,7 +9,7 @@
 
 ## Preservation result
 
-The branch is a real two-parent merge. API-latest is the active runtime baseline because it has the newer runtime API, forwarding-flow lifecycle, firewall/SSH state, and service failover reporting. IoT-only modules, tests, scripts, documentation, and data metadata remain in the merged tree. The 17 shared conflict paths were not silently discarded: exact API and IoT source versions are preserved under `source_snapshots/`, with Git-blob hashes recorded in `merge_manifest.json`.
+The branch is a real two-parent merge. API-latest is the active runtime baseline because it has the newer runtime API, forwarding-flow lifecycle, firewall/SSH state, and service failover reporting. IoT-only modules, tests, scripts, documentation, and data metadata remain in the merged tree. The 17 shared conflict paths were not silently discarded. The IoT branch's legacy VLAN helper `configure_ovs_vlans` is additionally preserved as `mininet/vlan_config_iot_compat.py` because replacing the active 38-host API map with the older 11-host map would be unsafe: exact API and IoT source versions are preserved under `source_snapshots/`, with Git-blob hashes recorded in `merge_manifest.json`.
 
 ## Automated checks
 

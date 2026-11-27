@@ -71,3 +71,41 @@ def test_required_operations_are_present():
         "shadow", "BLOCK_DEVICE", "UNBLOCK_DEVICE", "health",
     ):
         assert marker.lower() in corpus.lower(), f"missing operation marker: {marker}"
+
+
+def _symbols(text):
+    import ast
+    tree = ast.parse(text, mode="exec")
+    return {
+        f"{type(node).__name__}:{node.name}"
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+
+
+def test_every_source_python_operation_is_active_or_preserved():
+    import subprocess
+    data = json.loads(MANIFEST.read_text())
+    missing = []
+    for source, meta in data["sources"].items():
+        for item in meta["files"]:
+            path = item["path"]
+            if not path.endswith(".py"):
+                continue
+            source_text = subprocess.check_output(["git", "show", f"{meta['ref']}:{path}"])
+            source_symbols = _symbols(source_text.decode("utf-8", "replace"))
+            if not source_symbols:
+                continue
+            available = set()
+            active = ROOT / path
+            snapshot = SNAP / source / path
+            if active.is_file():
+                available |= _symbols(active.read_text(errors="replace"))
+            if snapshot.is_file():
+                available |= _symbols(snapshot.read_text(errors="replace"))
+            # Explicitly named compatibility copies are also valid preservation.
+            if path == "mininet/vlan_config.py":
+                available |= _symbols((ROOT / "mininet/vlan_config_iot_compat.py").read_text())
+            for symbol in source_symbols - available:
+                missing.append((source, path, symbol))
+    assert not missing, missing
