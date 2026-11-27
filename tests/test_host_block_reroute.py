@@ -50,6 +50,11 @@ class RerouteHarness:
     def __init__(self):
         self.logger = logging.getLogger("test.host.block.reroute")
         self.active_flows = {
+            "blocked-source": {
+                "src_mac": "host-a", "dst_mac": "host-c",
+                "src_ip": "10.10.10.1", "dst_ip": "10.10.10.3",
+                "path": [1, 2, 3], "vlan_id": 10,
+            },
             "affected": {
                 "src_mac": "host-b", "dst_mac": "host-c",
                 "src_ip": "10.10.10.2", "dst_ip": "10.10.10.3",
@@ -62,6 +67,7 @@ class RerouteHarness:
             },
         }
         self.host_location = {
+            "host-a": (1, 0),
             "host-b": (1, 1), "host-c": (3, 1),
             "host-d": (1, 2), "host-e": (3, 2),
         }
@@ -75,6 +81,9 @@ class RerouteHarness:
             get_backup_path=lambda **kwargs: {"success": True, "path": [1, 5, 3]},
         )
         self.install_calls = []
+
+    def is_device_blocked(self, mac):
+        return mac in self.blocked_devices
 
     def _install_path(self, path, src_mac, dst_mac, vlan_id, dst_location=None):
         self.install_calls.append((list(path), src_mac, dst_mac, vlan_id))
@@ -100,10 +109,12 @@ class HostBlockAndRerouteTests(unittest.TestCase):
     def test_failed_link_reroutes_only_impacted_flow_and_keeps_host_a_blocked(self):
         harness = RerouteHarness()
         unaffected_path = list(harness.active_flows["unaffected"]["path"])
+        blocked_path = list(harness.active_flows["blocked-source"]["path"])
 
         result = harness.reroute_active_flows(failed_links={(1, 2)})
 
         self.assertEqual(result, {"success": True, "rerouted": 1, "failed": 0})
+        self.assertEqual(harness.active_flows["blocked-source"]["path"], blocked_path)
         self.assertEqual(harness.active_flows["affected"]["path"], [1, 5, 3])
         self.assertEqual(harness.active_flows["unaffected"]["path"], unaffected_path)
         self.assertEqual(len(harness.install_calls), 1)

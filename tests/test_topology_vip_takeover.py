@@ -125,15 +125,20 @@ class FlowHarness:
             (2, 22): {"kind": "access", "vlan_id": 20},
             (2, 23): {"kind": "access", "vlan_id": 30},
             (2, 24): {"kind": "access", "role": "gateway", "vlan_id": 30},
+            (2, 25): {"kind": "access", "vlan_id": 20},
         }
         self.vip_takeover_active = True
+        self.vip_takeover_reasons = set()
+        self.lb_health_failed_ports = set()
         self.vip_takeover_flows = {}
+        self.blocked_backends = set()
         self.host_location = {
             "client-mac": (1, 11),
             "backend-mac": (2, 22),
             "gateway-mac": (1, 10),
             "gateway-vlan30-mac": (2, 24),
             "dns-backend-mac": (2, 23),
+            "https-backup-mac": (2, 25),
         }
         self.mac_vlan = {
             "client-mac": 20,
@@ -141,7 +146,9 @@ class FlowHarness:
             "gateway-mac": 20,
             "gateway-vlan30-mac": 30,
             "dns-backend-mac": 30,
+            "https-backup-mac": 20,
         }
+        self.backend_selection = None
         self.logger = SimpleNamespace(
             info=lambda *args, **kwargs: None,
             warning=lambda *args, **kwargs: None,
@@ -161,6 +168,12 @@ class FlowHarness:
         return [src] if src == dst else [src, dst]
 
     def _vip_backend(self, service, backup_first=False):
+        self.backend_selection = (tuple(service), backup_first)
+        if int(service[3]) == 443 and (
+                backup_first or "backend-mac" in self.blocked_backends):
+            return "10.10.20.19", "https-backup-mac", 443
+        if int(service[3]) == 443:
+            return "10.10.20.3", "backend-mac", 443
         if int(service[3]) == 53:
             return "10.10.30.2", "dns-backend-mac", 53
         return "10.10.20.2", "backend-mac", 5000
@@ -211,16 +224,19 @@ class BackendHarness:
     def __init__(self):
         self.ip_to_mac = {
             "10.10.20.2": "m2", "10.10.20.8": "m8",
+            "10.10.20.3": "m3", "10.10.20.19": "m19",
             "10.10.30.2": "m1", "10.10.30.17": "m17",
             "10.10.20.4": "m4", "10.10.20.20": "m20",
         }
         self.host_location = {
             "m2": (1, 1), "m8": (2, 2),
+            "m3": (1, 7), "m19": (2, 8),
             "m1": (1, 3), "m17": (2, 4),
             "m4": (1, 5), "m20": (2, 6),
         }
         self.mac_vlan = {
             "m2": 20, "m8": 20, "m1": 30, "m17": 30,
+            "m3": 20, "m19": 20,
             "m4": 20, "m20": 20,
         }
         self.blocked_devices = {"m2": {"macs": ["m2"]}}
@@ -303,6 +319,12 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         backend = BackendHarness()._vip_backend(service)
         self.assertEqual(backend, ("10.10.20.8", "m8", 5000))
 
+    def test_https_backend_selection_skips_blocked_h3_for_h19(self):
+        harness = BackendHarness()
+        harness.blocked_devices["m3"] = {"macs": ["m3"]}
+        backend = harness._vip_backend(("10.10.20.100", 20, 6, 443))
+        self.assertEqual(backend, ("10.10.20.19", "m19", 443))
+
     def test_ssh_frontend_maps_to_backend_port_2222(self):
         service = ("10.10.20.100", 20, 6, 2222)
         backend = BackendHarness()._vip_backend(service)
@@ -375,6 +397,77 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         self.assertIn(("set_field", {"eth_dst": "backend-mac"}), actions)
         self.assertEqual(packetouts[0].data, b"original-packet")
         self.assertEqual(len(harness.vip_takeover_flows), 4)
+
+    def test_security_takeover_prefers_healthy_https_primary(self):
+        harness = FlowHarness()
+        harness.vip_takeover_reasons = {"security"}
+        dp = harness.datapaths[1]
+        msg = SimpleNamespace(datapath=dp, match={"in_port": 11}, data=b"https")
+
+        class FakeHTTPSPacket:
+            def get_protocol(self, protocol_type):
+                return {
+                    FakeIPv4Protocol: SimpleNamespace(
+                        src="10.10.10.5", dst="10.10.20.100"),
+                    FakeTCPProtocol: SimpleNamespace(src_port=41001, dst_port=443),
+                    FakeUDPProtocol: None,
+                    FakeEthernetProtocol: SimpleNamespace(
+                        src="client-mac", dst="vip-mac"),
+                }.get(protocol_type)
+
+        consumed = harness._handle_vip_packet(dp, msg, FakeHTTPSPacket(), 20)
+        self.assertTrue(consumed)
+        self.assertEqual(
+            harness.backend_selection,
+            (("10.10.20.100", 20, 6, 443), False),
+        )
+        packetouts = [message for message in dp.sent
+                      if hasattr(message, "actions") and hasattr(message, "data")]
+        self.assertEqual(len(packetouts), 1)
+        self.assertIn(
+            ("set_field", {"ipv4_dst": "10.10.20.3"}),
+            packetouts[0].actions,
+        )
+        self.assertIn(
+            ("set_field", {"eth_dst": "backend-mac"}),
+            packetouts[0].actions,
+        )
+
+    def test_security_takeover_uses_https_backup_when_primary_is_blocked(self):
+        harness = FlowHarness()
+        harness.vip_takeover_reasons = {"security"}
+        harness.blocked_backends.add("backend-mac")
+        dp = harness.datapaths[1]
+        msg = SimpleNamespace(datapath=dp, match={"in_port": 11}, data=b"https")
+
+        class FakeHTTPSPacket:
+            def get_protocol(self, protocol_type):
+                return {
+                    FakeIPv4Protocol: SimpleNamespace(
+                        src="10.10.10.5", dst="10.10.20.100"),
+                    FakeTCPProtocol: SimpleNamespace(src_port=41001, dst_port=443),
+                    FakeUDPProtocol: None,
+                    FakeEthernetProtocol: SimpleNamespace(
+                        src="client-mac", dst="vip-mac"),
+                }.get(protocol_type)
+
+        consumed = harness._handle_vip_packet(dp, msg, FakeHTTPSPacket(), 20)
+        self.assertTrue(consumed)
+        self.assertEqual(
+            harness.backend_selection,
+            (("10.10.20.100", 20, 6, 443), False),
+        )
+        packetouts = [message for message in dp.sent
+                      if hasattr(message, "actions") and hasattr(message, "data")]
+        self.assertEqual(len(packetouts), 1)
+        self.assertIn(
+            ("set_field", {"ipv4_dst": "10.10.20.19"}),
+            packetouts[0].actions,
+        )
+        self.assertIn(
+            ("set_field", {"eth_dst": "https-backup-mac"}),
+            packetouts[0].actions,
+        )
 
     def test_dns_packetin_translates_vlan20_to_vlan30_and_back(self):
         harness = FlowHarness()

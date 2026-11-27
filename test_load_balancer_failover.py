@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "mininet"))
 
 from load_balancer import TcpLoadBalancer  # noqa: E402
+from vlan_config_38host import SERVICE_PAIRS, host_ip  # noqa: E402
 
 
 class FakeClient:
@@ -156,6 +157,26 @@ class LoadBalancerFailoverTests(unittest.TestCase):
             self.assertEqual(stats["last_backend"], "10.0.0.8:5000")
             self.assertEqual(stats["backend_failovers"], 1)
             self.assertEqual(stats["requests_active"], 0)
+
+    def test_https_primary_h3_unhealthy_selects_configured_h19_backup(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stats_file = str(Path(temp_dir) / "https-lb-stats.json")
+            service = SERVICE_PAIRS["https"]
+            primary = (host_ip(service["primary"]), service["port"])
+            backup = (host_ip(service["backup"]), service["port"])
+            lb = TcpLoadBalancer(
+                "10.10.20.100", 443, [primary, backup],
+                strategy="primary-backup",
+            )
+            lb.stats_file = stats_file
+            lb.healthy = lambda backend: backend == backup
+
+            selected, is_failover = lb.choose_backend()
+
+            self.assertEqual(primary, ("10.10.20.3", 443))
+            self.assertEqual(backup, ("10.10.20.19", 443))
+            self.assertEqual(selected, backup)
+            self.assertTrue(is_failover)
 
     def test_health_transitions_track_events_active_failures_and_recovery(self):
         with tempfile.TemporaryDirectory() as temp_dir:

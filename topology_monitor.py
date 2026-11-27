@@ -3465,6 +3465,13 @@ class TopologyMonitor(app_manager.RyuApp):
             dst_ip = flow.get("dst_ip")
             old_path = flow.get("path") or []
 
+            if src_mac and self.is_device_blocked(src_mac):
+                self.logger.info(
+                    "SELF-HEALING: keeping blocked-source flow=%s blocked",
+                    flow_id,
+                )
+                continue
+
             if (
                 failed_links is not None
                 and not self._path_uses_failed_link(old_path, failed_links)
@@ -4307,9 +4314,9 @@ class TopologyMonitor(app_manager.RyuApp):
 
         selected = self._vip_backend(
             service,
-            backup_first=(int(service[3]) in getattr(
+            backup_first=int(service[3]) in getattr(
                 self, "lb_health_failed_ports", set()
-            )),
+            ),
         )
         if selected is None:
             self.logger.warning(
