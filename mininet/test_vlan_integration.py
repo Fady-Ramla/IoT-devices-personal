@@ -95,7 +95,7 @@ with tempfile.TemporaryDirectory() as tmp:
 
     globals_for_publisher["_write_vlan_port_map"](FakeNetwork())
     payload = json.loads(map_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
     assert payload["host_count"] == 38
     assert re.fullmatch(r"[0-9a-f]{32}", payload["topology_id"])
     assert len(payload["ports"]) == 63

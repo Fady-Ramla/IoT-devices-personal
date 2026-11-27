@@ -1,15 +1,37 @@
+import ast
+import ipaddress
 import logging
 import os
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from traffic_monitor_merged import TrafficMonitorMerged
+
+ROOT = Path(__file__).resolve().parents[1]
+TREE = ast.parse((ROOT / "traffic_monitor_merged.py").read_text(encoding="utf-8"))
+traffic_class = next(node for node in TREE.body
+                     if isinstance(node, ast.ClassDef)
+                     and node.name == "TrafficMonitorMerged")
+method = next(node for node in traffic_class.body
+              if isinstance(node, ast.FunctionDef)
+              and node.name == "execute_shadow_api_verdict")
+namespace = {
+    "os": os, "ipaddress": ipaddress,
+    "ACTION_BLOCK_DEVICE": "BLOCK_DEVICE",
+    "ACTION_UNBLOCK_DEVICE": "UNBLOCK_DEVICE",
+}
+exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])),
+             str(ROOT / "traffic_monitor_merged.py"), "exec"), namespace)
+
+
+class ShadowMonitorHarness:
+    execute_shadow_api_verdict = namespace["execute_shadow_api_verdict"]
 
 
 class ShadowEnforcementTests(unittest.TestCase):
     def setUp(self):
-        self.monitor = TrafficMonitorMerged.__new__(TrafficMonitorMerged)
+        self.monitor = ShadowMonitorHarness()
         self.monitor.logger = logging.getLogger("test.shadow.enforcement")
         self.monitor.shadow_seen_request_ids = set()
 

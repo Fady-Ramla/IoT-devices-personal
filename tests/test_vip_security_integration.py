@@ -31,6 +31,8 @@ def find_method(path, name):
                     namespace = {
                         "ipaddress": ipaddress,
                         "time": time,
+                        "ACTION_BLOCK_DEVICE": "BLOCK_DEVICE",
+                        "ACTION_UNBLOCK_DEVICE": "UNBLOCK_DEVICE",
                         "LOAD_BALANCER": {"host": "h38"},
                         "host_ip": lambda host: LB_IP if host == "h38" else None,
                         "EXPECTED_SWITCHES": 6,

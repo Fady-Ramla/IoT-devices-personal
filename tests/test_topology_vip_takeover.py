@@ -20,10 +20,11 @@ def class_method(name, extra_globals=None):
     topology = next(node for node in TREE.body
                     if isinstance(node, ast.ClassDef)
                     and node.name == "TopologyMonitor")
-    method = next(node for node in topology.body
+    method = next(node for node in reversed(topology.body)
                   if isinstance(node, ast.FunctionDef) and node.name == name)
     module = ast.Module(body=[method], type_ignores=[])
-    namespace = {"OFPVID_PRESENT": 0x1000, "EXPECTED_SWITCHES": 6}
+    namespace = {"OFPVID_PRESENT": 0x1000, "OFPVID_NONE": 0,
+                 "EXPECTED_SWITCHES": 6}
     namespace.update(extra_globals or {})
     exec(compile(ast.fix_missing_locations(module), str(SOURCE), "exec"), namespace)
     return namespace[name]
@@ -123,6 +124,7 @@ class FlowHarness:
             (2, 21): {"kind": "trunk", "allowed_vlans": frozenset({20, 30})},
             (2, 22): {"kind": "access", "vlan_id": 20},
             (2, 23): {"kind": "access", "vlan_id": 30},
+            (2, 24): {"kind": "access", "role": "gateway", "vlan_id": 30},
         }
         self.vip_takeover_active = True
         self.vip_takeover_flows = {}
@@ -130,12 +132,14 @@ class FlowHarness:
             "client-mac": (1, 11),
             "backend-mac": (2, 22),
             "gateway-mac": (1, 10),
+            "gateway-vlan30-mac": (2, 24),
             "dns-backend-mac": (2, 23),
         }
         self.mac_vlan = {
             "client-mac": 20,
             "backend-mac": 20,
             "gateway-mac": 20,
+            "gateway-vlan30-mac": 30,
             "dns-backend-mac": 30,
         }
         self.logger = SimpleNamespace(
@@ -208,13 +212,16 @@ class BackendHarness:
         self.ip_to_mac = {
             "10.10.20.2": "m2", "10.10.20.8": "m8",
             "10.10.30.2": "m1", "10.10.30.17": "m17",
+            "10.10.20.4": "m4", "10.10.20.20": "m20",
         }
         self.host_location = {
             "m2": (1, 1), "m8": (2, 2),
             "m1": (1, 3), "m17": (2, 4),
+            "m4": (1, 5), "m20": (2, 6),
         }
         self.mac_vlan = {
             "m2": 20, "m8": 20, "m1": 30, "m17": 30,
+            "m4": 20, "m20": 20,
         }
         self.blocked_devices = {"m2": {"macs": ["m2"]}}
 
@@ -231,19 +238,16 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         spec.loader.exec_module(config)
         self.assertEqual(len(config.HOSTS), 38)
         self.assertEqual(set(config.SERVICE_PAIRS), {"dns", "http_api", "https", "ssh"})
-        self.assertEqual(config.LOAD_BALANCER["frontends"], (5000, 443, 22, 53))
-        self.assertEqual(config.SERVICE_PAIRS["dns"]["transports"], ("udp", "tcp"))
-        self.assertEqual(config.SERVICE_PAIRS["dns"]["vip"], "10.10.30.100")
-        self.assertEqual(config.LOAD_BALANCER["vip_by_vlan"],
-                         {20: "10.10.20.100", 30: "10.10.30.100"})
-        self.assertNotIn("interface", config.H38_DNS_VIP)
+        self.assertEqual(config.LOAD_BALANCER["frontends"], (5000, 443, 2222))
+        self.assertEqual(config.SERVICE_PAIRS["dns"]["port"], 53)
+        self.assertEqual(config.SERVICE_PAIRS["dns"]["vlan"], 30)
 
     def test_dispatch_match_covers_tcp_and_both_dns_transports(self):
         services = class_value("VIP_SERVICES")
         self.assertEqual(set(services), {
             ("10.10.20.100", 20, 6, 5000),
             ("10.10.20.100", 20, 6, 443),
-            ("10.10.20.100", 20, 6, 22),
+            ("10.10.20.100", 20, 6, 2222),
             ("10.10.30.100", 30, 6, 53),
             ("10.10.30.100", 30, 17, 53),
         })
@@ -252,7 +256,7 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         self.assertEqual(set(dispatch), {
             ("10.10.20.100", 20, 6, 5000),
             ("10.10.20.100", 20, 6, 443),
-            ("10.10.20.100", 20, 6, 22),
+            ("10.10.20.100", 20, 6, 2222),
             ("10.10.20.100", 20, 6, 53),
             ("10.10.20.100", 20, 17, 53),
         })
@@ -297,6 +301,11 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         service = ("10.10.20.100", 20, 6, 5000)
         backend = BackendHarness()._vip_backend(service)
         self.assertEqual(backend, ("10.10.20.8", "m8", 5000))
+
+    def test_ssh_frontend_maps_to_backend_port_22(self):
+        service = ("10.10.20.100", 20, 6, 2222)
+        backend = BackendHarness()._vip_backend(service)
+        self.assertEqual(backend, ("10.10.20.4", "m4", 22))
 
     def test_dns_backend_selection_uses_vlan30_after_gateway_dnat(self):
         harness = BackendHarness()

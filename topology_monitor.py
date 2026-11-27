@@ -64,6 +64,29 @@ try:
     from clff_engine import CLFFEngine
 except ImportError:
     CLFFEngine = None
+try:
+    from vlan_config_38host import HOSTS, SERVICE_PAIRS, LOAD_BALANCER, host_ip
+except ImportError:
+    try:
+        from mininet.vlan_config_38host import HOSTS, SERVICE_PAIRS, LOAD_BALANCER, host_ip
+    except ImportError:
+        HOSTS = {}
+        SERVICE_PAIRS = {
+            "dns": {"primary": "h1", "backup": "h17", "port": 53, "vlan": 30},
+            "http_api": {"primary": "h2", "backup": "h18", "port": 5000, "vlan": 20},
+            "https": {"primary": "h3", "backup": "h19", "port": 443, "vlan": 20},
+            "ssh": {"primary": "h4", "backup": "h20", "port": 22, "vlan": 20},
+        }
+        LOAD_BALANCER = {"host": "h38", "frontends": (53, 5000, 443, 2222)}
+        def host_ip(host):
+            return {"h1": "10.10.30.2", "h2": "10.10.20.2", "h3": "10.10.20.3",
+                    "h4": "10.10.20.4", "h17": "10.10.30.17", "h18": "10.10.20.8",
+                    "h19": "10.10.20.19", "h20": "10.10.20.20", "h38": "10.10.20.100"}.get(host)
+SERVICE_BLOCK_PRIORITY = 50010
+ENDPOINT_BLOCK_PRIORITY = 50020
+EMERGENCY_FAILOVER_PRIORITY = 50030
+HOST_FLOW_IDLE_TIMEOUT = 30
+HOST_FLOW_HARD_TIMEOUT = 0
 
 
 # ================================================================
@@ -224,6 +247,16 @@ class EventPacketInObserved(controller_event.EventBase):
 # ================================================================
 
 class TopologyMonitor(app_manager.RyuApp):
+    VIP_SERVICES = {
+        ("10.10.20.100", 20, 6, 5000), ("10.10.20.100", 20, 6, 443),
+        ("10.10.20.100", 20, 6, 2222), ("10.10.30.100", 30, 6, 53),
+        ("10.10.30.100", 30, 17, 53),
+    }
+    VIP_DISPATCH_SERVICES = {
+        ("10.10.20.100", 20, 6, 5000), ("10.10.20.100", 20, 6, 443),
+        ("10.10.20.100", 20, 6, 2222), ("10.10.20.100", 20, 6, 53),
+        ("10.10.20.100", 20, 17, 53),
+    }
 
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
@@ -309,6 +342,18 @@ class TopologyMonitor(app_manager.RyuApp):
         # Explicit Security blocks keyed by normalized source MAC.
         # IP is retained only for audit; enforcement matches eth_src.
         self.blocked_devices = {}
+        self.blocked_services = {}
+        self.blocked_endpoints = {}
+        self.blocked_lb_services = {}
+        self.emergency_failover_flows = []
+        self._security_pending_lock = hub.Semaphore(1)
+        self._security_xid_transactions = {}
+        self._security_openflow_timeout = max(0.01, float(os.getenv("SECURITY_OPENFLOW_TIMEOUT", "2.0")))
+        self.vip_takeover_active = False
+        self.vip_takeover_reasons = set()
+        self.vip_takeover_dispatch = {}
+        self.vip_takeover_flows = {}
+        self.lb_health_takeover_active = False
         # High-priority OpenFlow guards enforce the SSH frontend/backend path.
         # Keys are (dpid, rule-key); values are the exact matches to delete on
         # VLAN-map refresh. Device-wide blocks retain a higher priority.
@@ -640,6 +685,12 @@ class TopologyMonitor(app_manager.RyuApp):
                 self.logger.exception(
                     "Failed to restore device block on s%d for %s", dpid, mac)
 
+        if getattr(self, "vip_takeover_active", False):
+            try:
+                self._restore_h38_vip_on_switch(datapath)
+            except Exception:
+                self.logger.exception("Failed to restore VIP takeover on s%d", dpid)
+
         if self.vlan_map_ready:
             self._delete_ssh_policy_rules(dpid)
             if not self._install_ssh_policy_rules(datapath):
@@ -685,6 +736,7 @@ class TopologyMonitor(app_manager.RyuApp):
         if self.datapaths.get(dpid) is not datapath:
             return
 
+        self._fail_security_transactions_for_datapath(datapath)
         del self.datapaths[dpid]
 
         self.logger.warning("Switch disconnected: s%d", dpid)
@@ -1022,6 +1074,8 @@ class TopologyMonitor(app_manager.RyuApp):
                 vlan_id, dpid, in_port)
             return
 
+        if self._handle_vip_packet(datapath, msg, pkt, vlan_id, defer=True):
+            return
         # ARP: learn, and answer from the controller when possible.
         arp_pkt = pkt.get_protocol(arp.arp)
 
@@ -1748,91 +1802,7 @@ class TopologyMonitor(app_manager.RyuApp):
             out_group=ofproto.OFPG_ANY,
             match=parser.OFPMatch(eth_src=mac)))
 
-    def block_device(self, mac, ip=None, request_id=None, reason=None):
-        """Block all traffic sourced by a MAC on all connected switches.
 
-        IP is stored for audit only. The block survives IP changes, host
-        movement between connected switches, and switch reconnections while
-        this controller process remains running.
-        """
-        mac = self.normalize_device_mac(mac)
-        self.blocked_devices[mac] = {
-            "mac": mac, "ip": ip, "request_id": request_id,
-            "reason": reason, "blocked_at": time.time(),
-        }
-
-        datapaths = list(self.datapaths.values())
-        if not datapaths:
-            result = {"success": False, "status": "no_switches",
-                    "mac": mac, "ip": ip,
-                    "message": "Block is recorded; no switch is connected"}
-            self._record_firewall_event(result, reason=reason)
-            return result
-
-        failed = []
-        for datapath in datapaths:
-            try:
-                self._install_device_block_rule(datapath, mac)
-            except Exception:
-                failed.append(datapath.id)
-                self.logger.exception(
-                    "Failed to install device block on s%d for %s",
-                    datapath.id, mac)
-
-        success = not failed
-        self.logger.warning(
-            "BLOCK_DEVICE %s ip=%s switches=%s failed=%s request_id=%s reason=%s",
-            mac, ip, [dp.id for dp in datapaths], failed, request_id, reason)
-        result = {"success": success,
-                "status": "executed" if success else "partial_failure",
-                "action": "BLOCK_DEVICE", "mac": mac, "ip": ip,
-                "switches": [dp.id for dp in datapaths],
-                "failed_switches": failed, "request_id": request_id}
-        self._record_firewall_event(result, reason=reason)
-        return result
-
-    def unblock_device(self, mac, ip=None, request_id=None, reason=None):
-        """Remove a Security block without changing Trust Score/state."""
-        mac = self.normalize_device_mac(mac)
-        if mac not in self.blocked_devices:
-            result = {"success": False, "status": "not_blocked",
-                    "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
-                    "request_id": request_id}
-            self._record_firewall_event(result, reason=reason)
-            return result
-
-        datapaths = list(self.datapaths.values())
-        removed = []
-        try:
-            for datapath in datapaths:
-                self._delete_device_block_rule(datapath, mac)
-                removed.append(datapath)
-        except Exception:
-            self.logger.exception(
-                "Failed to remove device block for %s; restoring block rules", mac)
-            for datapath in datapaths:
-                try:
-                    self._install_device_block_rule(datapath, mac)
-                except Exception:
-                    self.logger.exception(
-                        "Failed to restore device block on s%d for %s",
-                        datapath.id, mac)
-            result = {"success": False, "status": "partial_failure",
-                    "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
-                    "request_id": request_id}
-            self._record_firewall_event(result, reason=reason)
-            return result
-
-        self.blocked_devices.pop(mac, None)
-        self.logger.info(
-            "UNBLOCK_DEVICE %s ip=%s request_id=%s reason=%s",
-            mac, ip, request_id, reason)
-        result = {"success": True, "status": "executed",
-                "action": "UNBLOCK_DEVICE", "mac": mac, "ip": ip,
-                "switches": [dp.id for dp in datapaths],
-                "request_id": request_id}
-        self._record_firewall_event(result, reason=reason)
-        return result
 
     def _record_firewall_event(self, result, reason=None):
         """Record a dashboard-safe security action without raw packet data."""
@@ -3800,6 +3770,1680 @@ class TopologyMonitor(app_manager.RyuApp):
             })
 
         return result
+
+
+
+    # Restored from iot-simulator-integration; reconciled with API runtime.
+    def _send_security_flow_batch(self, datapath, messages, timeout=None):
+        """Send FlowMods and confirm the complete batch with a BarrierReply."""
+        messages = list(messages or [])
+        if not messages:
+            return {
+                "success": False,
+                "status": "empty_batch",
+                "barrier_received": False,
+                "barrier_error_received": False,
+                "openflow_errors": [],
+            }
+
+        transaction = {
+            "datapath_id": int(datapath.id),
+            "event": hub.Event(),
+            "xids": [],
+            "barrier_xid": None,
+            "barrier_received": False,
+            "barrier_error_received": False,
+            "openflow_errors": [],
+            "send_failed": False,
+            "send_error": None,
+            "disconnected": False,
+        }
+
+        lock = self._security_pending_lock
+        xid_map = self._security_xid_transactions
+        parser = datapath.ofproto_parser
+
+        try:
+            # Register every XID before sending any message. This also
+            # handles test doubles and fast switches that reply immediately.
+            with lock:
+                for message in messages:
+                    assigned = datapath.set_xid(message)
+                    xid = getattr(message, "xid", assigned)
+                    if xid is None:
+                        raise RuntimeError("FlowMod XID was not assigned")
+                    transaction["xids"].append(xid)
+                    xid_map[(int(datapath.id), xid)] = transaction
+
+                barrier = parser.OFPBarrierRequest(datapath)
+                assigned = datapath.set_xid(barrier)
+                barrier_xid = getattr(barrier, "xid", assigned)
+                if barrier_xid is None:
+                    raise RuntimeError("Barrier XID was not assigned")
+
+                transaction["barrier_xid"] = barrier_xid
+                transaction["xids"].append(barrier_xid)
+                xid_map[(int(datapath.id), barrier_xid)] = transaction
+
+        except Exception as exc:
+            transaction["send_failed"] = True
+            transaction["send_error"] = str(exc)
+
+        if not transaction["send_failed"]:
+            try:
+                for message in messages:
+                    result = datapath.send_msg(message)
+                    if result is False:
+                        raise RuntimeError("FlowMod send_msg returned False")
+
+                result = datapath.send_msg(barrier)
+                if result is False:
+                    raise RuntimeError("Barrier send_msg returned False")
+
+            except Exception as exc:
+                transaction["send_failed"] = True
+                transaction["send_error"] = str(exc)
+                transaction["event"].set()
+
+        if not transaction["send_failed"]:
+            wait_timeout = (
+                self._security_openflow_timeout
+                if timeout is None else max(0.01, float(timeout))
+            )
+            try:
+                transaction["event"].wait(wait_timeout)
+            except Exception as exc:
+                transaction["send_failed"] = True
+                transaction["send_error"] = "wait failed: %s" % exc
+
+        # A transaction is complete only after a BarrierReply and without
+        # an OpenFlow error. A barrier error is not a successful reply.
+        if transaction["send_failed"]:
+            status = "send_failed"
+        elif transaction["disconnected"]:
+            status = "disconnected"
+        elif (transaction["openflow_errors"]
+              or transaction["barrier_error_received"]):
+            status = "openflow_error"
+        elif transaction["barrier_received"]:
+            status = "confirmed"
+        else:
+            status = "timeout"
+
+        # Remove only this transaction's XID registrations.
+        with lock:
+            for xid in transaction["xids"]:
+                key = (int(datapath.id), xid)
+                if xid_map.get(key) is transaction:
+                    xid_map.pop(key, None)
+
+        return {
+            "success": status == "confirmed",
+            "status": status,
+            "barrier_received": transaction["barrier_received"],
+            "barrier_error_received": transaction["barrier_error_received"],
+            "openflow_errors": list(transaction["openflow_errors"]),
+            "error": transaction["send_error"],
+        }
+
+    def security_openflow_error_handler(self, ev):
+        """Associate an OpenFlow error with its pending batch."""
+        message = ev.msg
+        datapath_id = int(message.datapath.id)
+        xid = getattr(message, "xid", None)
+
+        with self._security_pending_lock:
+            transaction = self._security_xid_transactions.get(
+                (datapath_id, xid)
+            )
+            if transaction is None:
+                return
+
+            if xid == transaction["barrier_xid"]:
+                transaction["barrier_error_received"] = True
+            else:
+                transaction["openflow_errors"].append({
+                    "xid": xid,
+                    "type": getattr(message, "type", None),
+                    "code": getattr(message, "code", None),
+                    "data": repr(getattr(message, "data", None)),
+                })
+
+            transaction["event"].set()
+
+    def security_barrier_reply_handler(self, ev):
+        """Complete a batch only when its matching BarrierReply arrives."""
+        message = ev.msg
+        key = (int(message.datapath.id), getattr(message, "xid", None))
+
+        with self._security_pending_lock:
+            transaction = self._security_xid_transactions.get(key)
+            if transaction is None:
+                return
+            if key[1] != transaction["barrier_xid"]:
+                return
+
+            transaction["barrier_received"] = True
+            transaction["event"].set()
+
+    def _fail_security_transactions_for_datapath(self, datapath):
+        """Wake all pending batches when a switch disconnects."""
+        datapath_id = int(datapath.id)
+        with self._security_pending_lock:
+            pending = {
+                id(transaction): transaction
+                for (dpid, _xid), transaction
+                in self._security_xid_transactions.items()
+                if dpid == datapath_id
+            }
+
+            for transaction in pending.values():
+                transaction["disconnected"] = True
+                transaction["event"].set()
+
+    def _vip_dispatch_mod(self, datapath, service):
+        """Build one controller-dispatch rule for a VIP service."""
+        vip_ip, vlan_id, protocol, port = service
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        transport_field = "tcp_dst" if int(protocol) == 6 else "udp_dst"
+
+        match_fields = {
+            "eth_type": 0x0800,
+            "ipv4_dst": vip_ip,
+            "vlan_vid": OFPVID_PRESENT | int(vlan_id),
+            "ip_proto": int(protocol),
+            transport_field: int(port),
+        }
+
+        match = parser.OFPMatch(**match_fields)
+        actions = [
+            parser.OFPActionOutput(
+                ofproto.OFPP_CONTROLLER,
+                ofproto.OFPCML_NO_BUFFER
+            )
+        ]
+
+        return parser.OFPFlowMod(
+            datapath=datapath,
+            table_id=0,
+            priority=self.VIP_TAKEOVER_PRIORITY,
+            match=match,
+            instructions=[
+                parser.OFPInstructionActions(
+                    ofproto.OFPIT_APPLY_ACTIONS, actions
+                )
+            ],
+            idle_timeout=0,
+            hard_timeout=0,
+        )
+
+    def _vip_direction_flows(
+        self, path, in_port, final_port, vlan_id,
+        src_mac, dst_mac, output_mac,
+        src_ip, dst_ip, ip_dst_rest, protocol,
+        src_port, dst_port,
+        rewrite_dst=None, rewrite_src=None,
+        rewrite_eth_dst=None, ip_src_rest=None, output_vlan=None
+    ):
+        """Build one direction of a stateful, two-way VIP flow path.
+
+        Returns:
+            ([(dpid, FlowMod), ...], first_hop_packetout_actions)
+        """
+        entries = []
+        first_actions = []
+
+        if not path:
+            return entries, first_actions
+
+        protocol = int(protocol)
+        vlan_id = int(vlan_id)
+        transit_vlan = int(
+            vlan_id if output_vlan is None else output_vlan
+        )
+        src_port = int(src_port)
+        dst_port = int(dst_port)
+        transport = "tcp" if protocol == 6 else "udp"
+
+        for index, switch_id in enumerate(path):
+            switch_id = int(switch_id)
+            datapath = self.datapaths.get(switch_id)
+
+            if datapath is None:
+                return [], []
+
+            if index == 0:
+                current_in_port = int(in_port)
+            else:
+                previous_switch = int(path[index - 1])
+                link = self.link_to_port.get((previous_switch, switch_id))
+                if not link:
+                    return [], []
+                current_in_port = int(link[1])
+
+            if index == len(path) - 1:
+                out_port = int(final_port)
+            else:
+                next_switch = int(path[index + 1])
+                link = self.link_to_port.get((switch_id, next_switch))
+                if not link:
+                    return [], []
+                out_port = int(link[0])
+
+            current_vlan = (
+                vlan_id if index == 0 else transit_vlan
+            )
+
+            ingress_entry = self.vlan_port_map.get(
+                (switch_id, current_in_port)
+            )
+            if not isinstance(ingress_entry, dict):
+                return [], []
+
+            if not self._port_allows_vlan(
+                switch_id, current_in_port, current_vlan
+            ):
+                return [], []
+
+            ingress_kind = ingress_entry.get("kind")
+            if ingress_kind == "access":
+                match_vlan = OFPVID_NONE
+            elif ingress_kind == "trunk":
+                match_vlan = OFPVID_PRESENT | current_vlan
+            else:
+                return [], []
+
+            output_actions = self._vip_flow_output_actions(
+                datapath,
+                current_in_port,
+                out_port,
+                current_vlan,
+                transit_vlan,
+            )
+            if output_actions is None:
+                return [], []
+
+            fields = {
+                "in_port": current_in_port,
+                "eth_src": src_mac,
+                "eth_dst": dst_mac if index == 0 else output_mac,
+                "eth_type": 0x0800,
+                "vlan_vid": match_vlan,
+                "ip_proto": protocol,
+                "ipv4_src": (
+                    src_ip if index == 0 else (ip_src_rest or src_ip)
+                ),
+                "ipv4_dst": (
+                    dst_ip if index == 0 else (ip_dst_rest or dst_ip)
+                ),
+            }
+
+            fields[transport + "_src"] = src_port
+            fields[transport + "_dst"] = dst_port
+
+            parser = datapath.ofproto_parser
+            ofproto = datapath.ofproto
+            match = parser.OFPMatch(**fields)
+
+            actions = []
+
+            if index == 0:
+                if rewrite_src is not None:
+                    actions.append(
+                        parser.OFPActionSetField(ipv4_src=rewrite_src)
+                    )
+                if rewrite_dst is not None:
+                    actions.append(
+                        parser.OFPActionSetField(ipv4_dst=rewrite_dst)
+                    )
+                if rewrite_eth_dst is not None:
+                    actions.append(
+                        parser.OFPActionSetField(eth_dst=rewrite_eth_dst)
+                    )
+
+            actions.extend(output_actions)
+
+            flow_mod = parser.OFPFlowMod(
+                datapath=datapath,
+                table_id=0,
+                priority=self.VIP_TAKEOVER_PRIORITY + 1,
+                match=match,
+                instructions=[
+                    parser.OFPInstructionActions(
+                        ofproto.OFPIT_APPLY_ACTIONS, actions
+                    )
+                ],
+                idle_timeout=self.VIP_FLOW_IDLE_TIMEOUT,
+                hard_timeout=self.VIP_FLOW_HARD_TIMEOUT,
+            )
+
+            entries.append((switch_id, flow_mod))
+
+            if index == 0:
+                first_actions = actions
+
+        return entries, first_actions
+
+    def _vip_backend(self, service):
+        """Select an eligible backend using its actual backend VLAN."""
+        backend_pairs = {
+            ("10.10.20.100", 20, 6, 5000):
+                ("10.10.20.2", "10.10.20.8"),
+            ("10.10.20.100", 20, 6, 443):
+                ("10.10.20.3", "10.10.20.19"),
+            ("10.10.20.100", 20, 6, 2222):
+                ("10.10.20.4", "10.10.20.20"),
+            ("10.10.20.100", 20, 6, 53):
+                ("10.10.30.2", "10.10.30.17"),
+            ("10.10.20.100", 20, 17, 53):
+                ("10.10.30.2", "10.10.30.17"),
+        }
+
+        candidates = backend_pairs.get(tuple(service))
+        if not candidates:
+            return None
+
+        port = 22 if int(service[3]) == 2222 else int(service[3])
+        backend_vlan = (
+            30 if port == 53 and service[0] == "10.10.20.100"
+            else int(service[1])
+        )
+
+        for backend_ip in candidates:
+            backend_mac = self.ip_to_mac.get(backend_ip)
+            if not backend_mac:
+                continue
+
+            if self.mac_vlan.get(backend_mac) != backend_vlan:
+                continue
+
+            if self.host_location.get(backend_mac) is None:
+                continue
+
+            if self.is_device_blocked(backend_mac):
+                continue
+
+            return backend_ip, backend_mac, port
+
+        return None
+
+    def _handle_vip_packet(self, datapath, msg, pkt, vlan_id, defer=False):
+        """Install a bidirectional VIP path and rewrite the first packet."""
+        if not self.vip_takeover_active:
+            return False
+
+        ip_pkt = pkt.get_protocol(ipv4.ipv4)
+        eth_pkt = pkt.get_protocol(ethernet.ethernet)
+
+        if ip_pkt is None or eth_pkt is None:
+            return False
+
+        transport_pkt = pkt.get_protocol(tcp.tcp)
+        protocol = 6
+
+        if transport_pkt is None:
+            transport_pkt = pkt.get_protocol(udp.udp)
+            protocol = 17
+
+        if transport_pkt is None:
+            return False
+
+        service = (
+            str(ip_pkt.dst),
+            int(vlan_id),
+            protocol,
+            int(transport_pkt.dst_port),
+        )
+
+        if service not in self.VIP_DISPATCH_SERVICES:
+            return False
+
+        # The PacketIn event loop must remain free to process BarrierReply
+        # events while the VIP worker waits for OpenFlow confirmation.
+        if defer:
+            try:
+                hub.spawn(
+                    self._handle_vip_packet,
+                    datapath,
+                    msg,
+                    pkt,
+                    vlan_id,
+                )
+                self.logger.info(
+                    "LB VIP PacketIn deferred to worker: "
+                    "service=%s switch=s%d",
+                    service,
+                    int(datapath.id),
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to start VIP worker for %s", service
+                )
+            return True
+
+        self.logger.info(
+            "LB VIP PacketIn received: service=%s switch=s%d in_port=%s "
+            "src_ip=%s src_mac=%s dst_mac=%s",
+            service,
+            int(datapath.id),
+            msg.match.get("in_port"),
+            ip_pkt.src,
+            eth_pkt.src,
+            eth_pkt.dst,
+        )
+
+        selected = self._vip_backend(service)
+        if selected is None:
+            self.logger.warning(
+                "VIP takeover has no eligible backend for %s", service
+            )
+            return True
+
+        backend_ip, backend_mac, backend_port = selected
+
+        self.logger.info(
+            "LB VIP backend selected: service=%s backend=%s mac=%s vlan=%s location=%s",
+            service,
+            backend_ip,
+            backend_mac,
+            self.mac_vlan.get(backend_mac),
+            self.host_location.get(backend_mac),
+        )
+
+        backend_vlan = (
+            30 if backend_port == 53 and service[0] == "10.10.20.100"
+            else int(service[1])
+        )
+
+        try:
+            in_port = int(msg.match["in_port"])
+            client_mac = str(eth_pkt.src).lower()
+            vip_mac = str(eth_pkt.dst).lower()
+            client_ip = str(ip_pkt.src)
+            client_port = int(transport_pkt.src_port)
+
+            client_location = self.host_location.get(
+                client_mac, (int(datapath.id), in_port)
+            )
+            backend_location = self.host_location.get(backend_mac)
+
+            if backend_location is None:
+                self.logger.warning(
+                    "VIP backend location is unknown: %s", backend_ip
+                )
+                return True
+
+            forward_path = self._shortest_path(
+                int(datapath.id), int(backend_location[0])
+            )
+            reverse_path = self._shortest_path(
+                int(backend_location[0]), int(client_location[0])
+            )
+
+            if not forward_path or not reverse_path:
+                self.logger.error(
+                    "LB VIP path unavailable: service=%s "
+                    "forward_path=%s reverse_path=%s "
+                    "client_location=%s backend_location=%s",
+                    service,
+                    forward_path,
+                    reverse_path,
+                    client_location,
+                    backend_location,
+                )
+                return True
+
+            self.logger.info(
+                "LB VIP paths built: service=%s forward=%s reverse=%s "
+                "backend_vlan=%s",
+                service,
+                forward_path,
+                reverse_path,
+                backend_vlan,
+            )
+
+            forward = self._vip_direction_flows(
+                forward_path,
+                in_port,
+                int(backend_location[1]),
+                vlan_id,
+                client_mac,
+                vip_mac,
+                backend_mac,
+                client_ip,
+                service[0],
+                backend_ip,
+                protocol,
+                client_port,
+                backend_port,
+                rewrite_dst=backend_ip,
+                rewrite_eth_dst=backend_mac,
+                output_vlan=backend_vlan,
+            )
+
+            reverse_match_dst_mac = client_mac
+            reverse_output_mac = client_mac
+            reverse_rewrite_eth_dst = None
+
+            # DNS replies arrive from VLAN 30, but must return through
+            # the gateway's VLAN 20 interface after VIP translation.
+            if int(backend_port) == 53 and int(backend_vlan) == 30:
+                gateway_macs = []
+
+                for candidate_mac, candidate_vlan in self.mac_vlan.items():
+                    if int(candidate_vlan) != int(backend_vlan):
+                        continue
+
+                    candidate_location = self.host_location.get(candidate_mac)
+                    if not candidate_location:
+                        continue
+
+                    candidate_entry = self.vlan_port_map.get(
+                        (
+                            int(candidate_location[0]),
+                            int(candidate_location[1]),
+                        ),
+                        {},
+                    )
+
+                    if candidate_entry.get("role") == "gateway":
+                        gateway_macs.append(candidate_mac)
+
+                gateway_macs = sorted(set(gateway_macs))
+
+                if len(gateway_macs) != 1:
+                    self.logger.error(
+                        "DNS VIP reverse path cannot resolve VLAN %d "
+                        "gateway MAC: candidates=%s",
+                        backend_vlan,
+                        gateway_macs,
+                    )
+                    return True
+
+                # Match the actual destination MAC used by h1 on VLAN 30.
+                reverse_match_dst_mac = gateway_macs[0]
+
+                # Translate Ethernet destination to the VLAN 20 gateway MAC
+                # before forwarding the response toward s3.
+                reverse_rewrite_eth_dst = client_mac
+
+            reverse = self._vip_direction_flows(
+                reverse_path,
+                int(backend_location[1]),
+                int(client_location[1]),
+                backend_vlan,
+                backend_mac,
+                reverse_match_dst_mac,
+                reverse_output_mac,
+                backend_ip,
+                client_ip,
+                client_ip,
+                protocol,
+                backend_port,
+                client_port,
+                rewrite_src=service[0],
+                ip_src_rest=service[0],
+                rewrite_eth_dst=reverse_rewrite_eth_dst,
+                output_vlan=int(service[1]),
+            )
+
+            # Keep both directions together so partial installation can
+            # be rolled back before the first packet is released.
+            flow_entries = forward[0] + reverse[0]
+
+            if not forward[0] or not reverse[0]:
+                self.logger.error(
+                    "LB VIP flow construction failed: service=%s "
+                    "forward_entries=%d reverse_entries=%d",
+                    service,
+                    len(forward[0]),
+                    len(reverse[0]),
+                )
+                return True
+
+            self.logger.info(
+                "LB VIP flow construction complete: service=%s "
+                "forward_entries=%d reverse_entries=%d",
+                service,
+                len(forward[0]),
+                len(reverse[0]),
+            )
+
+            messages_by_switch = {}
+            for switch_id, flow_mod in flow_entries:
+                messages_by_switch.setdefault(switch_id, []).append(flow_mod)
+
+            install_ok = True
+            install_results = []
+
+            for switch_id in sorted(messages_by_switch):
+                switch = self.datapaths.get(switch_id)
+                if switch is None:
+                    install_ok = False
+                    break
+
+                result = self._send_security_flow_batch(
+                    switch, messages_by_switch[switch_id]
+                )
+                install_results.append((switch_id, result))
+
+                if not result.get("success"):
+                    install_ok = False
+                    break
+
+            if not install_ok:
+                self.logger.error(
+                    "LB VIP OpenFlow installation failed: service=%s "
+                    "results=%s",
+                    service,
+                    install_results,
+                )
+                # Delete every generated tuple, including entries on the
+                # switch whose batch failed after partially sending.
+                rollback_by_switch = {}
+                for switch_id, flow_mod in flow_entries:
+                    switch = self.datapaths.get(switch_id)
+                    if switch is None:
+                        continue
+                    parser = switch.ofproto_parser
+                    ofproto = switch.ofproto
+                    delete_mod = parser.OFPFlowMod(
+                        datapath=switch,
+                        command=ofproto.OFPFC_DELETE_STRICT,
+                        table_id=0,
+                        priority=flow_mod.priority,
+                        out_port=ofproto.OFPP_ANY,
+                        out_group=ofproto.OFPG_ANY,
+                        match=flow_mod.match,
+                    )
+                    rollback_by_switch.setdefault(
+                        switch_id, []
+                    ).append(delete_mod)
+
+                for switch_id, delete_messages in rollback_by_switch.items():
+                    switch = self.datapaths.get(switch_id)
+                    if switch is not None:
+                        self._send_security_flow_batch(
+                            switch, delete_messages
+                        )
+                return True
+
+            for switch_id, flow_mod in flow_entries:
+                flow_key = (
+                    switch_id,
+                    flow_mod.priority,
+                    repr(flow_mod.match),
+                )
+                self.vip_takeover_flows[flow_key] = (
+                    switch_id, flow_mod.match
+                )
+
+            self.logger.info(
+                "LB VIP OpenFlow installation confirmed: service=%s "
+                "switches=%s flow_entries=%d",
+                service,
+                sorted(messages_by_switch),
+                len(flow_entries),
+            )
+
+            parser = datapath.ofproto_parser
+            ofproto = datapath.ofproto
+            packet_out = parser.OFPPacketOut(
+                datapath=datapath,
+                buffer_id=ofproto.OFP_NO_BUFFER,
+                in_port=in_port,
+                actions=forward[1],
+                data=msg.data,
+            )
+            datapath.send_msg(packet_out)
+
+            self.logger.info(
+                "LB VIP first packet forwarded by Ryu: service=%s switch=s%d",
+                service,
+                int(datapath.id),
+            )
+            return True
+
+        except Exception:
+            self.logger.exception(
+                "VIP packet handling failed for %s", service
+            )
+            return True
+
+    def _install_vip_dispatch_on_switch(self, datapath):
+        """Restore VIP dispatch rules on one reconnected switch."""
+        services = sorted(self.VIP_DISPATCH_SERVICES)
+        messages = []
+        records = []
+
+        for service in services:
+            flow_mod = self._vip_dispatch_mod(datapath, service)
+            messages.append(flow_mod)
+            records.append((service, flow_mod.match))
+
+        result = self._send_security_flow_batch(datapath, messages)
+
+        if not result.get("success"):
+            self.logger.error(
+                "VIP dispatch restore failed on s%d: %s",
+                datapath.id, result
+            )
+            return result
+
+        self.vip_takeover_dispatch[int(datapath.id)] = records
+        return {"success": True, "status": "confirmed"}
+
+    def _restore_h38_vip_on_switch(self, datapath):
+        """Confirm the h38 MAC drop, then restore dispatch on reconnect."""
+        dpid = int(datapath.id)
+        expected = set(range(1, EXPECTED_SWITCHES + 1))
+
+        matching = [
+            (mac, record)
+            for mac, record in self.blocked_devices.items()
+            if (record or {}).get("ip") == "10.10.20.100"
+        ]
+
+        if not matching:
+            return
+
+        mac, record = matching[0]
+        parser = datapath.ofproto_parser
+        ofproto = datapath.ofproto
+
+        block_mod = parser.OFPFlowMod(
+            datapath=datapath,
+            table_id=0,
+            priority=DEVICE_BLOCK_PRIORITY,
+            match=parser.OFPMatch(eth_src=mac),
+            instructions=[
+                parser.OFPInstructionActions(
+                    ofproto.OFPIT_APPLY_ACTIONS, []
+                )
+            ],
+        )
+
+        result = self._send_security_flow_batch(datapath, [block_mod])
+
+        if not result.get("success"):
+            self.logger.error(
+                "h38 MAC block was not confirmed after s%d reconnect: %s",
+                dpid, result
+            )
+            return
+
+        confirmed = set(
+            int(value) for value in record.get("confirmed_switches", [])
+        )
+        confirmed.add(dpid)
+
+        record["confirmed_switches"] = sorted(confirmed)
+
+        if confirmed == expected:
+            record["enforcement_status"] = "executed"
+        else:
+            record["enforcement_status"] = "partial_failure"
+            return
+
+        if not all(switch_id in self.datapaths for switch_id in expected):
+            return
+
+        if self.vip_takeover_active:
+            for candidate in sorted(
+                self.datapaths.values(), key=lambda item: int(item.id)
+            ):
+                candidate_id = int(candidate.id)
+                if candidate_id in self.vip_takeover_dispatch:
+                    continue
+
+                restored = self._install_vip_dispatch_on_switch(candidate)
+                if not restored.get("success"):
+                    self.logger.error(
+                        "VIP dispatch restore failed on s%d: %s",
+                        candidate_id, restored
+                    )
+        else:
+            result = self.activate_vip_takeover()
+            if not result.get("success"):
+                self.logger.error(
+                    "VIP takeover activation after reconnect failed: %s",
+                    result
+                )
+
+    def activate_vip_takeover(self, reason="security"):
+        """Activate VIP dispatch for a confirmed Security block or LB failure."""
+        if reason not in ("security", "lb_health"):
+            return {
+                "success": False,
+                "status": "invalid_takeover_reason",
+                "reason": reason,
+            }
+
+        reasons = set(getattr(self, "vip_takeover_reasons", set()))
+
+        # Security takeover still requires a fully confirmed h38 MAC block.
+        # A Load Balancer process failure does not create or imply a device block.
+        if reason == "security":
+            expected_switches = set(
+                range(1, int(EXPECTED_SWITCHES) + 1)
+            )
+            h38_block_confirmed = False
+
+            for owner_mac, record in self.blocked_devices.items():
+                record = record or {}
+                confirmed = set(
+                    int(value)
+                    for value in record.get("confirmed_switches", [])
+                )
+                record_macs = record.get("macs", [owner_mac])
+
+                if (
+                    record.get("ip") == "10.10.20.100"
+                    and record.get("enforcement_status")
+                    in ("executed", "confirmed")
+                    and confirmed == expected_switches
+                    and record_macs
+                ):
+                    h38_block_confirmed = True
+                    break
+
+            if not h38_block_confirmed:
+                return {
+                    "success": False,
+                    "status": "h38_block_not_fully_confirmed",
+                }
+
+        if reason in reasons:
+            return {
+                "success": True,
+                "status": "already_active",
+                "reason": reason,
+            }
+
+        # If another independent reason already installed the rules, retain
+        # them and record this reason rather than reinstalling duplicate flows.
+        if self.vip_takeover_active:
+            reasons.add(reason)
+            self.vip_takeover_reasons = reasons
+            return {
+                "success": True,
+                "status": "already_active",
+                "reason": reason,
+                "active_reasons": sorted(reasons),
+            }
+
+        if not self.vlan_map_ready or not self.full_topology_discovered:
+            return {
+                "success": False,
+                "status": "topology_not_ready",
+            }
+
+        expected_switches = set(
+            range(1, int(EXPECTED_SWITCHES) + 1)
+        )
+
+        services = sorted(self.VIP_DISPATCH_SERVICES)
+        failed_switches = []
+        installed = {}
+
+        for switch_id in sorted(expected_switches):
+            switch = self.datapaths.get(switch_id)
+
+            if switch is None:
+                failed_switches.append(switch_id)
+                continue
+
+            messages = []
+            records = []
+
+            for service in services:
+                flow_mod = self._vip_dispatch_mod(switch, service)
+                messages.append(flow_mod)
+                records.append((service, flow_mod.match))
+
+            result = self._send_security_flow_batch(switch, messages)
+
+            if result.get("success"):
+                installed[switch_id] = records
+            else:
+                failed_switches.append(switch_id)
+
+        if failed_switches:
+            cleanup_failed_switches = []
+            remaining_dispatch = {}
+
+            # Roll back on every connected switch. This also covers a
+            # switch whose batch failed after some FlowMods were sent.
+            for switch_id in sorted(expected_switches):
+                switch = self.datapaths.get(switch_id)
+
+                if switch is None:
+                    continue
+
+                parser = switch.ofproto_parser
+                ofproto = switch.ofproto
+                delete_messages = []
+                records = []
+
+                for service in services:
+                    add_mod = self._vip_dispatch_mod(switch, service)
+                    delete_messages.append(parser.OFPFlowMod(
+                        datapath=switch,
+                        command=ofproto.OFPFC_DELETE_STRICT,
+                        table_id=0,
+                        priority=self.VIP_TAKEOVER_PRIORITY,
+                        out_port=ofproto.OFPP_ANY,
+                        out_group=ofproto.OFPG_ANY,
+                        match=add_mod.match,
+                    ))
+                    records.append((service, add_mod.match))
+
+                cleanup = self._send_security_flow_batch(
+                    switch, delete_messages
+                )
+
+                if not cleanup.get("success"):
+                    cleanup_failed_switches.append(switch_id)
+                    remaining_dispatch[switch_id] = records
+
+            self.vip_takeover_dispatch = remaining_dispatch
+            self.vip_takeover_active = False
+
+            if cleanup_failed_switches:
+                return {
+                    "success": False,
+                    "status": "dispatch_rollback_failed",
+                    "failed_switches": sorted(set(failed_switches)),
+                    "cleanup_failed_switches": sorted(
+                        set(cleanup_failed_switches)
+                    ),
+                }
+
+            return {
+                "success": False,
+                "status": "dispatch_install_failed",
+                "failed_switches": sorted(set(failed_switches)),
+            }
+
+        self.vip_takeover_dispatch = installed
+        self.vip_takeover_reasons = set(
+            getattr(self, "vip_takeover_reasons", set())
+        ) | {reason}
+        self.vip_takeover_active = True
+
+        return {
+            "success": True,
+            "status": "active",
+            "reason": reason,
+            "active_reasons": sorted(self.vip_takeover_reasons),
+            "switches": sorted(installed),
+            "services": len(services),
+        }
+
+    def deactivate_vip_takeover(self, reason="security"):
+        """Remove VIP steering only when no independent takeover reason remains."""
+        if reason not in ("security", "lb_health"):
+            return {
+                "success": False,
+                "status": "invalid_takeover_reason",
+                "reason": reason,
+            }
+
+        reasons = set(getattr(self, "vip_takeover_reasons", set()))
+        other_reasons = reasons - {reason}
+
+        if other_reasons:
+            reasons.discard(reason)
+            self.vip_takeover_reasons = reasons
+            self.vip_takeover_active = True
+            return {
+                "success": True,
+                "status": "takeover_still_required",
+                "active_reasons": sorted(reasons),
+            }
+
+        dispatch = self.vip_takeover_dispatch or {}
+        flow_records = self.vip_takeover_flows or {}
+
+        if (
+            not dispatch
+            and not flow_records
+            and not self.vip_takeover_active
+        ):
+            reasons.discard(reason)
+            self.vip_takeover_reasons = reasons
+            return {
+                "success": True,
+                "status": "not_active",
+            }
+
+        messages_by_switch = {}
+        dispatch_by_switch = {}
+        flow_keys_by_switch = {}
+
+        for switch_id, records in dispatch.items():
+            switch_id = int(switch_id)
+            switch = self.datapaths.get(switch_id)
+
+            if switch is None:
+                dispatch_by_switch[switch_id] = records
+                continue
+
+            parser = switch.ofproto_parser
+            ofproto = switch.ofproto
+
+            for service, match in records:
+                delete_mod = parser.OFPFlowMod(
+                    datapath=switch,
+                    command=ofproto.OFPFC_DELETE_STRICT,
+                    table_id=0,
+                    priority=self.VIP_TAKEOVER_PRIORITY,
+                    out_port=ofproto.OFPP_ANY,
+                    out_group=ofproto.OFPG_ANY,
+                    match=match,
+                )
+                messages_by_switch.setdefault(
+                    switch_id, []
+                ).append(delete_mod)
+
+        for flow_key, flow_record in flow_records.items():
+            switch_id, match = flow_record
+            switch_id = int(switch_id)
+            switch = self.datapaths.get(switch_id)
+
+            if switch is None:
+                flow_keys_by_switch.setdefault(
+                    switch_id, {}
+                )[flow_key] = flow_record
+                continue
+
+            parser = switch.ofproto_parser
+            ofproto = switch.ofproto
+            delete_mod = parser.OFPFlowMod(
+                datapath=switch,
+                command=ofproto.OFPFC_DELETE_STRICT,
+                table_id=0,
+                priority=self.VIP_TAKEOVER_PRIORITY + 1,
+                out_port=ofproto.OFPP_ANY,
+                out_group=ofproto.OFPG_ANY,
+                match=match,
+            )
+            messages_by_switch.setdefault(
+                switch_id, []
+            ).append(delete_mod)
+            flow_keys_by_switch.setdefault(
+                switch_id, {}
+            )[flow_key] = flow_record
+
+        failed_switches = []
+        remaining_dispatch = dict(dispatch_by_switch)
+        remaining_flows = {}
+
+        for switch_id in sorted(messages_by_switch):
+            switch = self.datapaths.get(switch_id)
+            if switch is None:
+                failed_switches.append(switch_id)
+                if switch_id in dispatch:
+                    remaining_dispatch[switch_id] = dispatch[switch_id]
+                remaining_flows.update(
+                    flow_keys_by_switch.get(switch_id, {})
+                )
+                continue
+
+            result = self._send_security_flow_batch(
+                switch, messages_by_switch[switch_id]
+            )
+
+            if not result.get("success"):
+                failed_switches.append(switch_id)
+
+                if switch_id in dispatch:
+                    remaining_dispatch[switch_id] = dispatch[switch_id]
+
+                remaining_flows.update(
+                    flow_keys_by_switch.get(switch_id, {})
+                )
+
+        self.vip_takeover_dispatch = remaining_dispatch
+        self.vip_takeover_flows = remaining_flows
+
+        if failed_switches:
+            # Keep the reason and takeover active so cleanup can be retried.
+            self.vip_takeover_reasons = reasons
+            self.vip_takeover_active = True
+            return {
+                "success": False,
+                "status": "dispatch_cleanup_failed",
+                "failed_switches": sorted(set(failed_switches)),
+            }
+
+        reasons.discard(reason)
+        self.vip_takeover_reasons = reasons
+        self.vip_takeover_active = bool(reasons)
+
+        return {
+            "success": True,
+            "status": "deactivated" if not reasons else "takeover_still_required",
+            "active_reasons": sorted(reasons),
+        }
+
+    def block_device(self, mac, ip=None, request_id=None, reason=None):
+        """Block a MAC and activate VIP takeover only after h38 is confirmed."""
+        mac = self.normalize_device_mac(mac)
+
+        location = self.host_location.get(mac)
+        if location is not None:
+            port_entry = self.vlan_port_map.get(
+                (int(location[0]), int(location[1])), {}
+            )
+            if port_entry.get("role") == "gateway":
+                return {
+                    "success": False,
+                    "status": "gateway-owned",
+                    "action": "BLOCK_DEVICE",
+                    "mac": mac,
+                    "ip": ip,
+                    "request_id": request_id,
+                    "message": "A gateway-owned MAC is not a host endpoint",
+                }
+
+        block_macs = [mac]
+        target_ip = str(ip).strip() if ip is not None else ""
+
+        record = {
+            "mac": mac,
+            "macs": list(block_macs),
+            "ip": ip,
+            "request_id": request_id,
+            "reason": reason,
+            "blocked_at": time.time(),
+            "enforcement_status": "pending",
+            "confirmed_switches": [],
+        }
+        self.blocked_devices[mac] = record
+
+        datapaths = sorted(
+            self.datapaths.values(), key=lambda item: int(item.id)
+        )
+
+        if not datapaths:
+            record["enforcement_status"] = "no_switches"
+            return {
+                "success": False,
+                "status": "no_switches",
+                "mac": mac,
+                "ip": ip,
+                "message": "Block is recorded; no switch is connected",
+            }
+
+        failed = []
+        confirmed = []
+
+        for datapath in datapaths:
+            try:
+                for block_mac in block_macs:
+                    if target_ip == "10.10.20.100":
+                        parser = datapath.ofproto_parser
+                        ofproto = datapath.ofproto
+                        flow_mod = parser.OFPFlowMod(
+                            datapath=datapath,
+                            table_id=0,
+                            priority=DEVICE_BLOCK_PRIORITY,
+                            match=parser.OFPMatch(eth_src=block_mac),
+                            instructions=[
+                                parser.OFPInstructionActions(
+                                    ofproto.OFPIT_APPLY_ACTIONS, []
+                                )
+                            ],
+                        )
+                        result = self._send_security_flow_batch(
+                            datapath, [flow_mod]
+                        )
+                        if not result.get("success"):
+                            raise RuntimeError(
+                                "MAC block not confirmed: %s" %
+                                result.get("status")
+                            )
+                    else:
+                        self._install_device_block_rule(
+                            datapath, block_mac
+                        )
+
+                confirmed.append(int(datapath.id))
+
+            except Exception:
+                failed.append(int(datapath.id))
+                self.logger.exception(
+                    "Failed to install device block on s%d for %s",
+                    datapath.id, mac
+                )
+
+        if target_ip == "10.10.20.100":
+            expected = set(range(1, EXPECTED_SWITCHES + 1))
+            missing = expected - set(confirmed)
+            failed.extend(missing)
+
+        failed = sorted(set(failed))
+        confirmed = sorted(set(confirmed))
+
+        record["confirmed_switches"] = confirmed
+        record["enforcement_status"] = (
+            "executed" if not failed else "partial_failure"
+        )
+
+        vip_result = None
+        if target_ip == "10.10.20.100" and not failed:
+            vip_result = self.activate_vip_takeover()
+            record["vip_takeover_status"] = vip_result.get("status")
+
+            if not vip_result.get("success"):
+                self.logger.error(
+                    "h38 is blocked but VIP takeover did not activate: %s",
+                    vip_result
+                )
+                return {
+                    "success": False,
+                    "status": "partial_failure",
+                    "action": "BLOCK_DEVICE",
+                    "mac": mac,
+                    "ip": ip,
+                    "switches": confirmed,
+                    "failed_switches": [],
+                    "vip_takeover": vip_result,
+                    "request_id": request_id,
+                }
+
+        success = not failed
+
+        self.logger.warning(
+            "BLOCK_DEVICE %s ip=%s switches=%s failed=%s request_id=%s reason=%s",
+            mac, ip, confirmed, failed, request_id, reason
+        )
+
+        return {
+            "success": success,
+            "status": "executed" if success else "partial_failure",
+            "action": "BLOCK_DEVICE",
+            "mac": mac,
+            "ip": ip,
+            "switches": confirmed,
+            "failed_switches": failed,
+            "vip_takeover": vip_result,
+            "request_id": request_id,
+        }
+
+    def unblock_device(self, mac, ip=None, request_id=None, reason=None):
+        """Remove Security MAC rules and restore the normal h38 frontend."""
+        mac = self.normalize_device_mac(mac)
+        record = self.blocked_devices.get(mac)
+
+        if mac not in self.blocked_devices:
+            return {
+                "success": False,
+                "status": "not_blocked",
+                "action": "UNBLOCK_DEVICE",
+                "mac": mac,
+                "ip": ip,
+                "request_id": request_id,
+            }
+
+        target_ip = str(ip or (record or {}).get("ip") or "")
+        block_macs = (record or {}).get("macs", [mac])
+
+        if not isinstance(block_macs, (list, tuple, set)):
+            block_macs = [mac]
+
+        block_macs = [
+            self.normalize_device_mac(value) for value in block_macs
+        ]
+
+        # h38 requires confirmed removal on every expected switch.
+        # Ordinary endpoint unblock behavior remains unchanged.
+        if target_ip == "10.10.20.100":
+            if not block_macs:
+                block_macs = [mac]
+
+            expected_switches = set(
+                range(1, int(EXPECTED_SWITCHES) + 1)
+            )
+
+            connected = {
+                int(datapath.id): datapath
+                for datapath in self.datapaths.values()
+                if int(datapath.id) in expected_switches
+            }
+
+            missing_switches = sorted(
+                expected_switches - set(connected)
+            )
+
+            if missing_switches:
+                return {
+                    "success": False,
+                    "status": "switches_unavailable",
+                    "action": "UNBLOCK_DEVICE",
+                    "mac": mac,
+                    "ip": target_ip,
+                    "required_switches": sorted(expected_switches),
+                    "connected_switches": sorted(connected),
+                    "failed_switches": missing_switches,
+                    "request_id": request_id,
+                }
+
+            # Remove VIP steering while h38 remains MAC-blocked.
+            vip_result = self.deactivate_vip_takeover()
+
+            if not vip_result.get("success"):
+                return {
+                    "success": False,
+                    "status": "partial_failure",
+                    "action": "UNBLOCK_DEVICE",
+                    "mac": mac,
+                    "ip": target_ip,
+                    "vip_takeover": vip_result,
+                    "request_id": request_id,
+                }
+
+            # Delete the h38 MAC drop and wait for a BarrierReply
+            # from every expected switch.
+            delete_failed = []
+
+            for switch_id in sorted(expected_switches):
+                datapath = connected[switch_id]
+                parser = datapath.ofproto_parser
+                ofproto = datapath.ofproto
+
+                messages = [
+                    parser.OFPFlowMod(
+                        datapath=datapath,
+                        command=ofproto.OFPFC_DELETE_STRICT,
+                        table_id=0,
+                        priority=DEVICE_BLOCK_PRIORITY,
+                        out_port=ofproto.OFPP_ANY,
+                        out_group=ofproto.OFPG_ANY,
+                        match=parser.OFPMatch(eth_src=block_mac),
+                    )
+                    for block_mac in block_macs
+                ]
+
+                result = self._send_security_flow_batch(
+                    datapath, messages
+                )
+
+                if not result.get("success"):
+                    delete_failed.append(switch_id)
+                    self.logger.error(
+                        "h38 MAC unblock not confirmed on s%d: %s",
+                        switch_id,
+                        result,
+                    )
+
+            if delete_failed:
+                # A delete may have succeeded on some switches.
+                # Reinstall the MAC drop everywhere and confirm it.
+                restored_switches = []
+                restore_failed = []
+
+                for switch_id in sorted(expected_switches):
+                    datapath = connected[switch_id]
+                    parser = datapath.ofproto_parser
+                    ofproto = datapath.ofproto
+
+                    restore_messages = [
+                        parser.OFPFlowMod(
+                            datapath=datapath,
+                            command=ofproto.OFPFC_ADD,
+                            table_id=0,
+                            priority=DEVICE_BLOCK_PRIORITY,
+                            match=parser.OFPMatch(eth_src=block_mac),
+                            instructions=[
+                                parser.OFPInstructionActions(
+                                    ofproto.OFPIT_APPLY_ACTIONS, []
+                                )
+                            ],
+                        )
+                        for block_mac in block_macs
+                    ]
+
+                    result = self._send_security_flow_batch(
+                        datapath, restore_messages
+                    )
+
+                    if result.get("success"):
+                        restored_switches.append(switch_id)
+                    else:
+                        restore_failed.append(switch_id)
+                        self.logger.error(
+                            "h38 MAC block restoration not confirmed "
+                            "on s%d: %s",
+                            switch_id,
+                            result,
+                        )
+
+                block_record = self.blocked_devices.get(mac)
+
+                if isinstance(block_record, dict):
+                    block_record["confirmed_switches"] = sorted(
+                        restored_switches
+                    )
+                    block_record["enforcement_status"] = (
+                        "executed"
+                        if not restore_failed
+                        else "partial_failure"
+                    )
+
+                vip_restore = None
+
+                # Restore VIP dispatch only after all six MAC drops
+                # have been confirmed again.
+                if not restore_failed:
+                    vip_restore = self.activate_vip_takeover()
+
+                if restore_failed:
+                    status = "unblock_failed_rollback_incomplete"
+                elif vip_restore and vip_restore.get("success"):
+                    status = "unblock_failed_block_restored"
+                else:
+                    status = "unblock_failed_vip_restore_failed"
+
+                return {
+                    "success": False,
+                    "status": status,
+                    "action": "UNBLOCK_DEVICE",
+                    "mac": mac,
+                    "ip": target_ip,
+                    "delete_failed_switches": sorted(delete_failed),
+                    "restored_switches": sorted(restored_switches),
+                    "restore_failed_switches": sorted(restore_failed),
+                    "vip_takeover": vip_restore,
+                    "request_id": request_id,
+                }
+
+            # All six switches confirmed removal.
+            self.blocked_devices.pop(mac, None)
+
+            self.logger.info(
+                "UNBLOCK_DEVICE h38 %s ip=%s confirmed_switches=%s "
+                "request_id=%s reason=%s",
+                mac,
+                target_ip,
+                sorted(expected_switches),
+                request_id,
+                reason,
+            )
+
+            return {
+                "success": True,
+                "status": "executed",
+                "action": "UNBLOCK_DEVICE",
+                "mac": mac,
+                "ip": target_ip,
+                "switches": sorted(expected_switches),
+                "request_id": request_id,
+            }
+
+        # Existing ordinary-device behavior: intentionally unchanged.
+        datapaths = list(self.datapaths.values())
+
+        try:
+            for datapath in datapaths:
+                for block_mac in block_macs:
+                    self._delete_device_block_rule(
+                        datapath, block_mac
+                    )
+
+        except Exception:
+            self.logger.exception(
+                "Failed to remove device block for %s; restoring block rules",
+                mac
+            )
+
+            for datapath in datapaths:
+                for block_mac in block_macs:
+                    try:
+                        self._install_device_block_rule(
+                            datapath, block_mac
+                        )
+                    except Exception:
+                        self.logger.exception(
+                            "Failed to restore device block on s%d for %s",
+                            datapath.id, block_mac
+                        )
+
+            return {
+                "success": False,
+                "status": "partial_failure",
+                "action": "UNBLOCK_DEVICE",
+                "mac": mac,
+                "ip": ip,
+                "request_id": request_id,
+            }
+
+        self.blocked_devices.pop(mac, None)
+
+        self.logger.info(
+            "UNBLOCK_DEVICE %s ip=%s request_id=%s reason=%s",
+            mac, ip, request_id, reason
+        )
+
+        return {
+            "success": True,
+            "status": "executed",
+            "action": "UNBLOCK_DEVICE",
+            "mac": mac,
+            "ip": ip,
+            "switches": [dp.id for dp in datapaths],
+            "request_id": request_id,
+        }
+
+    def _vip_flow_output_actions(
+        self, datapath, in_port, out_port,
+        ingress_vlan, egress_vlan=None
+    ):
+        """Build VLAN-aware output actions, including VLAN translation."""
+        dpid = int(datapath.id)
+        in_port = int(in_port)
+        out_port = int(out_port)
+        ingress_vlan = int(ingress_vlan)
+        egress_vlan = int(
+            ingress_vlan if egress_vlan is None else egress_vlan
+        )
+
+        ingress = self.vlan_port_map.get((dpid, in_port))
+        egress = self.vlan_port_map.get((dpid, out_port))
+
+        if not ingress or not egress:
+            return None
+
+        if not self._port_allows_vlan(dpid, in_port, ingress_vlan):
+            return None
+
+        if not self._port_allows_vlan(dpid, out_port, egress_vlan):
+            return None
+
+        parser = datapath.ofproto_parser
+        actions = []
+
+        if egress.get("kind") == "trunk":
+            if ingress.get("kind") == "access":
+                actions.extend([
+                    parser.OFPActionPushVlan(0x8100),
+                    parser.OFPActionSetField(
+                        vlan_vid=OFPVID_PRESENT | egress_vlan
+                    ),
+                ])
+            elif ingress.get("kind") == "trunk":
+                if ingress_vlan != egress_vlan:
+                    actions.append(
+                        parser.OFPActionSetField(
+                            vlan_vid=OFPVID_PRESENT | egress_vlan
+                        )
+                    )
+            else:
+                return None
+
+        elif egress.get("kind") == "access":
+            if ingress.get("kind") == "trunk":
+                actions.append(parser.OFPActionPopVlan())
+            elif ingress.get("kind") == "access":
+                if ingress_vlan != egress_vlan:
+                    return None
+            else:
+                return None
+        else:
+            return None
+
+        actions.append(parser.OFPActionOutput(out_port))
+        return actions
+
+
+    def block_load_balancer(self, ip=None, mac=None, request_id=None, reason=None):
+        """Apply a whole-host h38 block and activate confirmed VIP takeover."""
+        ip = ip or host_ip(LOAD_BALANCER.get("host", "h38"))
+        mac = mac or self.ip_to_mac.get(ip)
+        if not mac:
+            return {"success": False, "status": "unavailable",
+                    "target_type": "load_balancer",
+                    "message": "load-balancer MAC is not learned"}
+        mac = self.normalize_device_mac(mac)
+        result = self.block_device(
+            mac=mac, ip=ip, request_id=request_id, reason=reason)
+        if result.get("success"):
+            self.blocked_endpoints["load_balancer"] = {
+                "ip": ip, "mac": mac, "macs": [mac], "mac_only": True,
+            }
+        result.update({
+            "target_type": "load_balancer",
+            "emergency_failover": bool(
+                result.get("vip_takeover", {}).get("success")),
+        })
+        return result
+
+    def unblock_load_balancer(self, request_id=None, reason=None):
+        """Remove h38's MAC block only after confirmed VIP restoration."""
+        record = self.blocked_endpoints.get("load_balancer") or {}
+        ip = record.get("ip") or host_ip(LOAD_BALANCER.get("host", "h38"))
+        mac = record.get("mac") or self.ip_to_mac.get(ip)
+        if not mac:
+            return {"success": False, "status": "unavailable",
+                    "target_type": "load_balancer",
+                    "message": "load-balancer MAC is not learned"}
+        result = self.unblock_device(
+            mac=mac, ip=ip, request_id=request_id, reason=reason)
+        if result.get("success"):
+            self.blocked_endpoints.pop("load_balancer", None)
+        result["target_type"] = "load_balancer"
+        return result
+
+    def classify_security_target(self, ip=None, mac=None):
+        """Classify the protected LB endpoint separately from ordinary hosts."""
+        target_ip = host_ip(LOAD_BALANCER.get("host", "h38"))
+        if str(ip or "").strip() == str(target_ip):
+            return {"target_type": "load_balancer", "ip": target_ip,
+                    "mac": mac or self.ip_to_mac.get(target_ip), "service": None}
+        return {"target_type": "device", "ip": ip, "mac": mac, "service": None}
 
     def print_topology_summary(self):
 

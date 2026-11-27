@@ -423,6 +423,36 @@ class NetworkActionController(ControllerBase):
                 }).encode("utf-8")
             )
 
+    @route("shadow_verdict", "/shadow/verdict", methods=["POST"])
+    def shadow_verdict(self, req, **kwargs):
+        """Apply only explicitly enabled, scoped Shadow device verdicts."""
+        expected_token = getattr(self.monitor, "control_token", "")
+        supplied_token = req.headers.get("X-SecureIoT-Token", "")
+        if not expected_token:
+            return Response(status=503, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "unavailable",
+                                "message": "Zero Trust control token is not configured"
+                            }).encode("utf-8"))
+        if not supplied_token or not hmac.compare_digest(supplied_token, expected_token):
+            return Response(status=401, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "unauthorized",
+                                "message": "Valid Zero Trust control token required"
+                            }).encode("utf-8"))
+        try:
+            payload = json.loads(req.body.decode("utf-8"))
+        except (TypeError, ValueError, UnicodeDecodeError) as exc:
+            return Response(status=400, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "error",
+                                "message": "Invalid JSON", "error": str(exc)
+                            }).encode("utf-8"))
+        result = self.monitor.execute_shadow_api_verdict(payload)
+        return Response(status=200 if result.get("success") else 400,
+                        content_type="application/json", charset="utf-8",
+                        body=json.dumps(result).encode("utf-8"))
+
     @route(
         "security_decision",
         "/security/decision",
@@ -2810,6 +2840,76 @@ class TrafficMonitorMerged(
         self.security_decisions[request_id] = telemetry
         result.update({"decision": decision, "telemetry": telemetry})
         return result
+    def execute_shadow_api_verdict(self, payload):
+        """Validate Shadow's IP-based verdict before enforcing a MAC block.
+
+        Shadow is observational unless SHADOW_ENFORCE=1. Automatic unblock is
+        deliberately disabled unless SHADOW_AUTO_UNBLOCK=1. Scope is limited
+        by VLAN and, unless ALL_ACCESS is enabled, an explicit IP allowlist.
+        """
+        if not isinstance(payload, dict):
+            return {"success": False, "status": "rejected", "message": "payload must be an object"}
+        if os.environ.get("SHADOW_ENFORCE", "0").strip().lower() not in {"1", "true", "yes"}:
+            return {"success": False, "status": "disabled", "message": "Shadow enforcement is disabled"}
+        decision = str(payload.get("decision", "")).strip().upper()
+        if decision not in {"BLOCK_DEVICE", "UNBLOCK_DEVICE"}:
+            return {"success": False, "status": "rejected", "message": "unsupported decision"}
+        if decision == "UNBLOCK_DEVICE" and os.environ.get("SHADOW_AUTO_UNBLOCK", "0").strip().lower() not in {"1", "true", "yes"}:
+            return {"success": False, "status": "rejected", "message": "automatic unblock is disabled"}
+        requested_ip = payload.get("requested_src_ip")
+        response_ip = payload.get("response_src_ip")
+        try:
+            requested_ip = str(ipaddress.ip_address(str(requested_ip).strip()))
+            response_ip = str(ipaddress.ip_address(str(response_ip).strip()))
+        except (ValueError, TypeError, AttributeError):
+            return {"success": False, "status": "rejected", "message": "valid requested and response source IPs are required"}
+        if requested_ip != response_ip:
+            return {"success": False, "status": "rejected", "message": "requested and response source IPs do not match"}
+        topology = self._get_topology_monitor()
+        if topology is None:
+            return {"success": False, "status": "unavailable", "message": "TopologyMonitor is not available"}
+        protected = {x.strip() for x in os.environ.get("SECUREIOT_PROTECTED_IPS", "").split(",") if x.strip()}
+        if requested_ip in protected:
+            return {"success": False, "status": "rejected", "message": "protected IP cannot be blocked"}
+        mac_map = getattr(topology, "ip_to_mac", {})
+        mac = mac_map.get(requested_ip) if isinstance(mac_map, dict) else None
+        if not mac:
+            return {"success": False, "status": "unavailable", "message": "source IP has no learned MAC identity"}
+        vlan_map = getattr(topology, "ip_vlan", {})
+        mac_vlan_map = getattr(topology, "mac_vlan", {})
+        vlan_id = vlan_map.get(requested_ip) if isinstance(vlan_map, dict) else None
+        try:
+            vlan_id = int(vlan_id)
+        except (TypeError, ValueError):
+            return {"success": False, "status": "unavailable", "message": "source VLAN is unknown"}
+        allowed_vlans = {x.strip() for x in os.environ.get("SHADOW_ENFORCEMENT_VLANS", "").split(",") if x.strip()}
+        if allowed_vlans and str(vlan_id) not in allowed_vlans:
+            return {"success": False, "status": "rejected", "message": "source VLAN is outside enforcement scope"}
+        all_access = os.environ.get("SHADOW_ENFORCEMENT_ALL_ACCESS", "0").strip().lower() in {"1", "true", "yes"}
+        allow_ips = {x.strip() for x in os.environ.get("SHADOW_ENFORCEMENT_IPS", "").split(",") if x.strip()}
+        if not all_access and requested_ip not in allow_ips:
+            return {"success": False, "status": "rejected", "message": "source IP is outside enforcement allowlist"}
+        if all_access:
+            if getattr(topology, "vlan_map_ready", False) is not True:
+                return {"success": False, "status": "unavailable", "message": "VLAN endpoint inventory is not ready"}
+            location = getattr(topology, "host_location", {}).get(mac)
+            entry = getattr(topology, "vlan_port_map", {}).get(tuple(location), {}) if location else {}
+            if entry.get("kind") != "access" or entry.get("role") != "endpoint":
+                return {"success": False, "status": "rejected", "message": "source is not an access endpoint"}
+            try:
+                observed_mac_vlan = int(mac_vlan_map.get(mac, -1))
+                observed_port_vlan = int(entry.get("vlan_id", -1))
+            except (TypeError, ValueError):
+                return {"success": False, "status": "rejected",
+                        "message": "source MAC/VLAN identity is invalid"}
+            if observed_mac_vlan != vlan_id or observed_port_vlan != vlan_id:
+                return {"success": False, "status": "rejected", "message": "source MAC/VLAN identity mismatch"}
+        request_id = payload.get("request_id") or payload.get("observation_id")
+        return self.execute_security_action(
+            host_ip=requested_ip, mac=mac,
+            action=ACTION_BLOCK_DEVICE if decision == "BLOCK_DEVICE" else ACTION_UNBLOCK_DEVICE,
+            request_id=request_id, reason=payload.get("reason") or "Shadow API verdict")
+
     def execute_security_action(
         self, host_ip=None, action=None, request_id=None, trust_state=None,
         trust_score=None, reason=None, mac=None
@@ -2834,10 +2934,24 @@ class TrafficMonitorMerged(
                 return {"success": False, "status": "unavailable",
                         "message": "TopologyMonitor is not available",
                         "action": action, "mac": mac, "ip": host_ip}
-            method = (topology.block_device if action == ACTION_BLOCK_DEVICE
-                      else topology.unblock_device)
-            result = method(mac=mac, ip=host_ip, request_id=request_id,
-                            reason=reason)
+            classifier = getattr(topology, "classify_security_target", None)
+            target = classifier(ip=host_ip, mac=mac) if callable(classifier) else {}
+            target_type = target.get("target_type") if isinstance(target, dict) else None
+            if target_type == "load_balancer":
+                method = (topology.block_load_balancer
+                          if action == ACTION_BLOCK_DEVICE
+                          else topology.unblock_load_balancer)
+                if action == ACTION_BLOCK_DEVICE:
+                    result = method(ip=host_ip, mac=mac,
+                                    request_id=request_id, reason=reason)
+                else:
+                    result = method(request_id=request_id, reason=reason)
+                result["target_type"] = "load_balancer"
+            else:
+                method = (topology.block_device if action == ACTION_BLOCK_DEVICE
+                          else topology.unblock_device)
+                result = method(mac=mac, ip=host_ip, request_id=request_id,
+                                reason=reason)
             self._record_action(
                 request_id=request_id, host_ip=host_ip, mac=mac, action=action,
                 status=result.get("status", "failed"), reason=reason)

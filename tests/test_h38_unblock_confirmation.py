@@ -28,7 +28,7 @@ def extract_method(name):
         and node.name == "TopologyMonitor"
     )
     method = next(
-        node for node in topology.body
+        node for node in reversed(topology.body)
         if isinstance(node, ast.FunctionDef)
         and node.name == name
     )
@@ -37,6 +37,7 @@ def extract_method(name):
     namespace = {
         "EXPECTED_SWITCHES": 6,
         "DEVICE_BLOCK_PRIORITY": DEVICE_BLOCK_PRIORITY,
+        "time": __import__("time"),
     }
 
     exec(
@@ -107,6 +108,7 @@ class H38UnblockHarness:
         self.activate_success = activate_success
 
         self.events = []
+        self.firewall_events = []
         self.batches = []
         self.ordinary_deletes = []
 
@@ -172,6 +174,9 @@ class H38UnblockHarness:
         raise AssertionError(
             "Unexpected ordinary block restoration in this test"
         )
+
+    def _record_firewall_event(self, result, reason=None):
+        self.firewall_events.append((dict(result), reason))
 
     def run_unblock(self, ip=LB_IP):
         return self.unblock_device(
