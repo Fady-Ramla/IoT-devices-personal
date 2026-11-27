@@ -1,0 +1,47 @@
+{
+  "purpose": "Test-only corrected holdout for one-shot network-only final evaluation.",
+  "original_v3_package_untouched": true,
+  "development_package_not_modified": true,
+  "test_runs": 80,
+  "test_runs_by_label": {
+    "Malicious_POST": 20,
+    "SYN_Flood": 20,
+    "Normal": 20,
+    "Port_Scan": 20
+  },
+  "original_invalid_test_runs_excluded": {
+    "MP031": "e59f0bba-b1f3-460b-8c55-1cc47c4de524",
+    "MP008": "3d7cbaf3-ab74-4403-a290-f6eb05297d15"
+  },
+  "verified_replacements": {
+    "MP047": {
+      "run_id": "b59f603c-a371-4045-9b8a-ca6cf07c173d",
+      "generation": "374",
+      "plan_index": "161",
+      "label": "Malicious_POST",
+      "split": "final_test",
+      "command": "attack h7 malicious_post h2 /login 10 1000 1 16",
+      "observed_app_events": 10,
+      "observed_post_auth_401_events": 10
+    },
+    "MP048": {
+      "run_id": "7770531d-82a9-4895-afb1-6cb2454a29a0",
+      "generation": "375",
+      "plan_index": "162",
+      "label": "Malicious_POST",
+      "split": "final_test",
+      "command": "attack h14 malicious_post h2 /login 19 200 1 6",
+      "observed_app_events": 18,
+      "observed_post_auth_401_events": 18
+    }
+  },
+  "packet_rows": 42226,
+  "flow_rows": 3262,
+  "packet_unique_observation_ids": 42226,
+  "flow_unique_observation_ids": 3262,
+  "exact_duplicate_packet_rows": 0,
+  "exact_duplicate_flow_rows": 0,
+  "train_test_run_overlap": 0,
+  "app_fusion_policy": "Not recommended as primary evaluation because test application telemetry coverage is inconsistent; use network-only features for the main result.",
+  "test_features_scored_or_models_trained": false
+}

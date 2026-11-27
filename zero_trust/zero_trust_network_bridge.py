@@ -52,12 +52,16 @@ class ZeroTrustNetworkBridge:
     # INITIALIZATION
     # ========================================================
 
-    def __init__(
-        self,
-        api_url="http://127.0.0.1:8080/network/action"
-    ):
-
-        self.api_url = api_url
+    def __init__(self, api_url=None):
+        # Local Ryu default; set SECUREIOT_NETWORK_API_URL when the Security
+        # service reaches the controller through a tunnel/VPN or another host.
+        self.api_url = (
+            api_url
+            or os.environ.get(
+                "SECUREIOT_NETWORK_API_URL",
+                "http://127.0.0.1:8080/network/action",
+            )
+        )
 
         self.engine = ZeroTrustEngine()
 
@@ -209,7 +213,8 @@ if __name__ == "__main__":
     # will provide later.
     # --------------------------------------------------------
 
-    device = "10.0.0.2"
+    # h5 is the first IoT endpoint in the active 38-host topology.
+    device = "10.10.10.5"
 
     trust_score = 35
 

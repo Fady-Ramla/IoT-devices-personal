@@ -1,0 +1,9 @@
+{
+  "name": "xgb_equal_run",
+  "family": "xgb",
+  "normal_weight": 1.0,
+  "n_estimators": 300,
+  "max_depth": 3,
+  "learning_rate": 0.05,
+  "min_child_weight": 2
+}

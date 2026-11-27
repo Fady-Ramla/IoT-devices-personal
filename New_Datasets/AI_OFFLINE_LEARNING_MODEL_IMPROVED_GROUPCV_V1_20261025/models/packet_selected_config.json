@@ -1,0 +1,9 @@
+{
+  "name": "xgb_normal_x2",
+  "family": "xgb",
+  "normal_weight": 2.0,
+  "n_estimators": 300,
+  "max_depth": 3,
+  "learning_rate": 0.05,
+  "min_child_weight": 2
+}

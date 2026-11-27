@@ -1,0 +1,60 @@
+{
+  "campaign_generations": "191-353",
+  "completed_runs": 160,
+  "failed_runs_excluded": 3,
+  "classes": [
+    "Normal",
+    "Malicious_POST",
+    "Port_Scan",
+    "SYN_Flood"
+  ],
+  "runs_per_class": {
+    "Normal": 40,
+    "Malicious_POST": 40,
+    "Port_Scan": 40,
+    "SYN_Flood": 40
+  },
+  "run_split_counts_per_class": {
+    "Normal": {
+      "train": 16,
+      "validation": 4,
+      "final_test": 20
+    },
+    "Malicious_POST": {
+      "train": 16,
+      "validation": 4,
+      "final_test": 20
+    },
+    "Port_Scan": {
+      "train": 16,
+      "validation": 4,
+      "final_test": 20
+    },
+    "SYN_Flood": {
+      "train": 16,
+      "validation": 4,
+      "final_test": 20
+    }
+  },
+  "packet_rows_per_split": {
+    "final_test": 44484,
+    "train": 34748,
+    "validation": 11933
+  },
+  "flow_rows_per_split": {
+    "final_test": 3211,
+    "train": 2774,
+    "validation": 666
+  },
+  "packet_unique_observation_ids": 91165,
+  "flow_unique_observation_ids": 6651,
+  "exact_duplicate_packet_rows": 0,
+  "exact_duplicate_flow_rows": 0,
+  "profile_ids_unique_across_splits": true,
+  "failed_capture_ids_excluded": [
+    "571f26c1-e308-400a-82f3-cb60fc493fd8",
+    "6dd4cb11-20c6-4535-bde2-a5f72da39cc5",
+    "f0f5b15c-beed-490f-a91f-cca60b90258c"
+  ],
+  "note": "Repeated feature vectors may occur naturally in packet telemetry; none were synthetically duplicated or removed."
+}

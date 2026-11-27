@@ -1,0 +1,30 @@
+{
+  "level": "packet",
+  "network_features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_length",
+    "tcp_syn",
+    "tcp_ack",
+    "tcp_rst",
+    "tcp_fin",
+    "icmp_type",
+    "arp_operation"
+  ],
+  "application_features": [
+    "app_event_count",
+    "app_post_count",
+    "app_get_count",
+    "app_auth_count",
+    "app_iot_api_count",
+    "app_health_count",
+    "app_status_200_count",
+    "app_status_202_count",
+    "app_status_401_count",
+    "app_other_status_count",
+    "app_post_ratio",
+    "app_auth_ratio",
+    "app_401_ratio"
+  ]
+}

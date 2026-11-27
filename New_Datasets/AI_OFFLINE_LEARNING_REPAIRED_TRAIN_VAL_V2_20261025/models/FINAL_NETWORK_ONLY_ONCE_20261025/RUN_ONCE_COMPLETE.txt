@@ -1,0 +1,4 @@
+Final-test features may be accessed by this run. Do not delete this marker or rerun evaluation.
+Development package: /home/zolikha/Graduation_Project/IoT-devices/New_Datasets/AI_OFFLINE_LEARNING_REPAIRED_TRAIN_VAL_V2_20261025
+Final package: /home/zolikha/Graduation_Project/IoT-devices/New_Datasets/AI_OFFLINE_LEARNING_FINAL_TEST_REPAIRED_V1_20261025
+Seed: 42

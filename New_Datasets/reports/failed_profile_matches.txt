@@ -1,0 +1,40 @@
+Development plan files found:
+  collection_plan_expanded_development_chunk_after493_01.csv
+  collection_plan_expanded_development_resume_after39.csv
+  collection_plan_expanded_development_resume_after497_remaining.csv
+  collection_plan_expanded_development_resume_after517_remaining.csv
+  collection_plan_expanded_development_resume_after54.csv
+  collection_plan_expanded_development_resume_after61.csv
+  collection_plan_expanded_development_single_after492.csv
+  collection_plan_expanded_development_single_after495.csv
+  collection_plan_expanded_development_syn_probe_after496.csv
+
+Failed runs: 6
+
+Generation 429 | SYN_Flood | matches=0
+
+Generation 468 | Normal | matches=1
+  NNEW055 | train | normal h13 http_api_login_success h2 12 3 | source=collection_plan_expanded_development_resume_after54.csv
+
+Generation 491 | SYN_Flood | matches=2
+  SYNNEW080 | train | attack h12 syn_flood h3 443 180 17 | source=collection_plan_expanded_development_resume_after39.csv
+  SYNNEW080 | train | attack h12 syn_flood h3 443 180 17 | source=collection_plan_expanded_development_resume_after54.csv
+
+Generation 492 | SYN_Flood | matches=3
+  SYNNEW035 | train | attack h15 syn_flood h2 5000 150 17 | source=collection_plan_expanded_development_resume_after39.csv
+  SYNNEW035 | train | attack h15 syn_flood h2 5000 150 17 | source=collection_plan_expanded_development_resume_after54.csv
+  SYNNEW035 | train | attack h15 syn_flood h2 5000 150 17 | source=collection_plan_expanded_development_resume_after61.csv
+
+Generation 495 | SYN_Flood | matches=4
+  SYNNEW010 | train | attack h14 syn_flood h2 5000 50 17 | source=collection_plan_expanded_development_chunk_after493_01.csv
+  SYNNEW010 | train | attack h14 syn_flood h2 5000 50 17 | source=collection_plan_expanded_development_resume_after39.csv
+  SYNNEW010 | train | attack h14 syn_flood h2 5000 50 17 | source=collection_plan_expanded_development_resume_after54.csv
+  SYNNEW010 | train | attack h14 syn_flood h2 5000 50 17 | source=collection_plan_expanded_development_resume_after61.csv
+
+Generation 517 | SYN_Flood | matches=4
+  SYNNEW009 | train | attack h13 syn_flood h2 5000 50 14 | source=collection_plan_expanded_development_resume_after39.csv
+  SYNNEW009 | train | attack h13 syn_flood h2 5000 50 14 | source=collection_plan_expanded_development_resume_after497_remaining.csv
+  SYNNEW009 | train | attack h13 syn_flood h2 5000 50 14 | source=collection_plan_expanded_development_resume_after54.csv
+  SYNNEW009 | train | attack h13 syn_flood h2 5000 50 14 | source=collection_plan_expanded_development_resume_after61.csv
+
+Read-only plan/manifest check; no collection launched and no test data read.

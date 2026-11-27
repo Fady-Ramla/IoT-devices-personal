@@ -1,0 +1,5262 @@
+{
+  "scope": "Development train+validation only; final-test data, metrics, and paths were not accessed.",
+  "method": "Predeclared candidate comparison with 5-fold run-grouped stratified CV; 12 held-out runs/class/fold; equal run contribution before optional Normal class multiplier.",
+  "seed": 20261026,
+  "runs": 240,
+  "runs_per_class": 60,
+  "experiments": {
+    "xgb_frozen_hyperparams_baseline": {
+      "mean_accuracy": 0.8583333333333332,
+      "sd_accuracy": 0.05392574627310328,
+      "mean_macro_f1": 0.8562991095772791,
+      "sd_macro_f1": 0.05677138788362766,
+      "mean_normal_recall": 0.7333333333333333,
+      "mean_normal_precision": 0.9833333333333334,
+      "mean_train_accuracy": 0.9354166666666668,
+      "mean_train_macro_f1": 0.9350415664298541,
+      "accuracy_train_cv_gap": 0.07708333333333361,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9270833333333334,
+            "macro_f1": 0.9259541978475092,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                5,
+                39,
+                2,
+                2
+              ],
+              [
+                0,
+                0,
+                43,
+                5
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9056603773584906,
+                "recall": 1.0,
+                "f1-score": 0.9504950495049505,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8125,
+                "f1-score": 0.896551724137931,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9555555555555556,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.9247311827956989,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8727272727272727,
+                "recall": 1.0,
+                "f1-score": 0.9320388349514563,
+                "support": 48.0
+              },
+              "accuracy": 0.9270833333333334,
+              "macro avg": {
+                "precision": 0.9334858014103297,
+                "recall": 0.9270833333333334,
+                "f1-score": 0.9259541978475092,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9334858014103297,
+                "recall": 0.9270833333333334,
+                "f1-score": 0.9259541978475091,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.875,
+            "macro_f1": 0.876439393939394,
+            "confusion_matrix": [
+              [
+                11,
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                10,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                10,
+                2
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.9090909090909091,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.7692307692307693,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8461538461538461,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.88,
+                "support": 12.0
+              },
+              "accuracy": 0.875,
+              "macro avg": {
+                "precision": 0.8830128205128205,
+                "recall": 0.875,
+                "f1-score": 0.876439393939394,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8830128205128206,
+                "recall": 0.875,
+                "f1-score": 0.876439393939394,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9427083333333334,
+            "macro_f1": 0.9428804347826087,
+            "confusion_matrix": [
+              [
+                47,
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                44,
+                3,
+                0
+              ],
+              [
+                0,
+                0,
+                43,
+                5
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9791666666666666,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9791666666666666,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.8958333333333334,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8958333333333334,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9038461538461539,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.94,
+                "support": 48.0
+              },
+              "accuracy": 0.9427083333333334,
+              "macro avg": {
+                "precision": 0.9447115384615384,
+                "recall": 0.9427083333333333,
+                "f1-score": 0.9428804347826087,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9447115384615384,
+                "recall": 0.9427083333333334,
+                "f1-score": 0.9428804347826087,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7916666666666666,
+            "macro_f1": 0.7887437618974122,
+            "confusion_matrix": [
+              [
+                11,
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                7,
+                1,
+                3
+              ],
+              [
+                0,
+                0,
+                8,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7272727272727273,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.631578947368421,
+                "recall": 1.0,
+                "f1-score": 0.7741935483870968,
+                "support": 12.0
+              },
+              "accuracy": 0.7916666666666666,
+              "macro avg": {
+                "precision": 0.837061403508772,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.7887437618974122,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.837061403508772,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.788743761897412,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9479166666666666,
+            "macro_f1": 0.9479203857996576,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                43,
+                0,
+                2
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9411764705882353,
+                "recall": 1.0,
+                "f1-score": 0.9696969696969697,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.945054945054945,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9777777777777777,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.946236559139785,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8867924528301887,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9306930693069307,
+                "support": 48.0
+              },
+              "accuracy": 0.9479166666666666,
+              "macro avg": {
+                "precision": 0.9514366752990504,
+                "recall": 0.9479166666666666,
+                "f1-score": 0.9479203857996576,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9514366752990503,
+                "recall": 0.9479166666666666,
+                "f1-score": 0.9479203857996575,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8125,
+            "macro_f1": 0.8038054907383401,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                7,
+                1,
+                1
+              ],
+              [
+                0,
+                0,
+                8,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1-score": 0.8888888888888888,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7058823529411765,
+                "recall": 1.0,
+                "f1-score": 0.8275862068965517,
+                "support": 12.0
+              },
+              "accuracy": 0.8125,
+              "macro avg": {
+                "precision": 0.8486928104575164,
+                "recall": 0.8125,
+                "f1-score": 0.8038054907383401,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8486928104575163,
+                "recall": 0.8125,
+                "f1-score": 0.8038054907383402,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9270833333333334,
+            "macro_f1": 0.926927871751614,
+            "confusion_matrix": [
+              [
+                47,
+                0,
+                1,
+                0
+              ],
+              [
+                2,
+                41,
+                4,
+                1
+              ],
+              [
+                0,
+                0,
+                43,
+                5
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9591836734693877,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9690721649484536,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.9213483146067416,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.8775510204081632,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8865979381443299,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8867924528301887,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9306930693069307,
+                "support": 48.0
+              },
+              "accuracy": 0.9270833333333334,
+              "macro avg": {
+                "precision": 0.9308817866769349,
+                "recall": 0.9270833333333333,
+                "f1-score": 0.926927871751614,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9308817866769349,
+                "recall": 0.9270833333333334,
+                "f1-score": 0.926927871751614,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.9166666666666666,
+            "macro_f1": 0.9156383712905451,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                9,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                11,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1-score": 0.8888888888888888,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "accuracy": 0.9166666666666666,
+              "macro avg": {
+                "precision": 0.9307692307692308,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9156383712905451,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9307692307692307,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.915638371290545,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9322916666666666,
+            "macro_f1": 0.931524941967881,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                4,
+                40,
+                2,
+                2
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.9090909090909091,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9361702127659575,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9263157894736842,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8867924528301887,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9306930693069307,
+                "support": 48.0
+              },
+              "accuracy": 0.9322916666666666,
+              "macro avg": {
+                "precision": 0.9365098971682674,
+                "recall": 0.9322916666666666,
+                "f1-score": 0.931524941967881,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9365098971682673,
+                "recall": 0.9322916666666666,
+                "f1-score": 0.931524941967881,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8958333333333334,
+            "macro_f1": 0.896868530020704,
+            "confusion_matrix": [
+              [
+                9,
+                1,
+                2,
+                0
+              ],
+              [
+                0,
+                11,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.75,
+                "recall": 1.0,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "accuracy": 0.8958333333333334,
+              "macro avg": {
+                "precision": 0.9166666666666666,
+                "recall": 0.8958333333333333,
+                "f1-score": 0.896868530020704,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9166666666666666,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8968685300207039,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 1.0
+    },
+    "xgb_regularized_depth2": {
+      "mean_accuracy": 0.7875,
+      "sd_accuracy": 0.06488504792665595,
+      "mean_macro_f1": 0.7775653006438238,
+      "sd_macro_f1": 0.07015158307252642,
+      "mean_normal_recall": 0.55,
+      "mean_normal_precision": 0.8882467532467533,
+      "mean_train_accuracy": 0.8625,
+      "mean_train_macro_f1": 0.8604439488658624,
+      "accuracy_train_cv_gap": 0.07500000000000007,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8489583333333334,
+            "macro_f1": 0.8437865397816854,
+            "confusion_matrix": [
+              [
+                45,
+                0,
+                3,
+                0
+              ],
+              [
+                10,
+                30,
+                6,
+                2
+              ],
+              [
+                0,
+                0,
+                41,
+                7
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8181818181818182,
+                "recall": 0.9375,
+                "f1-score": 0.8737864077669902,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.625,
+                "f1-score": 0.7692307692307693,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.803921568627451,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8282828282828283,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8392857142857143,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9038461538461539,
+                "support": 48.0
+              },
+              "accuracy": 0.8489583333333334,
+              "macro avg": {
+                "precision": 0.8653472752737459,
+                "recall": 0.8489583333333333,
+                "f1-score": 0.8437865397816854,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8653472752737459,
+                "recall": 0.8489583333333334,
+                "f1-score": 0.8437865397816854,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7708333333333334,
+            "macro_f1": 0.7630799220272904,
+            "confusion_matrix": [
+              [
+                10,
+                1,
+                1,
+                0
+              ],
+              [
+                5,
+                6,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                10,
+                2
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.6666666666666666,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.7407407407407407,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.8571428571428571,
+                "recall": 0.5,
+                "f1-score": 0.631578947368421,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.7692307692307693,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8461538461538461,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.88,
+                "support": 12.0
+              },
+              "accuracy": 0.7708333333333334,
+              "macro avg": {
+                "precision": 0.7847985347985348,
+                "recall": 0.7708333333333334,
+                "f1-score": 0.7630799220272904,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.7847985347985348,
+                "recall": 0.7708333333333334,
+                "f1-score": 0.7630799220272905,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8958333333333334,
+            "macro_f1": 0.8967724667203562,
+            "confusion_matrix": [
+              [
+                44,
+                0,
+                4,
+                0
+              ],
+              [
+                3,
+                40,
+                5,
+                0
+              ],
+              [
+                0,
+                0,
+                42,
+                6
+              ],
+              [
+                0,
+                0,
+                2,
+                46
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9361702127659575,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9263157894736842,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.9090909090909091,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.7924528301886793,
+                "recall": 0.875,
+                "f1-score": 0.8316831683168316,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8846153846153846,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.92,
+                "support": 48.0
+              },
+              "accuracy": 0.8958333333333334,
+              "macro avg": {
+                "precision": 0.9033096068925054,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8967724667203562,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9033096068925053,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8967724667203562,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.75,
+            "macro_f1": 0.7450306005355094,
+            "confusion_matrix": [
+              [
+                10,
+                1,
+                1,
+                0
+              ],
+              [
+                1,
+                7,
+                2,
+                2
+              ],
+              [
+                0,
+                0,
+                7,
+                5
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9090909090909091,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8695652173913043,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.875,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.7,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.6363636363636364,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.631578947368421,
+                "recall": 1.0,
+                "f1-score": 0.7741935483870968,
+                "support": 12.0
+              },
+              "accuracy": 0.75,
+              "macro avg": {
+                "precision": 0.7789174641148326,
+                "recall": 0.75,
+                "f1-score": 0.7450306005355094,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.7789174641148325,
+                "recall": 0.75,
+                "f1-score": 0.7450306005355093,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.852559205500382,
+            "confusion_matrix": [
+              [
+                42,
+                2,
+                4,
+                0
+              ],
+              [
+                9,
+                34,
+                4,
+                1
+              ],
+              [
+                0,
+                0,
+                43,
+                5
+              ],
+              [
+                0,
+                0,
+                3,
+                45
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8235294117647058,
+                "recall": 0.875,
+                "f1-score": 0.8484848484848485,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.9444444444444444,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.8095238095238095,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.7962962962962963,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8431372549019608,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8823529411764706,
+                "recall": 0.9375,
+                "f1-score": 0.9090909090909091,
+                "support": 48.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8616557734204793,
+                "recall": 0.8541666666666667,
+                "f1-score": 0.852559205500382,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8616557734204792,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8525592055003819,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7083333333333334,
+            "macro_f1": 0.6849332209372777,
+            "confusion_matrix": [
+              [
+                10,
+                1,
+                1,
+                0
+              ],
+              [
+                6,
+                4,
+                1,
+                1
+              ],
+              [
+                0,
+                0,
+                8,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.625,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.7142857142857143,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.8,
+                "recall": 0.3333333333333333,
+                "f1-score": 0.47058823529411764,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7272727272727273,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7058823529411765,
+                "recall": 1.0,
+                "f1-score": 0.8275862068965517,
+                "support": 12.0
+              },
+              "accuracy": 0.7083333333333334,
+              "macro avg": {
+                "precision": 0.7327205882352942,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.6849332209372777,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.7327205882352942,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.6849332209372777,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.84375,
+            "macro_f1": 0.8419432419432419,
+            "confusion_matrix": [
+              [
+                44,
+                0,
+                4,
+                0
+              ],
+              [
+                7,
+                33,
+                6,
+                2
+              ],
+              [
+                0,
+                0,
+                39,
+                9
+              ],
+              [
+                0,
+                0,
+                2,
+                46
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8627450980392157,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8888888888888888,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.6875,
+                "f1-score": 0.8148148148148148,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.7647058823529411,
+                "recall": 0.8125,
+                "f1-score": 0.7878787878787878,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8070175438596491,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.8761904761904762,
+                "support": 48.0
+              },
+              "accuracy": 0.84375,
+              "macro avg": {
+                "precision": 0.8586171310629515,
+                "recall": 0.84375,
+                "f1-score": 0.8419432419432419,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8586171310629515,
+                "recall": 0.84375,
+                "f1-score": 0.8419432419432419,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.8408882783882783,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                4,
+                6,
+                1,
+                1
+              ],
+              [
+                0,
+                0,
+                11,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.75,
+                "recall": 1.0,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8571428571428571,
+                "recall": 1.0,
+                "f1-score": 0.9230769230769231,
+                "support": 12.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8809523809523809,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8408882783882783,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8809523809523809,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8408882783882783,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8697916666666666,
+            "macro_f1": 0.8671582903836467,
+            "confusion_matrix": [
+              [
+                45,
+                1,
+                2,
+                0
+              ],
+              [
+                7,
+                34,
+                6,
+                1
+              ],
+              [
+                0,
+                0,
+                41,
+                7
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8653846153846154,
+                "recall": 0.9375,
+                "f1-score": 0.9,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.9714285714285714,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.8192771084337349,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.82,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8367346938775511,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8545454545454545,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.912621359223301,
+                "support": 48.0
+              },
+              "accuracy": 0.8697916666666666,
+              "macro avg": {
+                "precision": 0.8778396603396603,
+                "recall": 0.8697916666666666,
+                "f1-score": 0.8671582903836467,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8778396603396604,
+                "recall": 0.8697916666666666,
+                "f1-score": 0.8671582903836468,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.8538944813307632,
+            "confusion_matrix": [
+              [
+                8,
+                1,
+                3,
+                0
+              ],
+              [
+                1,
+                10,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.9090909090909091,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8695652173913043,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.7058823529411765,
+                "recall": 1.0,
+                "f1-score": 0.8275862068965517,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8759655377302437,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8538944813307632,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8759655377302437,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8538944813307632,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 1.0
+    },
+    "xgb_normal_weight_1p5": {
+      "mean_accuracy": 0.8416666666666666,
+      "sd_accuracy": 0.06002025121203304,
+      "mean_macro_f1": 0.839831021347177,
+      "sd_macro_f1": 0.0614376068405152,
+      "mean_normal_recall": 0.9166666666666666,
+      "mean_normal_precision": 0.746080586080586,
+      "mean_train_accuracy": 0.940625,
+      "mean_train_macro_f1": 0.9403837304891797,
+      "accuracy_train_cv_gap": 0.09895833333333348,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9479166666666666,
+            "macro_f1": 0.947494536763141,
+            "confusion_matrix": [
+              [
+                43,
+                3,
+                2,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                43,
+                5
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.945054945054945,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.9411764705882353,
+                "recall": 1.0,
+                "f1-score": 0.9696969696969697,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9555555555555556,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.9247311827956989,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9056603773584906,
+                "recall": 1.0,
+                "f1-score": 0.9504950495049505,
+                "support": 48.0
+              },
+              "accuracy": 0.9479166666666666,
+              "macro avg": {
+                "precision": 0.9505981008755704,
+                "recall": 0.9479166666666667,
+                "f1-score": 0.947494536763141,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9505981008755704,
+                "recall": 0.9479166666666666,
+                "f1-score": 0.947494536763141,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.853583916083916,
+            "confusion_matrix": [
+              [
+                9,
+                2,
+                1,
+                0
+              ],
+              [
+                1,
+                11,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                10,
+                1
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9,
+                "recall": 0.75,
+                "f1-score": 0.8181818181818182,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.7857142857142857,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8461538461538461,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8333333333333334,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8333333333333334,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8589285714285714,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.853583916083916,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8589285714285714,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8535839160839161,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.921875,
+            "macro_f1": 0.9216633724063805,
+            "confusion_matrix": [
+              [
+                41,
+                6,
+                1,
+                0
+              ],
+              [
+                0,
+                47,
+                0,
+                1
+              ],
+              [
+                0,
+                1,
+                42,
+                5
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.9213483146067416,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.8703703703703703,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9215686274509803,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9545454545454546,
+                "recall": 0.875,
+                "f1-score": 0.9130434782608695,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8867924528301887,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9306930693069307,
+                "support": 48.0
+              },
+              "accuracy": 0.921875,
+              "macro avg": {
+                "precision": 0.9279270694365034,
+                "recall": 0.9218749999999999,
+                "f1-score": 0.9216633724063805,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9279270694365033,
+                "recall": 0.921875,
+                "f1-score": 0.9216633724063806,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.75,
+            "macro_f1": 0.7457288382245937,
+            "confusion_matrix": [
+              [
+                9,
+                2,
+                1,
+                0
+              ],
+              [
+                0,
+                9,
+                0,
+                3
+              ],
+              [
+                0,
+                2,
+                6,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.6923076923076923,
+                "recall": 0.75,
+                "f1-score": 0.72,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8571428571428571,
+                "recall": 0.5,
+                "f1-score": 0.631578947368421,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.631578947368421,
+                "recall": 1.0,
+                "f1-score": 0.7741935483870968,
+                "support": 12.0
+              },
+              "accuracy": 0.75,
+              "macro avg": {
+                "precision": 0.7952573742047426,
+                "recall": 0.75,
+                "f1-score": 0.7457288382245937,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.7952573742047426,
+                "recall": 0.75,
+                "f1-score": 0.7457288382245938,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9427083333333334,
+            "macro_f1": 0.9426272434584455,
+            "confusion_matrix": [
+              [
+                43,
+                5,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                43,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.945054945054945,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.8888888888888888,
+                "recall": 1.0,
+                "f1-score": 0.9411764705882353,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9772727272727273,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.9347826086956522,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9215686274509803,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9494949494949495,
+                "support": 48.0
+              },
+              "accuracy": 0.9427083333333334,
+              "macro avg": {
+                "precision": 0.946932560903149,
+                "recall": 0.9427083333333334,
+                "f1-score": 0.9426272434584455,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9469325609031491,
+                "recall": 0.9427083333333334,
+                "f1-score": 0.9426272434584456,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.8299182668511161,
+            "confusion_matrix": [
+              [
+                10,
+                2,
+                0,
+                0
+              ],
+              [
+                0,
+                11,
+                0,
+                1
+              ],
+              [
+                0,
+                1,
+                7,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.9090909090909091,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.7857142857142857,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8461538461538461,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7058823529411765,
+                "recall": 1.0,
+                "f1-score": 0.8275862068965517,
+                "support": 12.0
+              },
+              "accuracy": 0.8333333333333334,
+              "macro avg": {
+                "precision": 0.8728991596638656,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8299182668511161,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8728991596638656,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8299182668511161,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9375,
+            "macro_f1": 0.9370701878766394,
+            "confusion_matrix": [
+              [
+                43,
+                3,
+                2,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                42,
+                5
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.945054945054945,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9333333333333333,
+                "recall": 0.875,
+                "f1-score": 0.9032258064516129,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9038461538461539,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.94,
+                "support": 48.0
+              },
+              "accuracy": 0.9375,
+              "macro avg": {
+                "precision": 0.9400641025641026,
+                "recall": 0.9375,
+                "f1-score": 0.9370701878766394,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9400641025641026,
+                "recall": 0.9375,
+                "f1-score": 0.9370701878766394,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.9166666666666666,
+            "macro_f1": 0.9156383712905451,
+            "confusion_matrix": [
+              [
+                9,
+                3,
+                0,
+                0
+              ],
+              [
+                0,
+                12,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                11,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1-score": 0.8888888888888888,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "accuracy": 0.9166666666666666,
+              "macro avg": {
+                "precision": 0.9307692307692308,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9156383712905451,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9307692307692307,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.915638371290545,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.953125,
+            "macro_f1": 0.9530633119412922,
+            "confusion_matrix": [
+              [
+                44,
+                4,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9777777777777777,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.946236559139785,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9215686274509803,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9494949494949495,
+                "support": 48.0
+              },
+              "accuracy": 0.953125,
+              "macro avg": {
+                "precision": 0.9556058320764202,
+                "recall": 0.9531249999999999,
+                "f1-score": 0.9530633119412922,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9556058320764201,
+                "recall": 0.953125,
+                "f1-score": 0.9530633119412922,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.8542857142857143,
+            "confusion_matrix": [
+              [
+                8,
+                4,
+                0,
+                0
+              ],
+              [
+                0,
+                12,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                2,
+                1,
+                9
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.6666666666666666,
+                "recall": 1.0,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8974358974358974,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8542857142857143,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8974358974358975,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8542857142857144,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 1.5
+    },
+    "xgb_normal_weight_2p0": {
+      "mean_accuracy": 0.7375,
+      "sd_accuracy": 0.0715648501554903,
+      "mean_macro_f1": 0.734585715523721,
+      "sd_macro_f1": 0.07310762074613306,
+      "mean_normal_recall": 0.95,
+      "mean_normal_precision": 0.5413634085213032,
+      "mean_train_accuracy": 0.8604166666666666,
+      "mean_train_macro_f1": 0.8623925644183508,
+      "accuracy_train_cv_gap": 0.12291666666666656,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.875,
+            "macro_f1": 0.876102357130548,
+            "confusion_matrix": [
+              [
+                36,
+                12,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                41,
+                6
+              ],
+              [
+                0,
+                4,
+                1,
+                43
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.7384615384615385,
+                "recall": 1.0,
+                "f1-score": 0.8495575221238938,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9761904761904762,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.9111111111111111,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8775510204081632,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8865979381443299,
+                "support": 48.0
+              },
+              "accuracy": 0.875,
+              "macro avg": {
+                "precision": 0.8980507587650445,
+                "recall": 0.875,
+                "f1-score": 0.876102357130548,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8980507587650445,
+                "recall": 0.875,
+                "f1-score": 0.8761023571305481,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.6875,
+            "macro_f1": 0.6901733666439549,
+            "confusion_matrix": [
+              [
+                5,
+                7,
+                0,
+                0
+              ],
+              [
+                0,
+                12,
+                0,
+                0
+              ],
+              [
+                0,
+                3,
+                8,
+                1
+              ],
+              [
+                0,
+                3,
+                1,
+                8
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.4166666666666667,
+                "f1-score": 0.5882352941176471,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.48,
+                "recall": 1.0,
+                "f1-score": 0.6486486486486487,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "accuracy": 0.6875,
+              "macro avg": {
+                "precision": 0.8144444444444444,
+                "recall": 0.6875,
+                "f1-score": 0.6901733666439549,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8144444444444443,
+                "recall": 0.6875,
+                "f1-score": 0.6901733666439549,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.84375,
+            "macro_f1": 0.8470459755517783,
+            "confusion_matrix": [
+              [
+                33,
+                15,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                5,
+                39,
+                4
+              ],
+              [
+                0,
+                5,
+                1,
+                42
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.6875,
+                "f1-score": 0.8148148148148148,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.6575342465753424,
+                "recall": 1.0,
+                "f1-score": 0.7933884297520661,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.975,
+                "recall": 0.8125,
+                "f1-score": 0.8863636363636364,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9130434782608695,
+                "recall": 0.875,
+                "f1-score": 0.8936170212765957,
+                "support": 48.0
+              },
+              "accuracy": 0.84375,
+              "macro avg": {
+                "precision": 0.886394431209053,
+                "recall": 0.84375,
+                "f1-score": 0.8470459755517783,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8863944312090529,
+                "recall": 0.84375,
+                "f1-score": 0.8470459755517782,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.6666666666666666,
+            "macro_f1": 0.6681547619047619,
+            "confusion_matrix": [
+              [
+                6,
+                6,
+                0,
+                0
+              ],
+              [
+                0,
+                10,
+                0,
+                2
+              ],
+              [
+                0,
+                2,
+                6,
+                4
+              ],
+              [
+                0,
+                2,
+                0,
+                10
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.5,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.5,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.625,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.5,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.625,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.7142857142857143,
+                "support": 12.0
+              },
+              "accuracy": 0.6666666666666666,
+              "macro avg": {
+                "precision": 0.78125,
+                "recall": 0.6666666666666667,
+                "f1-score": 0.6681547619047619,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.78125,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.6681547619047619,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.859375,
+            "macro_f1": 0.8623565604451948,
+            "confusion_matrix": [
+              [
+                35,
+                13,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                4,
+                40,
+                4
+              ],
+              [
+                0,
+                5,
+                1,
+                42
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.7291666666666666,
+                "f1-score": 0.8433734939759037,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.6857142857142857,
+                "recall": 1.0,
+                "f1-score": 0.8135593220338984,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.975609756097561,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.898876404494382,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9130434782608695,
+                "recall": 0.875,
+                "f1-score": 0.8936170212765957,
+                "support": 48.0
+              },
+              "accuracy": 0.859375,
+              "macro avg": {
+                "precision": 0.8935918800181791,
+                "recall": 0.859375,
+                "f1-score": 0.8623565604451948,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.893591880018179,
+                "recall": 0.859375,
+                "f1-score": 0.8623565604451949,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7083333333333334,
+            "macro_f1": 0.6901629072681704,
+            "confusion_matrix": [
+              [
+                7,
+                5,
+                0,
+                0
+              ],
+              [
+                0,
+                11,
+                0,
+                1
+              ],
+              [
+                0,
+                5,
+                4,
+                3
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.5238095238095238,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.3333333333333333,
+                "f1-score": 0.5,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.75,
+                "recall": 1.0,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "accuracy": 0.7083333333333334,
+              "macro avg": {
+                "precision": 0.8184523809523809,
+                "recall": 0.7083333333333333,
+                "f1-score": 0.6901629072681704,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8184523809523809,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.6901629072681704,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8697916666666666,
+            "macro_f1": 0.8708914889050632,
+            "confusion_matrix": [
+              [
+                34,
+                14,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                4,
+                40,
+                4
+              ],
+              [
+                0,
+                2,
+                1,
+                45
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.8292682926829268,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.7058823529411765,
+                "recall": 1.0,
+                "f1-score": 0.8275862068965517,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.975609756097561,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.898876404494382,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9183673469387755,
+                "recall": 0.9375,
+                "f1-score": 0.9278350515463918,
+                "support": 48.0
+              },
+              "accuracy": 0.8697916666666666,
+              "macro avg": {
+                "precision": 0.8999648639943783,
+                "recall": 0.8697916666666667,
+                "f1-score": 0.8708914889050632,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8999648639943781,
+                "recall": 0.8697916666666666,
+                "f1-score": 0.8708914889050631,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.8341983073519575,
+            "confusion_matrix": [
+              [
+                7,
+                5,
+                0,
+                0
+              ],
+              [
+                0,
+                12,
+                0,
+                0
+              ],
+              [
+                0,
+                1,
+                10,
+                1
+              ],
+              [
+                0,
+                1,
+                0,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.631578947368421,
+                "recall": 1.0,
+                "f1-score": 0.7741935483870968,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.9090909090909091,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "accuracy": 0.8333333333333334,
+              "macro avg": {
+                "precision": 0.8870614035087719,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8341983073519575,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8870614035087719,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8341983073519575,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.8555664400591697,
+            "confusion_matrix": [
+              [
+                32,
+                16,
+                0,
+                0
+              ],
+              [
+                0,
+                48,
+                0,
+                0
+              ],
+              [
+                0,
+                4,
+                40,
+                4
+              ],
+              [
+                0,
+                3,
+                1,
+                44
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.8,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 0.676056338028169,
+                "recall": 1.0,
+                "f1-score": 0.8067226890756303,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.975609756097561,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.898876404494382,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 48.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8920831901980991,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8555664400591697,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8920831901980991,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8555664400591697,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7916666666666666,
+            "macro_f1": 0.7902392344497607,
+            "confusion_matrix": [
+              [
+                7,
+                5,
+                0,
+                0
+              ],
+              [
+                0,
+                12,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                4,
+                1,
+                7
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.5714285714285714,
+                "recall": 1.0,
+                "f1-score": 0.7272727272727273,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "accuracy": 0.7916666666666666,
+              "macro avg": {
+                "precision": 0.8736263736263736,
+                "recall": 0.7916666666666667,
+                "f1-score": 0.7902392344497607,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8736263736263736,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.7902392344497606,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 2.0
+    },
+    "xgb_without_ports_diagnostic": {
+      "mean_accuracy": 0.85,
+      "sd_accuracy": 0.05781015385629838,
+      "mean_macro_f1": 0.8467723001294172,
+      "sd_macro_f1": 0.061969643141215267,
+      "mean_normal_recall": 0.7,
+      "mean_normal_precision": 0.9833333333333334,
+      "mean_train_accuracy": 0.9375,
+      "mean_train_macro_f1": 0.9372217594794613,
+      "accuracy_train_cv_gap": 0.08750000000000002,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9270833333333334,
+            "macro_f1": 0.926013908105874,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                5,
+                39,
+                2,
+                2
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9056603773584906,
+                "recall": 1.0,
+                "f1-score": 0.9504950495049505,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8125,
+                "f1-score": 0.896551724137931,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9361702127659575,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9263157894736842,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8867924528301887,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9306930693069307,
+                "support": 48.0
+              },
+              "accuracy": 0.9270833333333334,
+              "macro avg": {
+                "precision": 0.9321557607386591,
+                "recall": 0.9270833333333333,
+                "f1-score": 0.926013908105874,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9321557607386591,
+                "recall": 0.9270833333333334,
+                "f1-score": 0.9260139081058741,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8541666666666666,
+            "macro_f1": 0.8542857142857143,
+            "confusion_matrix": [
+              [
+                11,
+                0,
+                1,
+                0
+              ],
+              [
+                2,
+                9,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                10,
+                2
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8461538461538461,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.88,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.7692307692307693,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8461538461538461,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.88,
+                "support": 12.0
+              },
+              "accuracy": 0.8541666666666666,
+              "macro avg": {
+                "precision": 0.8653846153846154,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8542857142857143,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8653846153846154,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8542857142857144,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9479166666666666,
+            "macro_f1": 0.9480999625343529,
+            "confusion_matrix": [
+              [
+                47,
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                44,
+                3,
+                0
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9791666666666666,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9791666666666666,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.8979591836734694,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9072164948453608,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9215686274509803,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9494949494949495,
+                "support": 48.0
+              },
+              "accuracy": 0.9479166666666666,
+              "macro avg": {
+                "precision": 0.9496736194477791,
+                "recall": 0.9479166666666666,
+                "f1-score": 0.9480999625343529,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9496736194477791,
+                "recall": 0.9479166666666666,
+                "f1-score": 0.948099962534353,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7916666666666666,
+            "macro_f1": 0.7887437618974122,
+            "confusion_matrix": [
+              [
+                11,
+                0,
+                1,
+                0
+              ],
+              [
+                1,
+                7,
+                1,
+                3
+              ],
+              [
+                0,
+                0,
+                8,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7272727272727273,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.631578947368421,
+                "recall": 1.0,
+                "f1-score": 0.7741935483870968,
+                "support": 12.0
+              },
+              "accuracy": 0.7916666666666666,
+              "macro avg": {
+                "precision": 0.837061403508772,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.7887437618974122,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.837061403508772,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.788743761897412,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9427083333333334,
+            "macro_f1": 0.9427305318794681,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                43,
+                0,
+                2
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                2,
+                46
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9411764705882353,
+                "recall": 1.0,
+                "f1-score": 0.9696969696969697,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.945054945054945,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9565217391304348,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9361702127659575,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8846153846153846,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.92,
+                "support": 48.0
+              },
+              "accuracy": 0.9427083333333334,
+              "macro avg": {
+                "precision": 0.9455783985835137,
+                "recall": 0.9427083333333334,
+                "f1-score": 0.9427305318794681,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9455783985835137,
+                "recall": 0.9427083333333334,
+                "f1-score": 0.9427305318794681,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7916666666666666,
+            "macro_f1": 0.7783251231527093,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                4,
+                6,
+                1,
+                1
+              ],
+              [
+                0,
+                0,
+                8,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.75,
+                "recall": 1.0,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7058823529411765,
+                "recall": 1.0,
+                "f1-score": 0.8275862068965517,
+                "support": 12.0
+              },
+              "accuracy": 0.7916666666666666,
+              "macro avg": {
+                "precision": 0.8361928104575164,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.7783251231527093,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8361928104575163,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.7783251231527094,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9270833333333334,
+            "macro_f1": 0.926927871751614,
+            "confusion_matrix": [
+              [
+                47,
+                0,
+                1,
+                0
+              ],
+              [
+                2,
+                41,
+                4,
+                1
+              ],
+              [
+                0,
+                0,
+                43,
+                5
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9591836734693877,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9690721649484536,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.9213483146067416,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.8775510204081632,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8865979381443299,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8867924528301887,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9306930693069307,
+                "support": 48.0
+              },
+              "accuracy": 0.9270833333333334,
+              "macro avg": {
+                "precision": 0.9308817866769349,
+                "recall": 0.9270833333333333,
+                "f1-score": 0.926927871751614,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9308817866769349,
+                "recall": 0.9270833333333334,
+                "f1-score": 0.926927871751614,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.9166666666666666,
+            "macro_f1": 0.9156383712905451,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                9,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                11,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1-score": 0.8888888888888888,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "accuracy": 0.9166666666666666,
+              "macro avg": {
+                "precision": 0.9307692307692308,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9156383712905451,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9307692307692307,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.915638371290545,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9427083333333334,
+            "macro_f1": 0.9423365231259968,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                3,
+                42,
+                2,
+                1
+              ],
+              [
+                0,
+                0,
+                44,
+                4
+              ],
+              [
+                0,
+                0,
+                1,
+                47
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9411764705882353,
+                "recall": 1.0,
+                "f1-score": 0.9696969696969697,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.875,
+                "f1-score": 0.9333333333333333,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9361702127659575,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9263157894736842,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9038461538461539,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.94,
+                "support": 48.0
+              },
+              "accuracy": 0.9427083333333334,
+              "macro avg": {
+                "precision": 0.9452982093000867,
+                "recall": 0.9427083333333333,
+                "f1-score": 0.9423365231259968,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9452982093000867,
+                "recall": 0.9427083333333334,
+                "f1-score": 0.9423365231259968,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8958333333333334,
+            "macro_f1": 0.896868530020704,
+            "confusion_matrix": [
+              [
+                9,
+                1,
+                2,
+                0
+              ],
+              [
+                0,
+                11,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.75,
+                "recall": 1.0,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "accuracy": 0.8958333333333334,
+              "macro avg": {
+                "precision": 0.9166666666666666,
+                "recall": 0.8958333333333333,
+                "f1-score": 0.896868530020704,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9166666666666666,
+                "recall": 0.8958333333333334,
+                "f1-score": 0.8968685300207039,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 1.0
+    },
+    "xgb_without_rate_duration_diagnostic": {
+      "mean_accuracy": 0.7291666666666666,
+      "sd_accuracy": 0.05103103630798288,
+      "mean_macro_f1": 0.7133508433009299,
+      "sd_macro_f1": 0.0667805461461206,
+      "mean_normal_recall": 0.45,
+      "mean_normal_precision": 1.0,
+      "mean_train_accuracy": 0.8854166666666666,
+      "mean_train_macro_f1": 0.8827409531149458,
+      "accuracy_train_cv_gap": 0.15625,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8697916666666666,
+            "macro_f1": 0.8663899810688801,
+            "confusion_matrix": [
+              [
+                47,
+                0,
+                0,
+                1
+              ],
+              [
+                11,
+                32,
+                2,
+                3
+              ],
+              [
+                3,
+                0,
+                40,
+                5
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7704918032786885,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.8623853211009175,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.8,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9523809523809523,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8888888888888888,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8421052631578947,
+                "recall": 1.0,
+                "f1-score": 0.9142857142857143,
+                "support": 48.0
+              },
+              "accuracy": 0.8697916666666666,
+              "macro avg": {
+                "precision": 0.8912445047043839,
+                "recall": 0.8697916666666666,
+                "f1-score": 0.8663899810688801,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8912445047043839,
+                "recall": 0.8697916666666666,
+                "f1-score": 0.8663899810688802,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.6875,
+            "macro_f1": 0.6808062355376933,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                5,
+                5,
+                1,
+                1
+              ],
+              [
+                4,
+                0,
+                7,
+                1
+              ],
+              [
+                2,
+                0,
+                1,
+                9
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.5217391304347826,
+                "recall": 1.0,
+                "f1-score": 0.6857142857142857,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.4166666666666667,
+                "f1-score": 0.5882352941176471,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.7777777777777778,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8181818181818182,
+                "recall": 0.75,
+                "f1-score": 0.782608695652174,
+                "support": 12.0
+              },
+              "accuracy": 0.6875,
+              "macro avg": {
+                "precision": 0.7794246815985947,
+                "recall": 0.6875,
+                "f1-score": 0.6808062355376933,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.7794246815985947,
+                "recall": 0.6875,
+                "f1-score": 0.6808062355376934,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.90625,
+            "macro_f1": 0.9049743502051983,
+            "confusion_matrix": [
+              [
+                46,
+                0,
+                1,
+                1
+              ],
+              [
+                4,
+                38,
+                5,
+                1
+              ],
+              [
+                2,
+                0,
+                42,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8846153846153846,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.92,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.8837209302325582,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.875,
+                "recall": 0.875,
+                "f1-score": 0.875,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8888888888888888,
+                "recall": 1.0,
+                "f1-score": 0.9411764705882353,
+                "support": 48.0
+              },
+              "accuracy": 0.90625,
+              "macro avg": {
+                "precision": 0.9121260683760684,
+                "recall": 0.90625,
+                "f1-score": 0.9049743502051983,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9121260683760682,
+                "recall": 0.90625,
+                "f1-score": 0.9049743502051983,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.75,
+            "macro_f1": 0.7407051282051282,
+            "confusion_matrix": [
+              [
+                11,
+                0,
+                1,
+                0
+              ],
+              [
+                2,
+                6,
+                0,
+                4
+              ],
+              [
+                1,
+                0,
+                7,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7857142857142857,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8461538461538461,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.875,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.6,
+                "recall": 1.0,
+                "f1-score": 0.75,
+                "support": 12.0
+              },
+              "accuracy": 0.75,
+              "macro avg": {
+                "precision": 0.8151785714285714,
+                "recall": 0.75,
+                "f1-score": 0.7407051282051282,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8151785714285715,
+                "recall": 0.75,
+                "f1-score": 0.7407051282051281,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9010416666666666,
+            "macro_f1": 0.898351857216827,
+            "confusion_matrix": [
+              [
+                47,
+                0,
+                0,
+                1
+              ],
+              [
+                10,
+                34,
+                2,
+                2
+              ],
+              [
+                1,
+                0,
+                44,
+                3
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8103448275862069,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.8867924528301887,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.8292682926829268,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9565217391304348,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9361702127659575,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8888888888888888,
+                "recall": 1.0,
+                "f1-score": 0.9411764705882353,
+                "support": 48.0
+              },
+              "accuracy": 0.9010416666666666,
+              "macro avg": {
+                "precision": 0.9139388639013827,
+                "recall": 0.9010416666666666,
+                "f1-score": 0.898351857216827,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9139388639013827,
+                "recall": 0.9010416666666666,
+                "f1-score": 0.8983518572168271,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.6666666666666666,
+            "macro_f1": 0.6220588235294118,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                7,
+                3,
+                0,
+                2
+              ],
+              [
+                1,
+                0,
+                5,
+                6
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.6,
+                "recall": 1.0,
+                "f1-score": 0.75,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.25,
+                "f1-score": 0.4,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.4166666666666667,
+                "f1-score": 0.5882352941176471,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.6,
+                "recall": 1.0,
+                "f1-score": 0.75,
+                "support": 12.0
+              },
+              "accuracy": 0.6666666666666666,
+              "macro avg": {
+                "precision": 0.8,
+                "recall": 0.6666666666666667,
+                "f1-score": 0.6220588235294118,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.7999999999999999,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.6220588235294118,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8802083333333334,
+            "macro_f1": 0.8772745789989254,
+            "confusion_matrix": [
+              [
+                46,
+                0,
+                1,
+                1
+              ],
+              [
+                7,
+                34,
+                4,
+                3
+              ],
+              [
+                2,
+                0,
+                41,
+                5
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8363636363636363,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.8932038834951457,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.8292682926829268,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.8913043478260869,
+                "recall": 0.8541666666666666,
+                "f1-score": 0.8723404255319149,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8421052631578947,
+                "recall": 1.0,
+                "f1-score": 0.9142857142857143,
+                "support": 48.0
+              },
+              "accuracy": 0.8802083333333334,
+              "macro avg": {
+                "precision": 0.8924433118369045,
+                "recall": 0.8802083333333334,
+                "f1-score": 0.8772745789989254,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.8924433118369045,
+                "recall": 0.8802083333333334,
+                "f1-score": 0.8772745789989255,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.75,
+            "macro_f1": 0.7225887911371782,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                5,
+                4,
+                2,
+                1
+              ],
+              [
+                2,
+                0,
+                8,
+                2
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.631578947368421,
+                "recall": 1.0,
+                "f1-score": 0.7741935483870968,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.3333333333333333,
+                "f1-score": 0.5,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7272727272727273,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1-score": 0.8888888888888888,
+                "support": 12.0
+              },
+              "accuracy": 0.75,
+              "macro avg": {
+                "precision": 0.8078947368421052,
+                "recall": 0.75,
+                "f1-score": 0.7225887911371782,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8078947368421053,
+                "recall": 0.75,
+                "f1-score": 0.7225887911371781,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.8697916666666666,
+            "macro_f1": 0.8667139980848979,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                9,
+                34,
+                2,
+                3
+              ],
+              [
+                5,
+                0,
+                37,
+                6
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7741935483870968,
+                "recall": 1.0,
+                "f1-score": 0.8727272727272727,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.7083333333333334,
+                "f1-score": 0.8292682926829268,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 0.9487179487179487,
+                "recall": 0.7708333333333334,
+                "f1-score": 0.8505747126436781,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8421052631578947,
+                "recall": 1.0,
+                "f1-score": 0.9142857142857143,
+                "support": 48.0
+              },
+              "accuracy": 0.8697916666666666,
+              "macro avg": {
+                "precision": 0.891254190065735,
+                "recall": 0.8697916666666667,
+                "f1-score": 0.8667139980848979,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.891254190065735,
+                "recall": 0.8697916666666666,
+                "f1-score": 0.8667139980848978,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.7916666666666666,
+            "macro_f1": 0.800595238095238,
+            "confusion_matrix": [
+              [
+                10,
+                0,
+                1,
+                1
+              ],
+              [
+                3,
+                9,
+                0,
+                0
+              ],
+              [
+                4,
+                0,
+                8,
+                0
+              ],
+              [
+                1,
+                0,
+                0,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.5555555555555556,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.6666666666666666,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "accuracy": 0.7916666666666666,
+              "macro avg": {
+                "precision": 0.8402777777777778,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.800595238095238,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8402777777777778,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.8005952380952381,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 1.0
+    },
+    "rf_regularized_depth12_leaf2": {
+      "mean_accuracy": 0.8666666666666668,
+      "sd_accuracy": 0.056288567025442875,
+      "mean_macro_f1": 0.8638191922917322,
+      "sd_macro_f1": 0.05855654999692396,
+      "mean_normal_recall": 0.7166666666666667,
+      "mean_normal_precision": 0.9833333333333334,
+      "mean_train_accuracy": 0.9885416666666667,
+      "mean_train_macro_f1": 0.9885383876135047,
+      "accuracy_train_cv_gap": 0.12187499999999984,
+      "folds": [
+        {
+          "fold": 1,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.984375,
+            "macro_f1": 0.984369911712506,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                46,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                47,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.96,
+                "recall": 1.0,
+                "f1-score": 0.9795918367346939,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.9787234042553191,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9894736842105263,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9795918367346939,
+                "recall": 1.0,
+                "f1-score": 0.9896907216494846,
+                "support": 48.0
+              },
+              "accuracy": 0.984375,
+              "macro avg": {
+                "precision": 0.9848979591836735,
+                "recall": 0.984375,
+                "f1-score": 0.984369911712506,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9848979591836734,
+                "recall": 0.984375,
+                "f1-score": 0.984369911712506,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.832037037037037,
+            "confusion_matrix": [
+              [
+                11,
+                0,
+                1,
+                0
+              ],
+              [
+                4,
+                8,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                10,
+                2
+              ],
+              [
+                0,
+                0,
+                1,
+                11
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7333333333333333,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8148148148148148,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8333333333333334,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8333333333333334,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8461538461538461,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.88,
+                "support": 12.0
+              },
+              "accuracy": 0.8333333333333334,
+              "macro avg": {
+                "precision": 0.8532051282051283,
+                "recall": 0.8333333333333333,
+                "f1-score": 0.832037037037037,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8532051282051282,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8320370370370371,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9895833333333334,
+            "macro_f1": 0.9895822029300054,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                47,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                47,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9795918367346939,
+                "recall": 1.0,
+                "f1-score": 0.9896907216494846,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9894736842105263,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9894736842105263,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9795918367346939,
+                "recall": 1.0,
+                "f1-score": 0.9896907216494846,
+                "support": 48.0
+              },
+              "accuracy": 0.9895833333333334,
+              "macro avg": {
+                "precision": 0.989795918367347,
+                "recall": 0.9895833333333333,
+                "f1-score": 0.9895822029300054,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9897959183673469,
+                "recall": 0.9895833333333334,
+                "f1-score": 0.9895822029300053,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.8287559808612441,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                7,
+                1,
+                3
+              ],
+              [
+                0,
+                0,
+                9,
+                3
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.9,
+                "recall": 0.75,
+                "f1-score": 0.8181818181818182,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.6666666666666666,
+                "recall": 1.0,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "accuracy": 0.8333333333333334,
+              "macro avg": {
+                "precision": 0.8724358974358974,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8287559808612441,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8724358974358974,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.828755980861244,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9791666666666666,
+            "macro_f1": 0.9791576204950065,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                46,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                46,
+                2
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.96,
+                "recall": 1.0,
+                "f1-score": 0.9795918367346939,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.9787234042553191,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9583333333333334,
+                "f1-score": 0.9787234042553191,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 0.96,
+                "recall": 1.0,
+                "f1-score": 0.9795918367346939,
+                "support": 48.0
+              },
+              "accuracy": 0.9791666666666666,
+              "macro avg": {
+                "precision": 0.98,
+                "recall": 0.9791666666666667,
+                "f1-score": 0.9791576204950065,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9799999999999999,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9791576204950064,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.8125,
+            "macro_f1": 0.8054559475612106,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                7,
+                1,
+                2
+              ],
+              [
+                0,
+                0,
+                8,
+                4
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8571428571428571,
+                "recall": 1.0,
+                "f1-score": 0.9230769230769231,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.5833333333333334,
+                "f1-score": 0.7368421052631579,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8888888888888888,
+                "recall": 0.6666666666666666,
+                "f1-score": 0.7619047619047619,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.6666666666666666,
+                "recall": 1.0,
+                "f1-score": 0.8,
+                "support": 12.0
+              },
+              "accuracy": 0.8125,
+              "macro avg": {
+                "precision": 0.8531746031746031,
+                "recall": 0.8125,
+                "f1-score": 0.8054559475612106,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.8531746031746031,
+                "recall": 0.8125,
+                "f1-score": 0.8054559475612107,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9947916666666666,
+            "macro_f1": 0.9947911014650027,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                47,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                48,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9795918367346939,
+                "recall": 1.0,
+                "f1-score": 0.9896907216494846,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9894736842105263,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 48.0
+              },
+              "accuracy": 0.9947916666666666,
+              "macro avg": {
+                "precision": 0.9948979591836735,
+                "recall": 0.9947916666666666,
+                "f1-score": 0.9947911014650027,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9948979591836734,
+                "recall": 0.9947916666666666,
+                "f1-score": 0.9947911014650027,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.9375,
+            "macro_f1": 0.9371723928245668,
+            "confusion_matrix": [
+              [
+                12,
+                0,
+                0,
+                0
+              ],
+              [
+                2,
+                10,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                11,
+                1
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8571428571428571,
+                "recall": 1.0,
+                "f1-score": 0.9230769230769231,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.9090909090909091,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9565217391304348,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 0.9230769230769231,
+                "recall": 1.0,
+                "f1-score": 0.96,
+                "support": 12.0
+              },
+              "accuracy": 0.9375,
+              "macro avg": {
+                "precision": 0.945054945054945,
+                "recall": 0.9375,
+                "f1-score": 0.9371723928245668,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9450549450549449,
+                "recall": 0.9375,
+                "f1-score": 0.9371723928245667,
+                "support": 48.0
+              }
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "train": {
+            "runs": 192,
+            "accuracy": 0.9947916666666666,
+            "macro_f1": 0.9947911014650027,
+            "confusion_matrix": [
+              [
+                48,
+                0,
+                0,
+                0
+              ],
+              [
+                1,
+                47,
+                0,
+                0
+              ],
+              [
+                0,
+                0,
+                48,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                48
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9795918367346939,
+                "recall": 1.0,
+                "f1-score": 0.9896907216494846,
+                "support": 48.0
+              },
+              "Normal": {
+                "precision": 1.0,
+                "recall": 0.9791666666666666,
+                "f1-score": 0.9894736842105263,
+                "support": 48.0
+              },
+              "Port_Scan": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 48.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 48.0
+              },
+              "accuracy": 0.9947916666666666,
+              "macro avg": {
+                "precision": 0.9948979591836735,
+                "recall": 0.9947916666666666,
+                "f1-score": 0.9947911014650027,
+                "support": 192.0
+              },
+              "weighted avg": {
+                "precision": 0.9948979591836734,
+                "recall": 0.9947916666666666,
+                "f1-score": 0.9947911014650027,
+                "support": 192.0
+              }
+            }
+          },
+          "heldout": {
+            "runs": 48,
+            "accuracy": 0.9166666666666666,
+            "macro_f1": 0.9156746031746031,
+            "confusion_matrix": [
+              [
+                9,
+                1,
+                2,
+                0
+              ],
+              [
+                0,
+                11,
+                1,
+                0
+              ],
+              [
+                0,
+                0,
+                12,
+                0
+              ],
+              [
+                0,
+                0,
+                0,
+                12
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 1.0,
+                "recall": 0.75,
+                "f1-score": 0.8571428571428571,
+                "support": 12.0
+              },
+              "Normal": {
+                "precision": 0.9166666666666666,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9166666666666666,
+                "support": 12.0
+              },
+              "Port_Scan": {
+                "precision": 0.8,
+                "recall": 1.0,
+                "f1-score": 0.8888888888888888,
+                "support": 12.0
+              },
+              "SYN_Flood": {
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1-score": 1.0,
+                "support": 12.0
+              },
+              "accuracy": 0.9166666666666666,
+              "macro avg": {
+                "precision": 0.9291666666666667,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9156746031746031,
+                "support": 48.0
+              },
+              "weighted avg": {
+                "precision": 0.9291666666666667,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.9156746031746031,
+                "support": 48.0
+              }
+            }
+          }
+        }
+      ],
+      "feature_columns": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "normal_sample_weight_multiplier": 1.0
+    }
+  },
+  "interpretation_note": "Select candidate using development-only grouped CV and predeclared operational criteria. Candidate comparisons can still introduce selection optimism. No candidate result is a new final-test score; any materially selected change needs a new independent test."
+}

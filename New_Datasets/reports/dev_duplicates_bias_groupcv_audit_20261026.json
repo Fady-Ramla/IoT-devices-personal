@@ -1,0 +1,1959 @@
+{
+  "scope": "Development package only; final-test package/captures/metrics not opened.",
+  "dev_manifest": {
+    "runs": 240,
+    "run_ids_unique": true,
+    "profile_ids_unique": true,
+    "runs_per_class": {
+      "Malicious_POST": 60,
+      "Normal": 60,
+      "Port_Scan": 60,
+      "SYN_Flood": 60
+    },
+    "split_per_class": {
+      "Malicious_POST": {
+        "train": 48,
+        "validation": 12
+      },
+      "Normal": {
+        "train": 48,
+        "validation": 12
+      },
+      "Port_Scan": {
+        "train": 48,
+        "validation": 12
+      },
+      "SYN_Flood": {
+        "train": 48,
+        "validation": 12
+      }
+    },
+    "no_run_leakage": true
+  },
+  "metadata_association": {
+    "attacker_host": {
+      "normalized_mutual_information_with_label": 0.07924721036141384,
+      "levels": 13,
+      "top_level_counts_by_class": {
+        "h13": {
+          "Malicious_POST": 2,
+          "Normal": 24,
+          "Port_Scan": 5,
+          "SYN_Flood": 4
+        },
+        "h9": {
+          "Malicious_POST": 8,
+          "Normal": 10,
+          "Port_Scan": 7,
+          "SYN_Flood": 4
+        },
+        "h7": {
+          "Malicious_POST": 6,
+          "Normal": 0,
+          "Port_Scan": 7,
+          "SYN_Flood": 10
+        },
+        "h5": {
+          "Malicious_POST": 6,
+          "Normal": 9,
+          "Port_Scan": 3,
+          "SYN_Flood": 4
+        },
+        "h11": {
+          "Malicious_POST": 4,
+          "Normal": 2,
+          "Port_Scan": 7,
+          "SYN_Flood": 6
+        },
+        "h10": {
+          "Malicious_POST": 5,
+          "Normal": 3,
+          "Port_Scan": 4,
+          "SYN_Flood": 6
+        },
+        "h6": {
+          "Malicious_POST": 5,
+          "Normal": 3,
+          "Port_Scan": 5,
+          "SYN_Flood": 5
+        },
+        "h15": {
+          "Malicious_POST": 5,
+          "Normal": 1,
+          "Port_Scan": 6,
+          "SYN_Flood": 5
+        },
+        "h12": {
+          "Malicious_POST": 6,
+          "Normal": 1,
+          "Port_Scan": 5,
+          "SYN_Flood": 3
+        },
+        "h14": {
+          "Malicious_POST": 3,
+          "Normal": 3,
+          "Port_Scan": 4,
+          "SYN_Flood": 5
+        },
+        "h8": {
+          "Malicious_POST": 5,
+          "Normal": 3,
+          "Port_Scan": 4,
+          "SYN_Flood": 3
+        },
+        "h16": {
+          "Malicious_POST": 4,
+          "Normal": 1,
+          "Port_Scan": 3,
+          "SYN_Flood": 5
+        }
+      }
+    },
+    "target_host": {
+      "normalized_mutual_information_with_label": 0.14946165145440787,
+      "levels": 2,
+      "top_level_counts_by_class": {
+        "h2": {
+          "Malicious_POST": 60,
+          "Normal": 54,
+          "Port_Scan": 40,
+          "SYN_Flood": 27
+        },
+        "h3": {
+          "Malicious_POST": 0,
+          "Normal": 6,
+          "Port_Scan": 20,
+          "SYN_Flood": 33
+        }
+      }
+    },
+    "service_name": {
+      "normalized_mutual_information_with_label": 0.3430224800271617,
+      "levels": 6,
+      "top_level_counts_by_class": {
+        "http_api": {
+          "Malicious_POST": 60,
+          "Normal": 11,
+          "Port_Scan": 40,
+          "SYN_Flood": 27
+        },
+        "https": {
+          "Malicious_POST": 0,
+          "Normal": 6,
+          "Port_Scan": 20,
+          "SYN_Flood": 33
+        },
+        "http_api_telemetry": {
+          "Malicious_POST": 0,
+          "Normal": 17,
+          "Port_Scan": 0,
+          "SYN_Flood": 0
+        },
+        "http_api_login_success": {
+          "Malicious_POST": 0,
+          "Normal": 11,
+          "Port_Scan": 0,
+          "SYN_Flood": 0
+        },
+        "http_api_login_invalid_once": {
+          "Malicious_POST": 0,
+          "Normal": 8,
+          "Port_Scan": 0,
+          "SYN_Flood": 0
+        },
+        "http_api_login_read": {
+          "Malicious_POST": 0,
+          "Normal": 7,
+          "Port_Scan": 0,
+          "SYN_Flood": 0
+        }
+      }
+    },
+    "dst_port": {
+      "normalized_mutual_information_with_label": 0.46720497738059297,
+      "levels": 17,
+      "top_level_counts_by_class": {
+        "5000": {
+          "Malicious_POST": 60,
+          "Normal": 54,
+          "Port_Scan": 0,
+          "SYN_Flood": 27
+        },
+        "443": {
+          "Malicious_POST": 0,
+          "Normal": 6,
+          "Port_Scan": 0,
+          "SYN_Flood": 33
+        },
+        "8440-8447": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 6,
+          "SYN_Flood": 0
+        },
+        "440-447": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 6,
+          "SYN_Flood": 0
+        },
+        "435-442": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 6,
+          "SYN_Flood": 0
+        },
+        "8080-8087": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 6,
+          "SYN_Flood": 0
+        },
+        "4996-5003": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 5,
+          "SYN_Flood": 0
+        },
+        "9000-9015": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 5,
+          "SYN_Flood": 0
+        },
+        "1880-1887": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 4,
+          "SYN_Flood": 0
+        },
+        "8000-8007": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 3,
+          "SYN_Flood": 0
+        },
+        "3300-3307": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 3,
+          "SYN_Flood": 0
+        },
+        "443-450": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 3,
+          "SYN_Flood": 0
+        }
+      }
+    },
+    "protocol": {
+      "normalized_mutual_information_with_label": 0.0,
+      "levels": 1,
+      "top_level_counts_by_class": {
+        "TCP": {
+          "Malicious_POST": 60,
+          "Normal": 60,
+          "Port_Scan": 60,
+          "SYN_Flood": 60
+        }
+      }
+    },
+    "rate_value": {
+      "normalized_mutual_information_with_label": 0.4695083568133089,
+      "levels": 5,
+      "top_level_counts_by_class": {
+        "(2.0, 4.0]": {
+          "Malicious_POST": 20,
+          "Normal": 22,
+          "Port_Scan": 23,
+          "SYN_Flood": 0
+        },
+        "(0.499, 2.0]": {
+          "Malicious_POST": 30,
+          "Normal": 30,
+          "Port_Scan": 0,
+          "SYN_Flood": 0
+        },
+        "(50.0, 200.0]": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 0,
+          "SYN_Flood": 46
+        },
+        "(10.0, 50.0]": {
+          "Malicious_POST": 0,
+          "Normal": 0,
+          "Port_Scan": 31,
+          "SYN_Flood": 14
+        },
+        "(4.0, 10.0]": {
+          "Malicious_POST": 10,
+          "Normal": 8,
+          "Port_Scan": 6,
+          "SYN_Flood": 0
+        }
+      }
+    },
+    "duration_sec": {
+      "normalized_mutual_information_with_label": 0.026838039189897328,
+      "levels": 5,
+      "top_level_counts_by_class": {
+        "(9.6, 12.0]": {
+          "Malicious_POST": 12,
+          "Normal": 13,
+          "Port_Scan": 16,
+          "SYN_Flood": 16
+        },
+        "(4.999, 7.0]": {
+          "Malicious_POST": 10,
+          "Normal": 11,
+          "Port_Scan": 10,
+          "SYN_Flood": 18
+        },
+        "(7.0, 9.6]": {
+          "Malicious_POST": 11,
+          "Normal": 7,
+          "Port_Scan": 15,
+          "SYN_Flood": 14
+        },
+        "(16.0, 20.0]": {
+          "Malicious_POST": 15,
+          "Normal": 17,
+          "Port_Scan": 9,
+          "SYN_Flood": 4
+        },
+        "(12.0, 16.0]": {
+          "Malicious_POST": 12,
+          "Normal": 12,
+          "Port_Scan": 10,
+          "SYN_Flood": 8
+        }
+      }
+    }
+  },
+  "levels": {
+    "packet": {
+      "features": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_length",
+        "tcp_syn",
+        "tcp_ack",
+        "tcp_rst",
+        "tcp_fin",
+        "icmp_type",
+        "arp_operation"
+      ],
+      "rows_total": 153690,
+      "runs": 240,
+      "observation_ids_unique": true,
+      "duplicate_observation_id_count": 0,
+      "unique_feature_vectors_train": 28172,
+      "unique_feature_vectors_validation": 14621,
+      "within_split_repeated_feature_vector_rows": {
+        "train": 89795,
+        "validation": 21102
+      },
+      "feature_vector_hashes_shared_across_splits": 9859,
+      "rows_with_a_feature_vector_also_seen_in_other_split": 77496,
+      "identical_rounded_run_mean_profiles_shared_across_splits": 0,
+      "note": "Repeated feature vectors are reported, not automatically removed; natural repeated network observations are not necessarily data leakage."
+    },
+    "flow": {
+      "features": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "rows_total": 11531,
+      "runs": 240,
+      "observation_ids_unique": true,
+      "duplicate_observation_id_count": 0,
+      "unique_feature_vectors_train": 6951,
+      "unique_feature_vectors_validation": 1802,
+      "within_split_repeated_feature_vector_rows": {
+        "train": 2290,
+        "validation": 488
+      },
+      "feature_vector_hashes_shared_across_splits": 240,
+      "rows_with_a_feature_vector_also_seen_in_other_split": 2276,
+      "identical_rounded_run_mean_profiles_shared_across_splits": 0,
+      "note": "Repeated feature vectors are reported, not automatically removed; natural repeated network observations are not necessarily data leakage."
+    }
+  },
+  "grouped_cv": {
+    "packet": {
+      "design": "5-fold StratifiedKFold on one-row-per-run development manifest; all observations grouped by run; 12 held-out runs/class/fold; equal total training weight per run. Final-test data not opened.",
+      "models": {
+        "random_forest": {
+          "mean_train_accuracy": 0.984375,
+          "mean_train_macro_f1": 0.9844606517586427,
+          "mean_cv_accuracy": 0.7083333333333333,
+          "sd_cv_accuracy": 0.060739082237971864,
+          "mean_cv_macro_f1": 0.6865216855639134,
+          "sd_cv_macro_f1": 0.07145317860104967,
+          "accuracy_generalization_gap_train_minus_cv": 0.27604166666666674,
+          "macro_f1_generalization_gap_train_minus_cv": 0.29793896619472937
+        },
+        "xgboost": {
+          "mean_train_accuracy": 0.9302083333333332,
+          "mean_train_macro_f1": 0.9302029291017263,
+          "mean_cv_accuracy": 0.8,
+          "sd_cv_accuracy": 0.06521864934374388,
+          "mean_cv_macro_f1": 0.7917307487141687,
+          "sd_cv_macro_f1": 0.07077142360318635,
+          "accuracy_generalization_gap_train_minus_cv": 0.13020833333333315,
+          "macro_f1_generalization_gap_train_minus_cv": 0.1384721803875576
+        }
+      },
+      "folds": [
+        {
+          "fold": 1,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.984375,
+          "train_macro_f1": 0.9844735145407038,
+          "heldout_accuracy": 0.6666666666666666,
+          "heldout_macro_f1": 0.6459266854003696,
+          "heldout_confusion_matrix": [
+            [
+              8,
+              4,
+              0,
+              0
+            ],
+            [
+              7,
+              3,
+              1,
+              1
+            ],
+            [
+              0,
+              0,
+              9,
+              3
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.5333333333333333,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.5925925925925926,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.42857142857142855,
+              "recall": 0.25,
+              "f1-score": 0.3157894736842105,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.9,
+              "recall": 0.75,
+              "f1-score": 0.8181818181818182,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.75,
+              "recall": 1.0,
+              "f1-score": 0.8571428571428571,
+              "support": 12.0
+            },
+            "accuracy": 0.6666666666666666,
+            "macro avg": {
+              "precision": 0.6529761904761905,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.6459266854003696,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.6529761904761905,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.6459266854003696,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 1,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9270833333333334,
+          "train_macro_f1": 0.9274809309742198,
+          "heldout_accuracy": 0.8125,
+          "heldout_macro_f1": 0.8067765567765568,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              3,
+              8,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              8,
+              4
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.7857142857142857,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8461538461538461,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8888888888888888,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7619047619047619,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8888888888888888,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7619047619047619,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.75,
+              "recall": 1.0,
+              "f1-score": 0.8571428571428571,
+              "support": 12.0
+            },
+            "accuracy": 0.8125,
+            "macro avg": {
+              "precision": 0.8283730158730158,
+              "recall": 0.8125,
+              "f1-score": 0.8067765567765568,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8283730158730158,
+              "recall": 0.8125,
+              "f1-score": 0.8067765567765567,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.984375,
+          "train_macro_f1": 0.9844735145407038,
+          "heldout_accuracy": 0.6875,
+          "heldout_macro_f1": 0.6463557993730408,
+          "heldout_confusion_matrix": [
+            [
+              10,
+              2,
+              0,
+              0
+            ],
+            [
+              7,
+              2,
+              1,
+              2
+            ],
+            [
+              0,
+              0,
+              9,
+              3
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.5882352941176471,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.6896551724137931,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.5,
+              "recall": 0.16666666666666666,
+              "f1-score": 0.25,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.9,
+              "recall": 0.75,
+              "f1-score": 0.8181818181818182,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7058823529411765,
+              "recall": 1.0,
+              "f1-score": 0.8275862068965517,
+              "support": 12.0
+            },
+            "accuracy": 0.6875,
+            "macro avg": {
+              "precision": 0.6735294117647059,
+              "recall": 0.6875,
+              "f1-score": 0.6463557993730408,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.6735294117647058,
+              "recall": 0.6875,
+              "f1-score": 0.6463557993730408,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9479166666666666,
+          "train_macro_f1": 0.9482332514656513,
+          "heldout_accuracy": 0.75,
+          "heldout_macro_f1": 0.7238994881644145,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              4,
+              4,
+              2,
+              2
+            ],
+            [
+              0,
+              0,
+              9,
+              3
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.7333333333333333,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8148148148148148,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8,
+              "recall": 0.3333333333333333,
+              "f1-score": 0.47058823529411764,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8181818181818182,
+              "recall": 0.75,
+              "f1-score": 0.782608695652174,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7058823529411765,
+              "recall": 1.0,
+              "f1-score": 0.8275862068965517,
+              "support": 12.0
+            },
+            "accuracy": 0.75,
+            "macro avg": {
+              "precision": 0.764349376114082,
+              "recall": 0.75,
+              "f1-score": 0.7238994881644145,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.7643493761140819,
+              "recall": 0.75,
+              "f1-score": 0.7238994881644145,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9791666666666666,
+          "train_macro_f1": 0.9793039049235993,
+          "heldout_accuracy": 0.7916666666666666,
+          "heldout_macro_f1": 0.7856934731934732,
+          "heldout_confusion_matrix": [
+            [
+              8,
+              3,
+              1,
+              0
+            ],
+            [
+              3,
+              7,
+              1,
+              1
+            ],
+            [
+              0,
+              0,
+              12,
+              0
+            ],
+            [
+              1,
+              0,
+              0,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.6666666666666666,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.6666666666666666,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.7,
+              "recall": 0.5833333333333334,
+              "f1-score": 0.6363636363636364,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8571428571428571,
+              "recall": 1.0,
+              "f1-score": 0.9230769230769231,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.9166666666666666,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9166666666666666,
+              "support": 12.0
+            },
+            "accuracy": 0.7916666666666666,
+            "macro avg": {
+              "precision": 0.7851190476190476,
+              "recall": 0.7916666666666666,
+              "f1-score": 0.7856934731934732,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.7851190476190476,
+              "recall": 0.7916666666666666,
+              "f1-score": 0.7856934731934732,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9166666666666666,
+          "train_macro_f1": 0.9169298813149542,
+          "heldout_accuracy": 0.8958333333333334,
+          "heldout_macro_f1": 0.8950647782169521,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              1,
+              9,
+              2,
+              0
+            ],
+            [
+              0,
+              0,
+              12,
+              0
+            ],
+            [
+              0,
+              0,
+              1,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.9166666666666666,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9166666666666666,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.9,
+              "recall": 0.75,
+              "f1-score": 0.8181818181818182,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8,
+              "recall": 1.0,
+              "f1-score": 0.8888888888888888,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9565217391304348,
+              "support": 12.0
+            },
+            "accuracy": 0.8958333333333334,
+            "macro avg": {
+              "precision": 0.9041666666666667,
+              "recall": 0.8958333333333333,
+              "f1-score": 0.8950647782169521,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.9041666666666668,
+              "recall": 0.8958333333333334,
+              "f1-score": 0.8950647782169522,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.984375,
+          "train_macro_f1": 0.9844735145407038,
+          "heldout_accuracy": 0.75,
+          "heldout_macro_f1": 0.7371345029239765,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              6,
+              5,
+              0,
+              1
+            ],
+            [
+              1,
+              1,
+              8,
+              2
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.6111111111111112,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.7333333333333333,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.7142857142857143,
+              "recall": 0.4166666666666667,
+              "f1-score": 0.5263157894736842,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.8,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8,
+              "recall": 1.0,
+              "f1-score": 0.8888888888888888,
+              "support": 12.0
+            },
+            "accuracy": 0.75,
+            "macro avg": {
+              "precision": 0.7813492063492065,
+              "recall": 0.75,
+              "f1-score": 0.7371345029239765,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.7813492063492063,
+              "recall": 0.75,
+              "f1-score": 0.7371345029239765,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9166666666666666,
+          "train_macro_f1": 0.9163022011913122,
+          "heldout_accuracy": 0.8125,
+          "heldout_macro_f1": 0.8067765567765568,
+          "heldout_confusion_matrix": [
+            [
+              12,
+              0,
+              0,
+              0
+            ],
+            [
+              3,
+              8,
+              0,
+              1
+            ],
+            [
+              1,
+              1,
+              8,
+              2
+            ],
+            [
+              0,
+              0,
+              1,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.75,
+              "recall": 1.0,
+              "f1-score": 0.8571428571428571,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8888888888888888,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7619047619047619,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8888888888888888,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7619047619047619,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7857142857142857,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8461538461538461,
+              "support": 12.0
+            },
+            "accuracy": 0.8125,
+            "macro avg": {
+              "precision": 0.8283730158730158,
+              "recall": 0.8124999999999999,
+              "f1-score": 0.8067765567765568,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8283730158730158,
+              "recall": 0.8125,
+              "f1-score": 0.8067765567765567,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9895833333333334,
+          "train_macro_f1": 0.9895788102475032,
+          "heldout_accuracy": 0.6458333333333334,
+          "heldout_macro_f1": 0.617497966928707,
+          "heldout_confusion_matrix": [
+            [
+              9,
+              1,
+              1,
+              1
+            ],
+            [
+              7,
+              3,
+              0,
+              2
+            ],
+            [
+              0,
+              1,
+              7,
+              4
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.5625,
+              "recall": 0.75,
+              "f1-score": 0.6428571428571429,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.6,
+              "recall": 0.25,
+              "f1-score": 0.35294117647058826,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.875,
+              "recall": 0.5833333333333334,
+              "f1-score": 0.7,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.631578947368421,
+              "recall": 1.0,
+              "f1-score": 0.7741935483870968,
+              "support": 12.0
+            },
+            "accuracy": 0.6458333333333334,
+            "macro avg": {
+              "precision": 0.6672697368421052,
+              "recall": 0.6458333333333334,
+              "f1-score": 0.617497966928707,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.6672697368421052,
+              "recall": 0.6458333333333334,
+              "f1-score": 0.617497966928707,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9427083333333334,
+          "train_macro_f1": 0.9420683805624934,
+          "heldout_accuracy": 0.7291666666666666,
+          "heldout_macro_f1": 0.7261363636363636,
+          "heldout_confusion_matrix": [
+            [
+              8,
+              2,
+              1,
+              1
+            ],
+            [
+              2,
+              8,
+              0,
+              2
+            ],
+            [
+              0,
+              0,
+              7,
+              5
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.8,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7272727272727273,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7272727272727273,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.875,
+              "recall": 0.5833333333333334,
+              "f1-score": 0.7,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.6,
+              "recall": 1.0,
+              "f1-score": 0.75,
+              "support": 12.0
+            },
+            "accuracy": 0.7291666666666666,
+            "macro avg": {
+              "precision": 0.76875,
+              "recall": 0.7291666666666666,
+              "f1-score": 0.7261363636363636,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.7687500000000002,
+              "recall": 0.7291666666666666,
+              "f1-score": 0.7261363636363636,
+              "support": 48.0
+            }
+          }
+        }
+      ]
+    },
+    "flow": {
+      "design": "5-fold StratifiedKFold on one-row-per-run development manifest; all observations grouped by run; 12 held-out runs/class/fold; equal total training weight per run. Final-test data not opened.",
+      "models": {
+        "random_forest": {
+          "mean_train_accuracy": 1.0,
+          "mean_train_macro_f1": 1.0,
+          "mean_cv_accuracy": 0.7750000000000001,
+          "sd_cv_accuracy": 0.07987620630283672,
+          "mean_cv_macro_f1": 0.7601266207715711,
+          "sd_cv_macro_f1": 0.09224960712425523,
+          "accuracy_generalization_gap_train_minus_cv": 0.22499999999999987,
+          "macro_f1_generalization_gap_train_minus_cv": 0.23987337922842888
+        },
+        "xgboost": {
+          "mean_train_accuracy": 0.9354166666666666,
+          "mean_train_macro_f1": 0.935117089135237,
+          "mean_cv_accuracy": 0.8458333333333334,
+          "sd_cv_accuracy": 0.023753654689565366,
+          "mean_cv_macro_f1": 0.8407979035268038,
+          "sd_cv_macro_f1": 0.02808902033059335,
+          "accuracy_generalization_gap_train_minus_cv": 0.08958333333333313,
+          "macro_f1_generalization_gap_train_minus_cv": 0.09431918560843311
+        }
+      },
+      "folds": [
+        {
+          "fold": 1,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 1.0,
+          "train_macro_f1": 1.0,
+          "heldout_accuracy": 0.7708333333333334,
+          "heldout_macro_f1": 0.7605137844611528,
+          "heldout_confusion_matrix": [
+            [
+              9,
+              2,
+              1,
+              0
+            ],
+            [
+              2,
+              10,
+              0,
+              0
+            ],
+            [
+              2,
+              0,
+              6,
+              4
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.6923076923076923,
+              "recall": 0.75,
+              "f1-score": 0.72,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8333333333333334,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8333333333333334,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8571428571428571,
+              "recall": 0.5,
+              "f1-score": 0.631578947368421,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.75,
+              "recall": 1.0,
+              "f1-score": 0.8571428571428571,
+              "support": 12.0
+            },
+            "accuracy": 0.7708333333333334,
+            "macro avg": {
+              "precision": 0.7831959706959707,
+              "recall": 0.7708333333333334,
+              "f1-score": 0.7605137844611528,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.7831959706959707,
+              "recall": 0.7708333333333334,
+              "f1-score": 0.7605137844611528,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 1,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9322916666666666,
+          "train_macro_f1": 0.9316604823747681,
+          "heldout_accuracy": 0.8541666666666666,
+          "heldout_macro_f1": 0.8537121212121213,
+          "heldout_confusion_matrix": [
+            [
+              9,
+              1,
+              2,
+              0
+            ],
+            [
+              1,
+              11,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              10,
+              2
+            ],
+            [
+              0,
+              0,
+              1,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.9,
+              "recall": 0.75,
+              "f1-score": 0.8181818181818182,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.9166666666666666,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9166666666666666,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.7692307692307693,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8461538461538461,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.88,
+              "support": 12.0
+            },
+            "accuracy": 0.8541666666666666,
+            "macro avg": {
+              "precision": 0.8580128205128206,
+              "recall": 0.8541666666666666,
+              "f1-score": 0.8537121212121213,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8580128205128205,
+              "recall": 0.8541666666666666,
+              "f1-score": 0.8537121212121214,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 1.0,
+          "train_macro_f1": 1.0,
+          "heldout_accuracy": 0.7083333333333334,
+          "heldout_macro_f1": 0.6828323806011433,
+          "heldout_confusion_matrix": [
+            [
+              12,
+              0,
+              0,
+              0
+            ],
+            [
+              5,
+              5,
+              0,
+              2
+            ],
+            [
+              4,
+              0,
+              5,
+              3
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.5714285714285714,
+              "recall": 1.0,
+              "f1-score": 0.7272727272727273,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "f1-score": 0.5882352941176471,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "f1-score": 0.5882352941176471,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7058823529411765,
+              "recall": 1.0,
+              "f1-score": 0.8275862068965517,
+              "support": 12.0
+            },
+            "accuracy": 0.7083333333333334,
+            "macro avg": {
+              "precision": 0.819327731092437,
+              "recall": 0.7083333333333334,
+              "f1-score": 0.6828323806011433,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8193277310924371,
+              "recall": 0.7083333333333334,
+              "f1-score": 0.6828323806011433,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 2,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.921875,
+          "train_macro_f1": 0.9218065949784169,
+          "heldout_accuracy": 0.8333333333333334,
+          "heldout_macro_f1": 0.8127334267040149,
+          "heldout_confusion_matrix": [
+            [
+              12,
+              0,
+              0,
+              0
+            ],
+            [
+              4,
+              5,
+              1,
+              2
+            ],
+            [
+              0,
+              0,
+              11,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.75,
+              "recall": 1.0,
+              "f1-score": 0.8571428571428571,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 0.4166666666666667,
+              "f1-score": 0.5882352941176471,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.9166666666666666,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9166666666666666,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8,
+              "recall": 1.0,
+              "f1-score": 0.8888888888888888,
+              "support": 12.0
+            },
+            "accuracy": 0.8333333333333334,
+            "macro avg": {
+              "precision": 0.8666666666666667,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8127334267040149,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8666666666666667,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8127334267040149,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 1.0,
+          "train_macro_f1": 1.0,
+          "heldout_accuracy": 0.875,
+          "heldout_macro_f1": 0.871474358974359,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              11,
+              0,
+              1
+            ],
+            [
+              3,
+              0,
+              8,
+              1
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.7857142857142857,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8461538461538461,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.9166666666666666,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9166666666666666,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.8,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8571428571428571,
+              "recall": 1.0,
+              "f1-score": 0.9230769230769231,
+              "support": 12.0
+            },
+            "accuracy": 0.875,
+            "macro avg": {
+              "precision": 0.8898809523809524,
+              "recall": 0.875,
+              "f1-score": 0.871474358974359,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8898809523809524,
+              "recall": 0.875,
+              "f1-score": 0.8714743589743591,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 3,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9427083333333334,
+          "train_macro_f1": 0.9425170068027211,
+          "heldout_accuracy": 0.875,
+          "heldout_macro_f1": 0.8733256477821695,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              1,
+              9,
+              1,
+              1
+            ],
+            [
+              0,
+              0,
+              10,
+              2
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.9166666666666666,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9166666666666666,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.9,
+              "recall": 0.75,
+              "f1-score": 0.8181818181818182,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.9090909090909091,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8695652173913043,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8,
+              "recall": 1.0,
+              "f1-score": 0.8888888888888888,
+              "support": 12.0
+            },
+            "accuracy": 0.875,
+            "macro avg": {
+              "precision": 0.8814393939393939,
+              "recall": 0.875,
+              "f1-score": 0.8733256477821695,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.881439393939394,
+              "recall": 0.875,
+              "f1-score": 0.8733256477821696,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 1.0,
+          "train_macro_f1": 1.0,
+          "heldout_accuracy": 0.6875,
+          "heldout_macro_f1": 0.6560903575989783,
+          "heldout_confusion_matrix": [
+            [
+              10,
+              2,
+              0,
+              0
+            ],
+            [
+              2,
+              9,
+              0,
+              1
+            ],
+            [
+              3,
+              1,
+              3,
+              5
+            ],
+            [
+              0,
+              0,
+              1,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.6666666666666666,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.7407407407407407,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.75,
+              "recall": 0.75,
+              "f1-score": 0.75,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.75,
+              "recall": 0.25,
+              "f1-score": 0.375,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.6470588235294118,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.7586206896551724,
+              "support": 12.0
+            },
+            "accuracy": 0.6875,
+            "macro avg": {
+              "precision": 0.7034313725490196,
+              "recall": 0.6875,
+              "f1-score": 0.6560903575989783,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.7034313725490197,
+              "recall": 0.6875,
+              "f1-score": 0.6560903575989783,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 4,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.953125,
+          "train_macro_f1": 0.9530149528794147,
+          "heldout_accuracy": 0.8125,
+          "heldout_macro_f1": 0.8098320680929376,
+          "heldout_confusion_matrix": [
+            [
+              11,
+              1,
+              0,
+              0
+            ],
+            [
+              2,
+              9,
+              0,
+              1
+            ],
+            [
+              0,
+              1,
+              8,
+              3
+            ],
+            [
+              0,
+              0,
+              1,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.8461538461538461,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.88,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8181818181818182,
+              "recall": 0.75,
+              "f1-score": 0.782608695652174,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.8888888888888888,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.7619047619047619,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7333333333333333,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8148148148148148,
+              "support": 12.0
+            },
+            "accuracy": 0.8125,
+            "macro avg": {
+              "precision": 0.8216394716394717,
+              "recall": 0.8124999999999999,
+              "f1-score": 0.8098320680929376,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8216394716394716,
+              "recall": 0.8125,
+              "f1-score": 0.8098320680929376,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "model": "random_forest",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 1.0,
+          "train_macro_f1": 1.0,
+          "heldout_accuracy": 0.8333333333333334,
+          "heldout_macro_f1": 0.8297222222222222,
+          "heldout_confusion_matrix": [
+            [
+              9,
+              2,
+              0,
+              1
+            ],
+            [
+              0,
+              12,
+              0,
+              0
+            ],
+            [
+              2,
+              1,
+              8,
+              1
+            ],
+            [
+              1,
+              0,
+              0,
+              11
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.75,
+              "recall": 0.75,
+              "f1-score": 0.75,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 0.8,
+              "recall": 1.0,
+              "f1-score": 0.8888888888888888,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.8,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8461538461538461,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.88,
+              "support": 12.0
+            },
+            "accuracy": 0.8333333333333334,
+            "macro avg": {
+              "precision": 0.8490384615384615,
+              "recall": 0.8333333333333333,
+              "f1-score": 0.8297222222222222,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8490384615384615,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8297222222222222,
+              "support": 48.0
+            }
+          }
+        },
+        {
+          "fold": 5,
+          "model": "xgboost",
+          "train_runs": 192,
+          "heldout_runs": 48,
+          "train_accuracy": 0.9270833333333334,
+          "train_macro_f1": 0.9265864086408641,
+          "heldout_accuracy": 0.8541666666666666,
+          "heldout_macro_f1": 0.8543862538427756,
+          "heldout_confusion_matrix": [
+            [
+              10,
+              0,
+              2,
+              0
+            ],
+            [
+              1,
+              10,
+              1,
+              0
+            ],
+            [
+              0,
+              0,
+              9,
+              3
+            ],
+            [
+              0,
+              0,
+              0,
+              12
+            ]
+          ],
+          "heldout_class_report": {
+            "Malicious_POST": {
+              "precision": 0.9090909090909091,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.8695652173913043,
+              "support": 12.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 0.8333333333333334,
+              "f1-score": 0.9090909090909091,
+              "support": 12.0
+            },
+            "Port_Scan": {
+              "precision": 0.75,
+              "recall": 0.75,
+              "f1-score": 0.75,
+              "support": 12.0
+            },
+            "SYN_Flood": {
+              "precision": 0.8,
+              "recall": 1.0,
+              "f1-score": 0.8888888888888888,
+              "support": 12.0
+            },
+            "accuracy": 0.8541666666666666,
+            "macro avg": {
+              "precision": 0.8647727272727272,
+              "recall": 0.8541666666666667,
+              "f1-score": 0.8543862538427756,
+              "support": 48.0
+            },
+            "weighted avg": {
+              "precision": 0.8647727272727272,
+              "recall": 0.8541666666666666,
+              "f1-score": 0.8543862538427756,
+              "support": 48.0
+            }
+          }
+        }
+      ]
+    }
+  }
+}

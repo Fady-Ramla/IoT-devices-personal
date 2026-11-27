@@ -1,0 +1,201 @@
+{
+  "purpose": "Development-only Packet/Flow modeling. No final-test split or test raw files were opened.",
+  "base_source": "AI_OFFLINE_LEARNING_REPAIRED_TRAIN_VAL_V2_20261025 (80 runs)",
+  "expanded_completed_and_replacement_runs": 160,
+  "selected_runs": 240,
+  "run_counts_by_label_split": {
+    "Malicious_POST": {
+      "train": 48,
+      "validation": 12
+    },
+    "Normal": {
+      "train": 48,
+      "validation": 12
+    },
+    "Port_Scan": {
+      "train": 48,
+      "validation": 12
+    },
+    "SYN_Flood": {
+      "train": 48,
+      "validation": 12
+    }
+  },
+  "expanded_source_runs_excluded": [
+    {
+      "generation": 391,
+      "run_id": "f2c0c767-0870-45ed-83fe-9bf1e320b070",
+      "profile_id": "MPNEW069",
+      "label": "Malicious_POST",
+      "planned_split": "train",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 403,
+      "run_id": "2360378b-413a-4fd4-bfcd-f38594013a61",
+      "profile_id": "MPNEW002",
+      "label": "Malicious_POST",
+      "planned_split": "train",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 429,
+      "run_id": "cef79fd4-31e6-4d78-b442-984c3dfd79ab",
+      "profile_id": "SYNNEW037",
+      "label": "SYN_Flood",
+      "planned_split": "validation",
+      "reason": "manifest status failed; excluded"
+    },
+    {
+      "generation": 442,
+      "run_id": "24737124-955a-4c3b-8db2-38f9e2a817fd",
+      "profile_id": "MPNEW070",
+      "label": "Malicious_POST",
+      "planned_split": "validation",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 450,
+      "run_id": "91872f69-119c-40ea-ae72-cecf34edaebb",
+      "profile_id": "MPNEW022",
+      "label": "Malicious_POST",
+      "planned_split": "train",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 463,
+      "run_id": "e7dcdd95-4e19-4fcd-bef4-93bcdd5f159d",
+      "profile_id": "MPNEW060",
+      "label": "Malicious_POST",
+      "planned_split": "train",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 468,
+      "run_id": "d3c58f4d-8978-4ab2-82ad-56976756f15d",
+      "profile_id": "NNEW055",
+      "label": "Normal",
+      "planned_split": "train",
+      "reason": "manifest status failed; excluded"
+    },
+    {
+      "generation": 474,
+      "run_id": "537027f9-5d50-4ec5-9077-cfca142dc6cf",
+      "profile_id": "MPNEW023",
+      "label": "Malicious_POST",
+      "planned_split": "validation",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 491,
+      "run_id": "588e6022-94e4-4976-84fd-13226525f0b4",
+      "profile_id": "SYNNEW080",
+      "label": "SYN_Flood",
+      "planned_split": "train",
+      "reason": "manifest status failed; excluded"
+    },
+    {
+      "generation": 492,
+      "run_id": "db52e485-6048-4fd3-acf4-2019cd129aeb",
+      "profile_id": "SYNNEW035",
+      "label": "SYN_Flood",
+      "planned_split": "train",
+      "reason": "manifest status failed; excluded"
+    },
+    {
+      "generation": 495,
+      "run_id": "d15ef3ec-149a-41f4-9f71-e847501f1c4e",
+      "profile_id": "SYNNEW010",
+      "label": "SYN_Flood",
+      "planned_split": "train",
+      "reason": "manifest status failed; excluded"
+    },
+    {
+      "generation": 517,
+      "run_id": "7031432b-fc51-4721-a87a-c3bdb816f754",
+      "profile_id": "SYNNEW009",
+      "label": "SYN_Flood",
+      "planned_split": "train",
+      "reason": "manifest status failed; excluded"
+    },
+    {
+      "generation": 527,
+      "run_id": "0097816a-2ef5-48f0-aca1-e2093f0cee7f",
+      "profile_id": "MPNEW010",
+      "label": "Malicious_POST",
+      "planned_split": "train",
+      "reason": "missing application telemetry file; excluded"
+    },
+    {
+      "generation": 531,
+      "run_id": "04867ef3-56c6-4670-8012-e79563070170",
+      "profile_id": "MPNEW031",
+      "label": "Malicious_POST",
+      "planned_split": "train",
+      "reason": "missing application telemetry file; excluded"
+    }
+  ],
+  "excluded_reason_counts": {
+    "missing application telemetry file; excluded": 8,
+    "manifest status failed; excluded": 6
+  },
+  "application_evidence_counts": {
+    "MPNEW014": 11,
+    "MPNEW016": 13,
+    "MPNEW007": 7,
+    "MPNEW003": 5,
+    "MPNEW044": 26,
+    "MPNEW027": 18,
+    "MPNEW042": 22,
+    "MPNEW024": 13,
+    "MPNEW029": 22,
+    "MPNEW050": 15,
+    "MPNEW053": 23,
+    "MPNEW013": 5,
+    "MPNEW049": 12,
+    "MPNEW041": 20,
+    "MPNEW006": 6,
+    "MPNEW051": 16,
+    "MPNEW056": 31,
+    "MPNEW021": 11,
+    "MPNEW033": 7,
+    "MPNEW032": 19,
+    "MPNEW071": 30,
+    "MPNEW048": 32,
+    "MPNEW076": 52,
+    "MPNEW058": 36,
+    "MPNEW035": 11,
+    "MPNEW036": 13,
+    "MPNEW026": 18,
+    "MPNEW018": 7,
+    "MPNEW078": 58,
+    "MPNEW063": 49,
+    "MPNEW038": 16,
+    "MPNEW065": 10,
+    "NREPL001": 1,
+    "MPREPL006": 16,
+    "MPREPL007": 21,
+    "MPREPL008": 18,
+    "MPREPL009": 28,
+    "MPREPL010": 20,
+    "MPREPL011": 16,
+    "MPREPL012": 14,
+    "MPREPL013": 25
+  },
+  "packet_rows_by_split": {
+    "train": 117967,
+    "validation": 35723
+  },
+  "flow_rows_by_split": {
+    "train": 9241,
+    "validation": 2290
+  },
+  "packet_unique_observation_ids": 153690,
+  "flow_unique_observation_ids": 11531,
+  "exact_duplicate_packet_rows": 0,
+  "exact_duplicate_flow_rows": 0,
+  "cross_split_run_leakage": false,
+  "balanced_train_runs_per_class": 48,
+  "balanced_validation_runs_per_class": 12,
+  "note": "No oversampling/synthetic data. Repeated feature patterns are not removed unless the complete exported row is an exact duplicate; all selected observation IDs are unique."
+}

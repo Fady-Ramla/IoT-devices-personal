@@ -1,0 +1,155 @@
+{
+  "purpose": "Development candidate only; train+validation, no test split included or read.",
+  "original_package_untouched": true,
+  "selected_runs": 80,
+  "selected_runs_by_split": {
+    "train": 64,
+    "validation": 16
+  },
+  "run_counts_by_label_split": {
+    "Normal": {
+      "train": 16,
+      "validation": 4
+    },
+    "Malicious_POST": {
+      "train": 16,
+      "validation": 4
+    },
+    "Port_Scan": {
+      "train": 16,
+      "validation": 4
+    },
+    "SYN_Flood": {
+      "train": 16,
+      "validation": 4
+    }
+  },
+  "packet_rows_by_split": {
+    "train": 33787,
+    "validation": 9102
+  },
+  "flow_rows_by_split": {
+    "train": 2814,
+    "validation": 752
+  },
+  "packet_unique_observation_ids": 42889,
+  "flow_unique_observation_ids": 3566,
+  "exact_duplicate_packet_rows": 0,
+  "exact_duplicate_flow_rows": 0,
+  "verified_malicious_post_runs": {
+    "MP023": null,
+    "MP034": null,
+    "MP032": null,
+    "MP025": null,
+    "MP029": null,
+    "MP039": null,
+    "MP016": null,
+    "MP019": null,
+    "MP001": null,
+    "MP037": null,
+    "MP003": null,
+    "MP007": null,
+    "MP005": null,
+    "MP040": null,
+    "MP014": null,
+    "MP041": 8,
+    "MP042": 15,
+    "MP043": 12,
+    "MP044": 18,
+    "MP046": 9
+  },
+  "excluded_runs": [
+    {
+      "generation": 196,
+      "run_id": "fd5b92ec-4ad6-4596-b5f5-99e5c0898f28",
+      "profile_id": "MP013",
+      "split": "validation",
+      "reason": "no observed application POST; curl timeouts/no route"
+    },
+    {
+      "generation": 260,
+      "run_id": "0dffcedb-e128-4087-99e6-ce270400a2a3",
+      "profile_id": "MP036",
+      "split": "validation",
+      "reason": "no observed application POST; curl timeouts/no route"
+    },
+    {
+      "generation": 272,
+      "run_id": "3d8bec07-6833-483b-8005-c9b95993ea48",
+      "profile_id": "MP027",
+      "split": "train",
+      "reason": "no observed application POST; curl timeouts/no route"
+    },
+    {
+      "generation": 311,
+      "run_id": "3989d142-5a7a-46f0-82bc-507ad1354de9",
+      "profile_id": "MP012",
+      "split": "validation",
+      "reason": "no observed application POST; curl timeouts/no route"
+    },
+    {
+      "generation": 343,
+      "run_id": "e57e1ff0-2339-482f-830e-58cf3a3025f7",
+      "profile_id": "MP002",
+      "split": "train",
+      "reason": "no observed application POST; curl timeouts/no route"
+    },
+    {
+      "generation": 354,
+      "run_id": "de3deed9-bf9d-4903-b74d-8a6558ce10c4",
+      "profile_id": "PRECHECK_MP",
+      "split": "diagnostic",
+      "reason": "diagnostic preflight; not part of campaign"
+    },
+    {
+      "generation": 359,
+      "run_id": "a326313b-3fd4-4a87-b922-a78b73fc7f48",
+      "profile_id": "MP045",
+      "split": "validation",
+      "reason": "MP045 had no observed application POST; invalid replacement"
+    },
+    {
+      "generation": 360,
+      "run_id": "6ecf2a8b-36a5-463a-b31e-3b4635ce294c",
+      "profile_id": "duplicate_replacement",
+      "split": "duplicate",
+      "reason": "duplicate second execution of replacement plan"
+    },
+    {
+      "generation": 361,
+      "run_id": "bde18f8b-f7c2-4e87-b574-4181d1306da3",
+      "profile_id": "duplicate_replacement",
+      "split": "duplicate",
+      "reason": "duplicate second execution of replacement plan"
+    },
+    {
+      "generation": 362,
+      "run_id": "cda7ddc6-5a59-4319-ab99-d44687340dd1",
+      "profile_id": "duplicate_replacement",
+      "split": "duplicate",
+      "reason": "duplicate second execution of replacement plan"
+    },
+    {
+      "generation": 363,
+      "run_id": "b16a349e-f9a8-460f-ac52-9416b3cf9bd3",
+      "profile_id": "duplicate_replacement",
+      "split": "duplicate",
+      "reason": "duplicate second execution of replacement plan"
+    },
+    {
+      "generation": 364,
+      "run_id": "0bb3e3c2-315f-4328-ad48-486db4db7c83",
+      "profile_id": "MP045",
+      "split": "validation",
+      "reason": "duplicate MP045; no observed application POST"
+    }
+  ],
+  "excluded_duplicate_generations": [
+    360,
+    361,
+    362,
+    363,
+    364
+  ],
+  "note": "Current test set and its raw features were not read. This package is not for final performance claims."
+}

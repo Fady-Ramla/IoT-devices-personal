@@ -1,0 +1,890 @@
+{
+  "level": "flow",
+  "features": [
+    "protocol",
+    "src_port",
+    "dst_port",
+    "packet_count",
+    "byte_count",
+    "packet_rate",
+    "byte_rate",
+    "duration_sec",
+    "avg_packet_size",
+    "syn_count",
+    "ack_count",
+    "rst_count",
+    "fin_count",
+    "syn_ack_ratio",
+    "rst_ratio",
+    "unique_dst_ports",
+    "failed_connection_count",
+    "tcp_fraction",
+    "udp_fraction",
+    "icmp_fraction"
+  ],
+  "classes": [
+    "Malicious_POST",
+    "Normal",
+    "Port_Scan",
+    "SYN_Flood"
+  ],
+  "seed": 42,
+  "training_weighting": "equal total sample weight per run_id",
+  "split_dir": "New_Datasets/AI_OFFLINE_LEARNING_V2_FINAL/flow_splits",
+  "split_summary": {
+    "train": {
+      "rows": 57,
+      "runs": 40,
+      "runs_per_label": {
+        "Malicious_POST": 10,
+        "Normal": 10,
+        "Port_Scan": 10,
+        "SYN_Flood": 10
+      },
+      "rows_per_label": {
+        "SYN_Flood": 15,
+        "Port_Scan": 15,
+        "Normal": 14,
+        "Malicious_POST": 13
+      }
+    },
+    "validation": {
+      "rows": 13,
+      "runs": 8,
+      "runs_per_label": {
+        "Malicious_POST": 2,
+        "Normal": 2,
+        "Port_Scan": 2,
+        "SYN_Flood": 2
+      },
+      "rows_per_label": {
+        "Port_Scan": 4,
+        "Malicious_POST": 3,
+        "Normal": 3,
+        "SYN_Flood": 3
+      }
+    },
+    "test": {
+      "rows": 16,
+      "runs": 12,
+      "runs_per_label": {
+        "Malicious_POST": 3,
+        "Normal": 3,
+        "Port_Scan": 3,
+        "SYN_Flood": 3
+      },
+      "rows_per_label": {
+        "Malicious_POST": 6,
+        "Port_Scan": 4,
+        "SYN_Flood": 3,
+        "Normal": 3
+      }
+    }
+  },
+  "models": {
+    "random_forest": {
+      "validation": {
+        "row_level": {
+          "rows": 13,
+          "accuracy": 0.8461538461538461,
+          "precision_macro": 0.8333333333333333,
+          "recall_macro": 0.8333333333333333,
+          "f1_macro": 0.8333333333333333,
+          "f1_weighted": 0.8461538461538461,
+          "confusion_matrix": [
+            [
+              2,
+              1,
+              0,
+              0
+            ],
+            [
+              1,
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              4,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              3
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 0.6666666666666666,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.6666666666666666,
+              "support": 3.0
+            },
+            "Normal": {
+              "precision": 0.6666666666666666,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.6666666666666666,
+              "support": 3.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 4.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "accuracy": 0.8461538461538461,
+            "macro avg": {
+              "precision": 0.8333333333333333,
+              "recall": 0.8333333333333333,
+              "f1-score": 0.8333333333333333,
+              "support": 13.0
+            },
+            "weighted avg": {
+              "precision": 0.8461538461538461,
+              "recall": 0.8461538461538461,
+              "f1-score": 0.8461538461538461,
+              "support": 13.0
+            }
+          }
+        },
+        "run_level": {
+          "runs": 8,
+          "aggregation": "mean class probability across observations in each run",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              2,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              2,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              2
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "accuracy": 1.0,
+            "macro avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 8.0
+            },
+            "weighted avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 8.0
+            }
+          },
+          "predictions": [
+            {
+              "run_id": "431e656e-a177-46b4-bd1b-b970a0489b7b",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "4e18bc58-73e0-434f-a9d5-97177b3ed924",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "6099d7f7-0433-4918-8b56-d909ba82f93f",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "beef14fd-dedc-4b17-82df-a62db7bc28d1",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "bf24fc2b-2574-4c37-a1df-6af437c87311",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "d21c1860-1e8b-45cb-968a-9a6853c9f928",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "dabbd8a2-43ad-49a2-814a-0ffdf350fe49",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "ea607d97-c76e-400d-a03f-7ab3fb9b8fc9",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            }
+          ]
+        }
+      },
+      "test": {
+        "row_level": {
+          "rows": 16,
+          "accuracy": 0.875,
+          "precision_macro": 0.9,
+          "recall_macro": 0.9166666666666666,
+          "f1_macro": 0.8875,
+          "f1_weighted": 0.878125,
+          "confusion_matrix": [
+            [
+              4,
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              4,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              3
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.8,
+              "support": 6.0
+            },
+            "Normal": {
+              "precision": 0.6,
+              "recall": 1.0,
+              "f1-score": 0.75,
+              "support": 3.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 4.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "accuracy": 0.875,
+            "macro avg": {
+              "precision": 0.9,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8875,
+              "support": 16.0
+            },
+            "weighted avg": {
+              "precision": 0.925,
+              "recall": 0.875,
+              "f1-score": 0.878125,
+              "support": 16.0
+            }
+          }
+        },
+        "run_level": {
+          "runs": 12,
+          "aggregation": "mean class probability across observations in each run",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              3,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              3,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              3
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "accuracy": 1.0,
+            "macro avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 12.0
+            },
+            "weighted avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 12.0
+            }
+          },
+          "predictions": [
+            {
+              "run_id": "15a3290b-b7a5-4eb5-82cd-c654ede52202",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "250d5085-4842-49d1-957d-2827fdd9b870",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "524cd70d-d228-4c93-a3ad-4d5686218792",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "755fbd5a-ece5-429a-a0f4-987675aaab40",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "797af58a-5115-4b84-9989-3b7e87ddc330",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "7a3f8f2a-8068-45d4-9925-7e1cb5ff2678",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "80854f15-76cd-498d-82f4-c4e68e3c946e",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "8aea0f59-2de3-4dc6-9238-3aa6940a051e",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "bb0b6166-b280-4a18-8aa5-0be2b8b04b43",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "c605de77-3f97-48de-a4ac-1573045a2357",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "d09276bf-a3df-48aa-aac6-8d597fecb3eb",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "d5ba6398-ef12-4f41-9f69-4c84ef841337",
+              "actual": "Normal",
+              "predicted": "Normal"
+            }
+          ]
+        }
+      }
+    },
+    "xgboost": {
+      "validation": {
+        "row_level": {
+          "rows": 13,
+          "accuracy": 0.9230769230769231,
+          "precision_macro": 0.9375,
+          "recall_macro": 0.9166666666666666,
+          "f1_macro": 0.9142857142857143,
+          "f1_weighted": 0.9208791208791209,
+          "confusion_matrix": [
+            [
+              2,
+              1,
+              0,
+              0
+            ],
+            [
+              0,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              4,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              3
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.8,
+              "support": 3.0
+            },
+            "Normal": {
+              "precision": 0.75,
+              "recall": 1.0,
+              "f1-score": 0.8571428571428571,
+              "support": 3.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 4.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "accuracy": 0.9230769230769231,
+            "macro avg": {
+              "precision": 0.9375,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.9142857142857143,
+              "support": 13.0
+            },
+            "weighted avg": {
+              "precision": 0.9423076923076923,
+              "recall": 0.9230769230769231,
+              "f1-score": 0.9208791208791209,
+              "support": 13.0
+            }
+          }
+        },
+        "run_level": {
+          "runs": 8,
+          "aggregation": "mean class probability across observations in each run",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              2,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              2,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              2
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 2.0
+            },
+            "accuracy": 1.0,
+            "macro avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 8.0
+            },
+            "weighted avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 8.0
+            }
+          },
+          "predictions": [
+            {
+              "run_id": "431e656e-a177-46b4-bd1b-b970a0489b7b",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "4e18bc58-73e0-434f-a9d5-97177b3ed924",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "6099d7f7-0433-4918-8b56-d909ba82f93f",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "beef14fd-dedc-4b17-82df-a62db7bc28d1",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "bf24fc2b-2574-4c37-a1df-6af437c87311",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "d21c1860-1e8b-45cb-968a-9a6853c9f928",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "dabbd8a2-43ad-49a2-814a-0ffdf350fe49",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "ea607d97-c76e-400d-a03f-7ab3fb9b8fc9",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            }
+          ]
+        }
+      },
+      "test": {
+        "row_level": {
+          "rows": 16,
+          "accuracy": 0.875,
+          "precision_macro": 0.9,
+          "recall_macro": 0.9166666666666666,
+          "f1_macro": 0.8875,
+          "f1_weighted": 0.878125,
+          "confusion_matrix": [
+            [
+              4,
+              2,
+              0,
+              0
+            ],
+            [
+              0,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              4,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              3
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 0.6666666666666666,
+              "f1-score": 0.8,
+              "support": 6.0
+            },
+            "Normal": {
+              "precision": 0.6,
+              "recall": 1.0,
+              "f1-score": 0.75,
+              "support": 3.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 4.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "accuracy": 0.875,
+            "macro avg": {
+              "precision": 0.9,
+              "recall": 0.9166666666666666,
+              "f1-score": 0.8875,
+              "support": 16.0
+            },
+            "weighted avg": {
+              "precision": 0.925,
+              "recall": 0.875,
+              "f1-score": 0.878125,
+              "support": 16.0
+            }
+          }
+        },
+        "run_level": {
+          "runs": 12,
+          "aggregation": "mean class probability across observations in each run",
+          "accuracy": 1.0,
+          "precision_macro": 1.0,
+          "recall_macro": 1.0,
+          "f1_macro": 1.0,
+          "confusion_matrix": [
+            [
+              3,
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              3,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              3,
+              0
+            ],
+            [
+              0,
+              0,
+              0,
+              3
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "Normal": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "Port_Scan": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "SYN_Flood": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 3.0
+            },
+            "accuracy": 1.0,
+            "macro avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 12.0
+            },
+            "weighted avg": {
+              "precision": 1.0,
+              "recall": 1.0,
+              "f1-score": 1.0,
+              "support": 12.0
+            }
+          },
+          "predictions": [
+            {
+              "run_id": "15a3290b-b7a5-4eb5-82cd-c654ede52202",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "250d5085-4842-49d1-957d-2827fdd9b870",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "524cd70d-d228-4c93-a3ad-4d5686218792",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "755fbd5a-ece5-429a-a0f4-987675aaab40",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "797af58a-5115-4b84-9989-3b7e87ddc330",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "7a3f8f2a-8068-45d4-9925-7e1cb5ff2678",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "80854f15-76cd-498d-82f4-c4e68e3c946e",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "8aea0f59-2de3-4dc6-9238-3aa6940a051e",
+              "actual": "Normal",
+              "predicted": "Normal"
+            },
+            {
+              "run_id": "bb0b6166-b280-4a18-8aa5-0be2b8b04b43",
+              "actual": "SYN_Flood",
+              "predicted": "SYN_Flood"
+            },
+            {
+              "run_id": "c605de77-3f97-48de-a4ac-1573045a2357",
+              "actual": "Malicious_POST",
+              "predicted": "Malicious_POST"
+            },
+            {
+              "run_id": "d09276bf-a3df-48aa-aac6-8d597fecb3eb",
+              "actual": "Port_Scan",
+              "predicted": "Port_Scan"
+            },
+            {
+              "run_id": "d5ba6398-ef12-4f41-9f69-4c84ef841337",
+              "actual": "Normal",
+              "predicted": "Normal"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "features": [
+    "http_method",
+    "route_category"
+  ]
+}

@@ -1,0 +1,2434 @@
+{
+  "scope": "Expanded development package only (240 runs; generations <550). Final-test feature files, predictions, metrics, and model artifacts were not read or modified.",
+  "protocol": {
+    "cv": "5-fold stratified OOF on one manifest row per run; all Packet/Flow observations from each run are assigned together.",
+    "seed": 20261026,
+    "run_summaries": "Mean or mean+population-standard-deviation of each feature computed within each run and separately inside each CV fold.",
+    "model_artifacts": "No model files are saved or replaced; CV candidate estimators exist only in memory.",
+    "selection": "No winning candidate is promoted automatically. Compare to the frozen baseline and require a new independent holdout for any changed production claim."
+  },
+  "dataset_qc": {
+    "runs": 240,
+    "runs_per_class": {
+      "Malicious_POST": 60,
+      "Normal": 60,
+      "Port_Scan": 60,
+      "SYN_Flood": 60
+    },
+    "train_validation_per_class": {
+      "Malicious_POST": {
+        "train": 48,
+        "validation": 12
+      },
+      "Normal": {
+        "train": 48,
+        "validation": 12
+      },
+      "Port_Scan": {
+        "train": 48,
+        "validation": 12
+      },
+      "SYN_Flood": {
+        "train": 48,
+        "validation": 12
+      }
+    },
+    "run_ids_unique": true,
+    "profile_ids_unique": true,
+    "no_run_split_leakage": true,
+    "development_generation_max": 549,
+    "final_test_generation_boundary": 550
+  },
+  "levels": {
+    "packet": {
+      "feature_count": 10,
+      "features": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_length",
+        "tcp_syn",
+        "tcp_ack",
+        "tcp_rst",
+        "tcp_fin",
+        "icmp_type",
+        "arp_operation"
+      ],
+      "rows": 153690,
+      "observation_ids_unique": true,
+      "candidates": {
+        "row_xgb_baseline": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.7916666666666666,
+            "macro_f1": 0.7846878729082976,
+            "normal_precision": 0.8095238095238095,
+            "normal_recall": 0.5666666666666667,
+            "confusion_matrix": [
+              [
+                52,
+                6,
+                1,
+                1
+              ],
+              [
+                16,
+                34,
+                4,
+                6
+              ],
+              [
+                1,
+                2,
+                45,
+                12
+              ],
+              [
+                0,
+                0,
+                1,
+                59
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7536231884057971,
+                "recall": 0.8666666666666667,
+                "f1-score": 0.8062015503875969,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.8095238095238095,
+                "recall": 0.5666666666666667,
+                "f1-score": 0.6666666666666666,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8823529411764706,
+                "recall": 0.75,
+                "f1-score": 0.8108108108108109,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7564102564102564,
+                "recall": 0.9833333333333333,
+                "f1-score": 0.855072463768116,
+                "support": 60.0
+              },
+              "accuracy": 0.7916666666666666,
+              "macro avg": {
+                "precision": 0.8004775488790834,
+                "recall": 0.7916666666666667,
+                "f1-score": 0.7846878729082976,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8004775488790834,
+                "recall": 0.7916666666666666,
+                "f1-score": 0.7846878729082977,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.875,
+              "macro_f1": 0.8713888888888889,
+              "normal_precision": 1.0,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.75,
+              "macro_f1": 0.7233102918586789,
+              "normal_precision": 1.0,
+              "normal_recall": 0.3333333333333333
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.7916666666666666,
+              "macro_f1": 0.7869404113732608,
+              "normal_precision": 0.75,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.7083333333333334,
+              "macro_f1": 0.6917641325536062,
+              "normal_precision": 0.7142857142857143,
+              "normal_recall": 0.4166666666666667
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.8285953177257526,
+              "normal_precision": 0.7272727272727273,
+              "normal_recall": 0.6666666666666666
+            }
+          ],
+          "mean_fold_accuracy": 0.7916666666666667,
+          "sd_fold_accuracy": 0.06588078458684123,
+          "mean_fold_macro_f1": 0.7803998084800374,
+          "mean_fold_normal_recall": 0.5666666666666667,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_length",
+            "tcp_syn",
+            "tcp_ack",
+            "tcp_rst",
+            "tcp_fin",
+            "icmp_type",
+            "arp_operation"
+          ]
+        },
+        "row_xgb_normal_1p25": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.7833333333333333,
+            "macro_f1": 0.7795197984920177,
+            "normal_precision": 0.7169811320754716,
+            "normal_recall": 0.6333333333333333,
+            "confusion_matrix": [
+              [
+                47,
+                11,
+                1,
+                1
+              ],
+              [
+                13,
+                38,
+                3,
+                6
+              ],
+              [
+                1,
+                4,
+                44,
+                11
+              ],
+              [
+                0,
+                0,
+                1,
+                59
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7704918032786885,
+                "recall": 0.7833333333333333,
+                "f1-score": 0.7768595041322314,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.7169811320754716,
+                "recall": 0.6333333333333333,
+                "f1-score": 0.672566371681416,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8979591836734694,
+                "recall": 0.7333333333333333,
+                "f1-score": 0.8073394495412844,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7662337662337663,
+                "recall": 0.9833333333333333,
+                "f1-score": 0.8613138686131386,
+                "support": 60.0
+              },
+              "accuracy": 0.7833333333333333,
+              "macro avg": {
+                "precision": 0.787916471315349,
+                "recall": 0.7833333333333333,
+                "f1-score": 0.7795197984920177,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.7879164713153489,
+                "recall": 0.7833333333333333,
+                "f1-score": 0.7795197984920177,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.852487078139252,
+              "normal_precision": 0.8,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.7708333333333334,
+              "macro_f1": 0.7643817204301075,
+              "normal_precision": 0.7777777777777778,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.7083333333333334,
+              "macro_f1": 0.7036070780399274,
+              "normal_precision": 0.5833333333333334,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.7291666666666666,
+              "macro_f1": 0.7233014354066987,
+              "normal_precision": 0.7,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8500874125874126,
+              "normal_precision": 0.75,
+              "normal_recall": 0.75
+            }
+          ],
+          "mean_fold_accuracy": 0.7833333333333333,
+          "sd_fold_accuracy": 0.06846531968814575,
+          "mean_fold_macro_f1": 0.7787729449206797,
+          "mean_fold_normal_recall": 0.6333333333333334,
+          "normal_weight": 1.25,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_length",
+            "tcp_syn",
+            "tcp_ack",
+            "tcp_rst",
+            "tcp_fin",
+            "icmp_type",
+            "arp_operation"
+          ]
+        },
+        "row_xgb_normal_1p5": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.775,
+            "macro_f1": 0.7730716942513505,
+            "normal_precision": 0.65625,
+            "normal_recall": 0.7,
+            "confusion_matrix": [
+              [
+                41,
+                17,
+                1,
+                1
+              ],
+              [
+                9,
+                42,
+                3,
+                6
+              ],
+              [
+                1,
+                4,
+                44,
+                11
+              ],
+              [
+                0,
+                1,
+                0,
+                59
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.803921568627451,
+                "recall": 0.6833333333333333,
+                "f1-score": 0.7387387387387387,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.65625,
+                "recall": 0.7,
+                "f1-score": 0.6774193548387096,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.9166666666666666,
+                "recall": 0.7333333333333333,
+                "f1-score": 0.8148148148148148,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7662337662337663,
+                "recall": 0.9833333333333333,
+                "f1-score": 0.8613138686131386,
+                "support": 60.0
+              },
+              "accuracy": 0.775,
+              "macro avg": {
+                "precision": 0.785768000381971,
+                "recall": 0.775,
+                "f1-score": 0.7730716942513505,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.785768000381971,
+                "recall": 0.775,
+                "f1-score": 0.7730716942513506,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8537486064659978,
+              "normal_precision": 0.7272727272727273,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.7708333333333334,
+              "macro_f1": 0.7643817204301075,
+              "normal_precision": 0.7777777777777778,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.6875,
+              "macro_f1": 0.670044459444102,
+              "normal_precision": 0.5263157894736842,
+              "normal_recall": 0.8333333333333334
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.7083333333333334,
+              "macro_f1": 0.7033014354066986,
+              "normal_precision": 0.6153846153846154,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8500874125874126,
+              "normal_precision": 0.75,
+              "normal_recall": 0.75
+            }
+          ],
+          "mean_fold_accuracy": 0.775,
+          "sd_fold_accuracy": 0.07850601533923653,
+          "mean_fold_macro_f1": 0.7683127268668637,
+          "mean_fold_normal_recall": 0.7,
+          "normal_weight": 1.5,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_length",
+            "tcp_syn",
+            "tcp_ack",
+            "tcp_rst",
+            "tcp_fin",
+            "icmp_type",
+            "arp_operation"
+          ]
+        },
+        "row_regularized_rf": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8,
+            "macro_f1": 0.792614573244054,
+            "normal_precision": 0.8292682926829268,
+            "normal_recall": 0.5666666666666667,
+            "confusion_matrix": [
+              [
+                53,
+                4,
+                2,
+                1
+              ],
+              [
+                16,
+                34,
+                4,
+                6
+              ],
+              [
+                1,
+                3,
+                46,
+                10
+              ],
+              [
+                0,
+                0,
+                1,
+                59
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7571428571428571,
+                "recall": 0.8833333333333333,
+                "f1-score": 0.8153846153846154,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.8292682926829268,
+                "recall": 0.5666666666666667,
+                "f1-score": 0.6732673267326733,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8679245283018868,
+                "recall": 0.7666666666666667,
+                "f1-score": 0.8141592920353983,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7763157894736842,
+                "recall": 0.9833333333333333,
+                "f1-score": 0.8676470588235294,
+                "support": 60.0
+              },
+              "accuracy": 0.8,
+              "macro avg": {
+                "precision": 0.8076628669003387,
+                "recall": 0.8,
+                "f1-score": 0.792614573244054,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8076628669003387,
+                "recall": 0.8,
+                "f1-score": 0.792614573244054,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.8239217233488518,
+              "normal_precision": 0.8571428571428571,
+              "normal_recall": 0.5
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.7291666666666666,
+              "macro_f1": 0.703168944345415,
+              "normal_precision": 0.8,
+              "normal_recall": 0.3333333333333333
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8125,
+              "macro_f1": 0.8108820589705148,
+              "normal_precision": 0.8181818181818182,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.75,
+              "macro_f1": 0.7351616589366134,
+              "normal_precision": 0.8571428571428571,
+              "normal_recall": 0.5
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.875,
+              "macro_f1": 0.8713043478260869,
+              "normal_precision": 0.8181818181818182,
+              "normal_recall": 0.75
+            }
+          ],
+          "mean_fold_accuracy": 0.8,
+          "sd_fold_accuracy": 0.060020251212033075,
+          "mean_fold_macro_f1": 0.7888877466854963,
+          "mean_fold_normal_recall": 0.5666666666666667,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_length",
+            "tcp_syn",
+            "tcp_ack",
+            "tcp_rst",
+            "tcp_fin",
+            "icmp_type",
+            "arp_operation"
+          ]
+        },
+        "run_mean_xgb": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.875,
+            "macro_f1": 0.8748840787640613,
+            "normal_precision": 0.8727272727272727,
+            "normal_recall": 0.8,
+            "confusion_matrix": [
+              [
+                56,
+                3,
+                1,
+                0
+              ],
+              [
+                3,
+                48,
+                7,
+                2
+              ],
+              [
+                0,
+                3,
+                51,
+                6
+              ],
+              [
+                0,
+                1,
+                4,
+                55
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9491525423728814,
+                "recall": 0.9333333333333333,
+                "f1-score": 0.9411764705882353,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.8727272727272727,
+                "recall": 0.8,
+                "f1-score": 0.8347826086956521,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8095238095238095,
+                "recall": 0.85,
+                "f1-score": 0.8292682926829268,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.873015873015873,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8943089430894309,
+                "support": 60.0
+              },
+              "accuracy": 0.875,
+              "macro avg": {
+                "precision": 0.8761048744099592,
+                "recall": 0.875,
+                "f1-score": 0.8748840787640613,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8761048744099591,
+                "recall": 0.875,
+                "f1-score": 0.8748840787640613,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.9583333333333334,
+              "macro_f1": 0.9582608695652173,
+              "normal_precision": 0.9230769230769231,
+              "normal_recall": 1.0
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.8290088172696869,
+              "normal_precision": 0.8,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.875,
+              "macro_f1": 0.8752143508665248,
+              "normal_precision": 0.7857142857142857,
+              "normal_recall": 0.9166666666666666
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.7916666666666666,
+              "macro_f1": 0.7887820512820513,
+              "normal_precision": 0.875,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.9166666666666666,
+              "macro_f1": 0.9177920509442248,
+              "normal_precision": 1.0,
+              "normal_recall": 0.8333333333333334
+            }
+          ],
+          "mean_fold_accuracy": 0.875,
+          "sd_fold_accuracy": 0.06588078458684125,
+          "mean_fold_macro_f1": 0.8738116279855411,
+          "mean_fold_normal_recall": 0.8,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol__mean",
+            "src_port__mean",
+            "dst_port__mean",
+            "packet_length__mean",
+            "tcp_syn__mean",
+            "tcp_ack__mean",
+            "tcp_rst__mean",
+            "tcp_fin__mean",
+            "icmp_type__mean",
+            "arp_operation__mean"
+          ]
+        },
+        "run_mean_std_xgb": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8875,
+            "macro_f1": 0.8874201129330902,
+            "normal_precision": 0.8620689655172413,
+            "normal_recall": 0.8333333333333334,
+            "confusion_matrix": [
+              [
+                58,
+                1,
+                1,
+                0
+              ],
+              [
+                1,
+                50,
+                5,
+                4
+              ],
+              [
+                0,
+                5,
+                50,
+                5
+              ],
+              [
+                0,
+                2,
+                3,
+                55
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9830508474576272,
+                "recall": 0.9666666666666667,
+                "f1-score": 0.9747899159663865,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.8620689655172413,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.847457627118644,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.847457627118644,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8403361344537815,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.859375,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8870967741935484,
+                "support": 60.0
+              },
+              "accuracy": 0.8875,
+              "macro avg": {
+                "precision": 0.8879881100233782,
+                "recall": 0.8875,
+                "f1-score": 0.8874201129330902,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8879881100233782,
+                "recall": 0.8875,
+                "f1-score": 0.88742011293309,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.9583333333333334,
+              "macro_f1": 0.9582608695652173,
+              "normal_precision": 0.9230769230769231,
+              "normal_recall": 1.0
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.8125,
+              "macro_f1": 0.8108465608465608,
+              "normal_precision": 0.6666666666666666,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8504761904761904,
+              "normal_precision": 0.7692307692307693,
+              "normal_recall": 0.8333333333333334
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8538461538461539,
+              "normal_precision": 1.0,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.9583333333333334,
+              "macro_f1": 0.9590301003344481,
+              "normal_precision": 1.0,
+              "normal_recall": 1.0
+            }
+          ],
+          "mean_fold_accuracy": 0.8875,
+          "sd_fold_accuracy": 0.06686169389950508,
+          "mean_fold_macro_f1": 0.886491975013714,
+          "mean_fold_normal_recall": 0.8333333333333333,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol__mean",
+            "src_port__mean",
+            "dst_port__mean",
+            "packet_length__mean",
+            "tcp_syn__mean",
+            "tcp_ack__mean",
+            "tcp_rst__mean",
+            "tcp_fin__mean",
+            "icmp_type__mean",
+            "arp_operation__mean",
+            "protocol__std",
+            "src_port__std",
+            "dst_port__std",
+            "packet_length__std",
+            "tcp_syn__std",
+            "tcp_ack__std",
+            "tcp_rst__std",
+            "tcp_fin__std",
+            "icmp_type__std",
+            "arp_operation__std"
+          ]
+        }
+      },
+      "attacker_host_holdout_stress": {
+        "design": "Leave-one-attacker-host-out stress test; report only folds with all four classes in both train and test. Not used for model selection.",
+        "eligible_host_folds": 11,
+        "skipped_host_folds": [
+          {
+            "attacker_host": "h18",
+            "reason": "held-out or training partition lacks one or more classes",
+            "test_class_counts": {
+              "Malicious_POST": 1
+            },
+            "train_classes": [
+              "Malicious_POST",
+              "Normal",
+              "Port_Scan",
+              "SYN_Flood"
+            ]
+          },
+          {
+            "attacker_host": "h7",
+            "reason": "held-out or training partition lacks one or more classes",
+            "test_class_counts": {
+              "SYN_Flood": 10,
+              "Port_Scan": 7,
+              "Malicious_POST": 6
+            },
+            "train_classes": [
+              "Malicious_POST",
+              "Normal",
+              "Port_Scan",
+              "SYN_Flood"
+            ]
+          }
+        ],
+        "folds": [
+          {
+            "attacker_host": "h10",
+            "runs": 18,
+            "accuracy": 0.9444444444444444,
+            "macro_f1": 0.945054945054945,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "SYN_Flood": 6,
+              "Malicious_POST": 5,
+              "Port_Scan": 4,
+              "Normal": 3
+            }
+          },
+          {
+            "attacker_host": "h11",
+            "runs": 19,
+            "accuracy": 0.8421052631578947,
+            "macro_f1": 0.7863247863247864,
+            "normal_precision": 0.5,
+            "normal_recall": 0.5,
+            "class_counts": {
+              "Port_Scan": 7,
+              "SYN_Flood": 6,
+              "Malicious_POST": 4,
+              "Normal": 2
+            }
+          },
+          {
+            "attacker_host": "h12",
+            "runs": 15,
+            "accuracy": 0.8666666666666667,
+            "macro_f1": 0.7083333333333334,
+            "normal_precision": 0.0,
+            "normal_recall": 0.0,
+            "class_counts": {
+              "Malicious_POST": 6,
+              "Port_Scan": 5,
+              "SYN_Flood": 3,
+              "Normal": 1
+            }
+          },
+          {
+            "attacker_host": "h13",
+            "runs": 35,
+            "accuracy": 0.6571428571428571,
+            "macro_f1": 0.6498834498834498,
+            "normal_precision": 1.0,
+            "normal_recall": 0.5,
+            "class_counts": {
+              "Normal": 24,
+              "Port_Scan": 5,
+              "SYN_Flood": 4,
+              "Malicious_POST": 2
+            }
+          },
+          {
+            "attacker_host": "h14",
+            "runs": 15,
+            "accuracy": 0.7333333333333333,
+            "macro_f1": 0.7256410256410256,
+            "normal_precision": 1.0,
+            "normal_recall": 0.6666666666666666,
+            "class_counts": {
+              "SYN_Flood": 5,
+              "Port_Scan": 4,
+              "Normal": 3,
+              "Malicious_POST": 3
+            }
+          },
+          {
+            "attacker_host": "h15",
+            "runs": 17,
+            "accuracy": 0.8235294117647058,
+            "macro_f1": 0.8589743589743589,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "Port_Scan": 6,
+              "Malicious_POST": 5,
+              "SYN_Flood": 5,
+              "Normal": 1
+            }
+          },
+          {
+            "attacker_host": "h16",
+            "runs": 13,
+            "accuracy": 0.9230769230769231,
+            "macro_f1": 0.7222222222222222,
+            "normal_precision": 0.0,
+            "normal_recall": 0.0,
+            "class_counts": {
+              "SYN_Flood": 5,
+              "Malicious_POST": 4,
+              "Port_Scan": 3,
+              "Normal": 1
+            }
+          },
+          {
+            "attacker_host": "h5",
+            "runs": 22,
+            "accuracy": 0.5,
+            "macro_f1": 0.5261904761904762,
+            "normal_precision": 0.5,
+            "normal_recall": 0.3333333333333333,
+            "class_counts": {
+              "Normal": 9,
+              "Malicious_POST": 6,
+              "SYN_Flood": 4,
+              "Port_Scan": 3
+            }
+          },
+          {
+            "attacker_host": "h6",
+            "runs": 18,
+            "accuracy": 0.8888888888888888,
+            "macro_f1": 0.8865079365079366,
+            "normal_precision": 0.75,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "Malicious_POST": 5,
+              "Port_Scan": 5,
+              "SYN_Flood": 5,
+              "Normal": 3
+            }
+          },
+          {
+            "attacker_host": "h8",
+            "runs": 15,
+            "accuracy": 0.6666666666666666,
+            "macro_f1": 0.6303571428571428,
+            "normal_precision": 0.5,
+            "normal_recall": 0.6666666666666666,
+            "class_counts": {
+              "Malicious_POST": 5,
+              "Port_Scan": 4,
+              "Normal": 3,
+              "SYN_Flood": 3
+            }
+          },
+          {
+            "attacker_host": "h9",
+            "runs": 29,
+            "accuracy": 0.8620689655172413,
+            "macro_f1": 0.8561274509803922,
+            "normal_precision": 1.0,
+            "normal_recall": 0.6,
+            "class_counts": {
+              "Normal": 10,
+              "Malicious_POST": 8,
+              "Port_Scan": 7,
+              "SYN_Flood": 4
+            }
+          }
+        ],
+        "pooled_eligible_host_oof": {
+          "runs": 216,
+          "accuracy": 0.7777777777777778,
+          "macro_f1": 0.7746856769634985,
+          "normal_precision": 0.8048780487804879,
+          "normal_recall": 0.55,
+          "confusion_matrix": [
+            [
+              46,
+              5,
+              1,
+              1
+            ],
+            [
+              17,
+              33,
+              5,
+              5
+            ],
+            [
+              0,
+              3,
+              40,
+              10
+            ],
+            [
+              0,
+              0,
+              1,
+              49
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 0.7301587301587301,
+              "recall": 0.8679245283018868,
+              "f1-score": 0.7931034482758621,
+              "support": 53.0
+            },
+            "Normal": {
+              "precision": 0.8048780487804879,
+              "recall": 0.55,
+              "f1-score": 0.6534653465346535,
+              "support": 60.0
+            },
+            "Port_Scan": {
+              "precision": 0.851063829787234,
+              "recall": 0.7547169811320755,
+              "f1-score": 0.8,
+              "support": 53.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7538461538461538,
+              "recall": 0.98,
+              "f1-score": 0.8521739130434782,
+              "support": 50.0
+            },
+            "accuracy": 0.7777777777777778,
+            "macro avg": {
+              "precision": 0.7849866906431514,
+              "recall": 0.7881603773584905,
+              "f1-score": 0.7746856769634985,
+              "support": 216.0
+            },
+            "weighted avg": {
+              "precision": 0.7860638254457086,
+              "recall": 0.7777777777777778,
+              "f1-score": 0.7696810148281195,
+              "support": 216.0
+            }
+          },
+          "run_ids_scored": 216
+        },
+        "coverage_warning": "If folds are skipped or class supports are sparse, this is a partial stress test and not a complete four-class generalization estimate."
+      }
+    },
+    "flow": {
+      "feature_count": 20,
+      "features": [
+        "protocol",
+        "src_port",
+        "dst_port",
+        "packet_count",
+        "byte_count",
+        "packet_rate",
+        "byte_rate",
+        "duration_sec",
+        "avg_packet_size",
+        "syn_count",
+        "ack_count",
+        "rst_count",
+        "fin_count",
+        "syn_ack_ratio",
+        "rst_ratio",
+        "unique_dst_ports",
+        "failed_connection_count",
+        "tcp_fraction",
+        "udp_fraction",
+        "icmp_fraction"
+      ],
+      "rows": 11531,
+      "observation_ids_unique": true,
+      "candidates": {
+        "row_xgb_baseline": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8583333333333333,
+            "macro_f1": 0.8570285110192986,
+            "normal_precision": 0.9777777777777777,
+            "normal_recall": 0.7333333333333333,
+            "confusion_matrix": [
+              [
+                55,
+                1,
+                4,
+                0
+              ],
+              [
+                8,
+                44,
+                4,
+                4
+              ],
+              [
+                0,
+                0,
+                49,
+                11
+              ],
+              [
+                0,
+                0,
+                2,
+                58
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.873015873015873,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8943089430894309,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.9777777777777777,
+                "recall": 0.7333333333333333,
+                "f1-score": 0.8380952380952381,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8305084745762712,
+                "recall": 0.8166666666666667,
+                "f1-score": 0.8235294117647058,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7945205479452054,
+                "recall": 0.9666666666666667,
+                "f1-score": 0.8721804511278195,
+                "support": 60.0
+              },
+              "accuracy": 0.8583333333333333,
+              "macro avg": {
+                "precision": 0.8689556683287819,
+                "recall": 0.8583333333333334,
+                "f1-score": 0.8570285110192986,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8689556683287819,
+                "recall": 0.8583333333333333,
+                "f1-score": 0.8570285110192984,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.875,
+              "macro_f1": 0.876439393939394,
+              "normal_precision": 1.0,
+              "normal_recall": 0.8333333333333334
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.7916666666666666,
+              "macro_f1": 0.7887437618974122,
+              "normal_precision": 1.0,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8125,
+              "macro_f1": 0.8038054907383401,
+              "normal_precision": 1.0,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.9166666666666666,
+              "macro_f1": 0.9156383712905451,
+              "normal_precision": 1.0,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.8958333333333334,
+              "macro_f1": 0.896868530020704,
+              "normal_precision": 0.9166666666666666,
+              "normal_recall": 0.9166666666666666
+            }
+          ],
+          "mean_fold_accuracy": 0.8583333333333332,
+          "sd_fold_accuracy": 0.05392574627310328,
+          "mean_fold_macro_f1": 0.8562991095772791,
+          "mean_fold_normal_recall": 0.7333333333333333,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_count",
+            "byte_count",
+            "packet_rate",
+            "byte_rate",
+            "duration_sec",
+            "avg_packet_size",
+            "syn_count",
+            "ack_count",
+            "rst_count",
+            "fin_count",
+            "syn_ack_ratio",
+            "rst_ratio",
+            "unique_dst_ports",
+            "failed_connection_count",
+            "tcp_fraction",
+            "udp_fraction",
+            "icmp_fraction"
+          ]
+        },
+        "row_xgb_normal_1p25": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8708333333333333,
+            "macro_f1": 0.8707028769997286,
+            "normal_precision": 0.8928571428571429,
+            "normal_recall": 0.8333333333333334,
+            "confusion_matrix": [
+              [
+                52,
+                5,
+                3,
+                0
+              ],
+              [
+                3,
+                50,
+                3,
+                4
+              ],
+              [
+                0,
+                1,
+                49,
+                10
+              ],
+              [
+                0,
+                0,
+                2,
+                58
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9454545454545454,
+                "recall": 0.8666666666666667,
+                "f1-score": 0.9043478260869565,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.8928571428571429,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8620689655172413,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8596491228070176,
+                "recall": 0.8166666666666667,
+                "f1-score": 0.8376068376068376,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8055555555555556,
+                "recall": 0.9666666666666667,
+                "f1-score": 0.8787878787878788,
+                "support": 60.0
+              },
+              "accuracy": 0.8708333333333333,
+              "macro avg": {
+                "precision": 0.8758790916685653,
+                "recall": 0.8708333333333333,
+                "f1-score": 0.8707028769997286,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8758790916685654,
+                "recall": 0.8708333333333333,
+                "f1-score": 0.8707028769997286,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.853583916083916,
+              "normal_precision": 0.7857142857142857,
+              "normal_recall": 0.9166666666666666
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.7708333333333334,
+              "macro_f1": 0.7677578732627821,
+              "normal_precision": 0.875,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8516584564860427,
+              "normal_precision": 1.0,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.9791666666666666,
+              "macro_f1": 0.9791304347826086,
+              "normal_precision": 1.0,
+              "normal_recall": 1.0
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.8958333333333334,
+              "macro_f1": 0.8956383712905451,
+              "normal_precision": 0.8461538461538461,
+              "normal_recall": 0.9166666666666666
+            }
+          ],
+          "mean_fold_accuracy": 0.8708333333333332,
+          "sd_fold_accuracy": 0.07569125885243727,
+          "mean_fold_macro_f1": 0.8695538103811788,
+          "mean_fold_normal_recall": 0.8333333333333334,
+          "normal_weight": 1.25,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_count",
+            "byte_count",
+            "packet_rate",
+            "byte_rate",
+            "duration_sec",
+            "avg_packet_size",
+            "syn_count",
+            "ack_count",
+            "rst_count",
+            "fin_count",
+            "syn_ack_ratio",
+            "rst_ratio",
+            "unique_dst_ports",
+            "failed_connection_count",
+            "tcp_fraction",
+            "udp_fraction",
+            "icmp_fraction"
+          ]
+        },
+        "row_xgb_normal_1p5": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8416666666666667,
+            "macro_f1": 0.8419635560159356,
+            "normal_precision": 0.7432432432432432,
+            "normal_recall": 0.9166666666666666,
+            "confusion_matrix": [
+              [
+                45,
+                13,
+                2,
+                0
+              ],
+              [
+                1,
+                55,
+                0,
+                4
+              ],
+              [
+                0,
+                4,
+                46,
+                10
+              ],
+              [
+                0,
+                2,
+                2,
+                56
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.9782608695652174,
+                "recall": 0.75,
+                "f1-score": 0.8490566037735849,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.7432432432432432,
+                "recall": 0.9166666666666666,
+                "f1-score": 0.8208955223880597,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.92,
+                "recall": 0.7666666666666667,
+                "f1-score": 0.8363636363636363,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8,
+                "recall": 0.9333333333333333,
+                "f1-score": 0.8615384615384616,
+                "support": 60.0
+              },
+              "accuracy": 0.8416666666666667,
+              "macro avg": {
+                "precision": 0.8603760282021151,
+                "recall": 0.8416666666666666,
+                "f1-score": 0.8419635560159356,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8603760282021151,
+                "recall": 0.8416666666666667,
+                "f1-score": 0.8419635560159356,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.853583916083916,
+              "normal_precision": 0.7857142857142857,
+              "normal_recall": 0.9166666666666666
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.75,
+              "macro_f1": 0.7457288382245937,
+              "normal_precision": 0.6923076923076923,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.8299182668511161,
+              "normal_precision": 0.7857142857142857,
+              "normal_recall": 0.9166666666666666
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.9166666666666666,
+              "macro_f1": 0.9156383712905451,
+              "normal_precision": 0.8,
+              "normal_recall": 1.0
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8542857142857143,
+              "normal_precision": 0.6666666666666666,
+              "normal_recall": 1.0
+            }
+          ],
+          "mean_fold_accuracy": 0.8416666666666666,
+          "sd_fold_accuracy": 0.06002025121203304,
+          "mean_fold_macro_f1": 0.839831021347177,
+          "mean_fold_normal_recall": 0.9166666666666666,
+          "normal_weight": 1.5,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_count",
+            "byte_count",
+            "packet_rate",
+            "byte_rate",
+            "duration_sec",
+            "avg_packet_size",
+            "syn_count",
+            "ack_count",
+            "rst_count",
+            "fin_count",
+            "syn_ack_ratio",
+            "rst_ratio",
+            "unique_dst_ports",
+            "failed_connection_count",
+            "tcp_fraction",
+            "udp_fraction",
+            "icmp_fraction"
+          ]
+        },
+        "row_regularized_rf": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8666666666666667,
+            "macro_f1": 0.8645552366373263,
+            "normal_precision": 0.9772727272727273,
+            "normal_recall": 0.7166666666666667,
+            "confusion_matrix": [
+              [
+                56,
+                1,
+                3,
+                0
+              ],
+              [
+                9,
+                43,
+                3,
+                5
+              ],
+              [
+                0,
+                0,
+                50,
+                10
+              ],
+              [
+                0,
+                0,
+                1,
+                59
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.8615384615384616,
+                "recall": 0.9333333333333333,
+                "f1-score": 0.896,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.9772727272727273,
+                "recall": 0.7166666666666667,
+                "f1-score": 0.8269230769230769,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.8771929824561403,
+                "recall": 0.8333333333333334,
+                "f1-score": 0.8547008547008547,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.7972972972972973,
+                "recall": 0.9833333333333333,
+                "f1-score": 0.8805970149253731,
+                "support": 60.0
+              },
+              "accuracy": 0.8666666666666667,
+              "macro avg": {
+                "precision": 0.8783253671411566,
+                "recall": 0.8666666666666667,
+                "f1-score": 0.8645552366373263,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8783253671411566,
+                "recall": 0.8666666666666667,
+                "f1-score": 0.8645552366373261,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.832037037037037,
+              "normal_precision": 1.0,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.8287559808612441,
+              "normal_precision": 1.0,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8125,
+              "macro_f1": 0.8054559475612106,
+              "normal_precision": 1.0,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.9375,
+              "macro_f1": 0.9371723928245668,
+              "normal_precision": 1.0,
+              "normal_recall": 0.8333333333333334
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.9166666666666666,
+              "macro_f1": 0.9156746031746031,
+              "normal_precision": 0.9166666666666666,
+              "normal_recall": 0.9166666666666666
+            }
+          ],
+          "mean_fold_accuracy": 0.8666666666666668,
+          "sd_fold_accuracy": 0.056288567025442875,
+          "mean_fold_macro_f1": 0.8638191922917322,
+          "mean_fold_normal_recall": 0.7166666666666667,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol",
+            "src_port",
+            "dst_port",
+            "packet_count",
+            "byte_count",
+            "packet_rate",
+            "byte_rate",
+            "duration_sec",
+            "avg_packet_size",
+            "syn_count",
+            "ack_count",
+            "rst_count",
+            "fin_count",
+            "syn_ack_ratio",
+            "rst_ratio",
+            "unique_dst_ports",
+            "failed_connection_count",
+            "tcp_fraction",
+            "udp_fraction",
+            "icmp_fraction"
+          ]
+        },
+        "run_mean_xgb": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.8291666666666667,
+            "macro_f1": 0.8259798445282316,
+            "normal_precision": 0.78,
+            "normal_recall": 0.65,
+            "confusion_matrix": [
+              [
+                48,
+                11,
+                1,
+                0
+              ],
+              [
+                16,
+                39,
+                3,
+                2
+              ],
+              [
+                0,
+                0,
+                54,
+                6
+              ],
+              [
+                0,
+                0,
+                2,
+                58
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.75,
+                "recall": 0.8,
+                "f1-score": 0.7741935483870968,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.78,
+                "recall": 0.65,
+                "f1-score": 0.7090909090909091,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.9,
+                "recall": 0.9,
+                "f1-score": 0.9,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8787878787878788,
+                "recall": 0.9666666666666667,
+                "f1-score": 0.9206349206349206,
+                "support": 60.0
+              },
+              "accuracy": 0.8291666666666667,
+              "macro avg": {
+                "precision": 0.8271969696969698,
+                "recall": 0.8291666666666667,
+                "f1-score": 0.8259798445282316,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8271969696969698,
+                "recall": 0.8291666666666667,
+                "f1-score": 0.8259798445282317,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.7708333333333334,
+              "macro_f1": 0.7678571428571428,
+              "normal_precision": 0.6666666666666666,
+              "normal_recall": 0.5
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.8125,
+              "macro_f1": 0.809014053579271,
+              "normal_precision": 0.7272727272727273,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.875,
+              "macro_f1": 0.8727059896625113,
+              "normal_precision": 0.9,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.8125,
+              "macro_f1": 0.8105797101449275,
+              "normal_precision": 0.7272727272727273,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.875,
+              "macro_f1": 0.8727838827838827,
+              "normal_precision": 0.8888888888888888,
+              "normal_recall": 0.6666666666666666
+            }
+          ],
+          "mean_fold_accuracy": 0.8291666666666668,
+          "sd_fold_accuracy": 0.045165590393080816,
+          "mean_fold_macro_f1": 0.826588155805547,
+          "mean_fold_normal_recall": 0.6499999999999999,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol__mean",
+            "src_port__mean",
+            "dst_port__mean",
+            "packet_count__mean",
+            "byte_count__mean",
+            "packet_rate__mean",
+            "byte_rate__mean",
+            "duration_sec__mean",
+            "avg_packet_size__mean",
+            "syn_count__mean",
+            "ack_count__mean",
+            "rst_count__mean",
+            "fin_count__mean",
+            "syn_ack_ratio__mean",
+            "rst_ratio__mean",
+            "unique_dst_ports__mean",
+            "failed_connection_count__mean",
+            "tcp_fraction__mean",
+            "udp_fraction__mean",
+            "icmp_fraction__mean"
+          ]
+        },
+        "run_mean_std_xgb": {
+          "pooled_oof": {
+            "runs": 240,
+            "accuracy": 0.85,
+            "macro_f1": 0.847232124654143,
+            "normal_precision": 0.8367346938775511,
+            "normal_recall": 0.6833333333333333,
+            "confusion_matrix": [
+              [
+                51,
+                8,
+                1,
+                0
+              ],
+              [
+                14,
+                41,
+                3,
+                2
+              ],
+              [
+                0,
+                0,
+                54,
+                6
+              ],
+              [
+                0,
+                0,
+                2,
+                58
+              ]
+            ],
+            "classification_report": {
+              "Malicious_POST": {
+                "precision": 0.7846153846153846,
+                "recall": 0.85,
+                "f1-score": 0.816,
+                "support": 60.0
+              },
+              "Normal": {
+                "precision": 0.8367346938775511,
+                "recall": 0.6833333333333333,
+                "f1-score": 0.7522935779816514,
+                "support": 60.0
+              },
+              "Port_Scan": {
+                "precision": 0.9,
+                "recall": 0.9,
+                "f1-score": 0.9,
+                "support": 60.0
+              },
+              "SYN_Flood": {
+                "precision": 0.8787878787878788,
+                "recall": 0.9666666666666667,
+                "f1-score": 0.9206349206349206,
+                "support": 60.0
+              },
+              "accuracy": 0.85,
+              "macro avg": {
+                "precision": 0.8500344893202036,
+                "recall": 0.85,
+                "f1-score": 0.847232124654143,
+                "support": 240.0
+              },
+              "weighted avg": {
+                "precision": 0.8500344893202035,
+                "recall": 0.85,
+                "f1-score": 0.847232124654143,
+                "support": 240.0
+              }
+            },
+            "run_ids_scored": 240
+          },
+          "folds": [
+            {
+              "fold": 1,
+              "runs": 48,
+              "accuracy": 0.7708333333333334,
+              "macro_f1": 0.7678571428571428,
+              "normal_precision": 0.6666666666666666,
+              "normal_recall": 0.5
+            },
+            {
+              "fold": 2,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8501984126984127,
+              "normal_precision": 0.8888888888888888,
+              "normal_recall": 0.6666666666666666
+            },
+            {
+              "fold": 3,
+              "runs": 48,
+              "accuracy": 0.8541666666666666,
+              "macro_f1": 0.8521460423634337,
+              "normal_precision": 0.8181818181818182,
+              "normal_recall": 0.75
+            },
+            {
+              "fold": 4,
+              "runs": 48,
+              "accuracy": 0.8333333333333334,
+              "macro_f1": 0.8278703703703703,
+              "normal_precision": 0.875,
+              "normal_recall": 0.5833333333333334
+            },
+            {
+              "fold": 5,
+              "runs": 48,
+              "accuracy": 0.9375,
+              "macro_f1": 0.9365579710144927,
+              "normal_precision": 0.9166666666666666,
+              "normal_recall": 0.9166666666666666
+            }
+          ],
+          "mean_fold_accuracy": 0.85,
+          "sd_fold_accuracy": 0.05965758776365146,
+          "mean_fold_macro_f1": 0.8469259878607704,
+          "mean_fold_normal_recall": 0.6833333333333333,
+          "normal_weight": 1.0,
+          "feature_columns": [
+            "protocol__mean",
+            "src_port__mean",
+            "dst_port__mean",
+            "packet_count__mean",
+            "byte_count__mean",
+            "packet_rate__mean",
+            "byte_rate__mean",
+            "duration_sec__mean",
+            "avg_packet_size__mean",
+            "syn_count__mean",
+            "ack_count__mean",
+            "rst_count__mean",
+            "fin_count__mean",
+            "syn_ack_ratio__mean",
+            "rst_ratio__mean",
+            "unique_dst_ports__mean",
+            "failed_connection_count__mean",
+            "tcp_fraction__mean",
+            "udp_fraction__mean",
+            "icmp_fraction__mean",
+            "protocol__std",
+            "src_port__std",
+            "dst_port__std",
+            "packet_count__std",
+            "byte_count__std",
+            "packet_rate__std",
+            "byte_rate__std",
+            "duration_sec__std",
+            "avg_packet_size__std",
+            "syn_count__std",
+            "ack_count__std",
+            "rst_count__std",
+            "fin_count__std",
+            "syn_ack_ratio__std",
+            "rst_ratio__std",
+            "unique_dst_ports__std",
+            "failed_connection_count__std",
+            "tcp_fraction__std",
+            "udp_fraction__std",
+            "icmp_fraction__std"
+          ]
+        }
+      },
+      "attacker_host_holdout_stress": {
+        "design": "Leave-one-attacker-host-out stress test; report only folds with all four classes in both train and test. Not used for model selection.",
+        "eligible_host_folds": 11,
+        "skipped_host_folds": [
+          {
+            "attacker_host": "h18",
+            "reason": "held-out or training partition lacks one or more classes",
+            "test_class_counts": {
+              "Malicious_POST": 1
+            },
+            "train_classes": [
+              "Malicious_POST",
+              "Normal",
+              "Port_Scan",
+              "SYN_Flood"
+            ]
+          },
+          {
+            "attacker_host": "h7",
+            "reason": "held-out or training partition lacks one or more classes",
+            "test_class_counts": {
+              "SYN_Flood": 10,
+              "Port_Scan": 7,
+              "Malicious_POST": 6
+            },
+            "train_classes": [
+              "Malicious_POST",
+              "Normal",
+              "Port_Scan",
+              "SYN_Flood"
+            ]
+          }
+        ],
+        "folds": [
+          {
+            "attacker_host": "h10",
+            "runs": 18,
+            "accuracy": 0.8333333333333334,
+            "macro_f1": 0.8231060606060606,
+            "normal_precision": 1.0,
+            "normal_recall": 0.6666666666666666,
+            "class_counts": {
+              "SYN_Flood": 6,
+              "Malicious_POST": 5,
+              "Port_Scan": 4,
+              "Normal": 3
+            }
+          },
+          {
+            "attacker_host": "h11",
+            "runs": 19,
+            "accuracy": 0.8947368421052632,
+            "macro_f1": 0.8758241758241758,
+            "normal_precision": 0.6666666666666666,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "Port_Scan": 7,
+              "SYN_Flood": 6,
+              "Malicious_POST": 4,
+              "Normal": 2
+            }
+          },
+          {
+            "attacker_host": "h12",
+            "runs": 15,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "Malicious_POST": 6,
+              "Port_Scan": 5,
+              "SYN_Flood": 3,
+              "Normal": 1
+            }
+          },
+          {
+            "attacker_host": "h13",
+            "runs": 35,
+            "accuracy": 0.6,
+            "macro_f1": 0.6268207282913165,
+            "normal_precision": 1.0,
+            "normal_recall": 0.4166666666666667,
+            "class_counts": {
+              "Normal": 24,
+              "Port_Scan": 5,
+              "SYN_Flood": 4,
+              "Malicious_POST": 2
+            }
+          },
+          {
+            "attacker_host": "h14",
+            "runs": 15,
+            "accuracy": 0.8,
+            "macro_f1": 0.8246753246753247,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "SYN_Flood": 5,
+              "Port_Scan": 4,
+              "Normal": 3,
+              "Malicious_POST": 3
+            }
+          },
+          {
+            "attacker_host": "h15",
+            "runs": 17,
+            "accuracy": 0.8823529411764706,
+            "macro_f1": 0.9083333333333333,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "Port_Scan": 6,
+              "Malicious_POST": 5,
+              "SYN_Flood": 5,
+              "Normal": 1
+            }
+          },
+          {
+            "attacker_host": "h16",
+            "runs": 13,
+            "accuracy": 1.0,
+            "macro_f1": 1.0,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "SYN_Flood": 5,
+              "Malicious_POST": 4,
+              "Port_Scan": 3,
+              "Normal": 1
+            }
+          },
+          {
+            "attacker_host": "h5",
+            "runs": 22,
+            "accuracy": 0.6818181818181818,
+            "macro_f1": 0.7068764568764568,
+            "normal_precision": 1.0,
+            "normal_recall": 0.4444444444444444,
+            "class_counts": {
+              "Normal": 9,
+              "Malicious_POST": 6,
+              "SYN_Flood": 4,
+              "Port_Scan": 3
+            }
+          },
+          {
+            "attacker_host": "h6",
+            "runs": 18,
+            "accuracy": 0.9444444444444444,
+            "macro_f1": 0.9494949494949495,
+            "normal_precision": 1.0,
+            "normal_recall": 1.0,
+            "class_counts": {
+              "Malicious_POST": 5,
+              "Port_Scan": 5,
+              "SYN_Flood": 5,
+              "Normal": 3
+            }
+          },
+          {
+            "attacker_host": "h8",
+            "runs": 15,
+            "accuracy": 0.6666666666666666,
+            "macro_f1": 0.6603174603174603,
+            "normal_precision": 1.0,
+            "normal_recall": 0.6666666666666666,
+            "class_counts": {
+              "Malicious_POST": 5,
+              "Port_Scan": 4,
+              "Normal": 3,
+              "SYN_Flood": 3
+            }
+          },
+          {
+            "attacker_host": "h9",
+            "runs": 29,
+            "accuracy": 0.7586206896551724,
+            "macro_f1": 0.7472027972027973,
+            "normal_precision": 1.0,
+            "normal_recall": 0.3,
+            "class_counts": {
+              "Normal": 10,
+              "Malicious_POST": 8,
+              "Port_Scan": 7,
+              "SYN_Flood": 4
+            }
+          }
+        ],
+        "pooled_eligible_host_oof": {
+          "runs": 216,
+          "accuracy": 0.7962962962962963,
+          "macro_f1": 0.7912493236640904,
+          "normal_precision": 0.9696969696969697,
+          "normal_recall": 0.5333333333333333,
+          "confusion_matrix": [
+            [
+              49,
+              1,
+              3,
+              0
+            ],
+            [
+              17,
+              32,
+              6,
+              5
+            ],
+            [
+              0,
+              0,
+              43,
+              10
+            ],
+            [
+              0,
+              0,
+              2,
+              48
+            ]
+          ],
+          "classification_report": {
+            "Malicious_POST": {
+              "precision": 0.7424242424242424,
+              "recall": 0.9245283018867925,
+              "f1-score": 0.8235294117647058,
+              "support": 53.0
+            },
+            "Normal": {
+              "precision": 0.9696969696969697,
+              "recall": 0.5333333333333333,
+              "f1-score": 0.6881720430107527,
+              "support": 60.0
+            },
+            "Port_Scan": {
+              "precision": 0.7962962962962963,
+              "recall": 0.8113207547169812,
+              "f1-score": 0.8037383177570093,
+              "support": 53.0
+            },
+            "SYN_Flood": {
+              "precision": 0.7619047619047619,
+              "recall": 0.96,
+              "f1-score": 0.8495575221238938,
+              "support": 50.0
+            },
+            "accuracy": 0.7962962962962963,
+            "macro avg": {
+              "precision": 0.8175805675805676,
+              "recall": 0.8072955974842767,
+              "f1-score": 0.7912493236640904,
+              "support": 216.0
+            },
+            "weighted avg": {
+              "precision": 0.8232835408761334,
+              "recall": 0.7962962962962963,
+              "f1-score": 0.7870990201457906,
+              "support": 216.0
+            }
+          },
+          "run_ids_scored": 216
+        },
+        "coverage_warning": "If folds are skipped or class supports are sparse, this is a partial stress test and not a complete four-class generalization estimate."
+      }
+    }
+  },
+  "metadata_only_diagnostic": {
+    "scope": "Metadata-only diagnostic. These context fields are not classifier inputs; predictability is not proof of model bias.",
+    "metadata_columns": [
+      "attacker_host",
+      "target_host",
+      "service_name",
+      "dst_port",
+      "rate_value",
+      "duration_sec"
+    ],
+    "pooled_oof": {
+      "runs": 240,
+      "accuracy": 0.9333333333333333,
+      "macro_f1": 0.9343031075864238,
+      "normal_precision": 0.9454545454545454,
+      "normal_recall": 0.8666666666666667,
+      "confusion_matrix": [
+        [
+          58,
+          2,
+          0,
+          0
+        ],
+        [
+          8,
+          52,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          60,
+          0
+        ],
+        [
+          5,
+          1,
+          0,
+          54
+        ]
+      ],
+      "classification_report": {
+        "Malicious_POST": {
+          "precision": 0.8169014084507042,
+          "recall": 0.9666666666666667,
+          "f1-score": 0.8854961832061069,
+          "support": 60.0
+        },
+        "Normal": {
+          "precision": 0.9454545454545454,
+          "recall": 0.8666666666666667,
+          "f1-score": 0.9043478260869565,
+          "support": 60.0
+        },
+        "Port_Scan": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 60.0
+        },
+        "SYN_Flood": {
+          "precision": 1.0,
+          "recall": 0.9,
+          "f1-score": 0.9473684210526315,
+          "support": 60.0
+        },
+        "accuracy": 0.9333333333333333,
+        "macro avg": {
+          "precision": 0.9405889884763124,
+          "recall": 0.9333333333333333,
+          "f1-score": 0.9343031075864238,
+          "support": 240.0
+        },
+        "weighted avg": {
+          "precision": 0.9405889884763124,
+          "recall": 0.9333333333333333,
+          "f1-score": 0.9343031075864238,
+          "support": 240.0
+        }
+      }
+    },
+    "folds": [
+      {
+        "fold": 1,
+        "runs": 48,
+        "accuracy": 1.0,
+        "macro_f1": 1.0
+      },
+      {
+        "fold": 2,
+        "runs": 48,
+        "accuracy": 0.875,
+        "macro_f1": 0.8772727272727272
+      },
+      {
+        "fold": 3,
+        "runs": 48,
+        "accuracy": 0.8958333333333334,
+        "macro_f1": 0.8956521739130435
+      },
+      {
+        "fold": 4,
+        "runs": 48,
+        "accuracy": 0.9583333333333334,
+        "macro_f1": 0.958041958041958
+      },
+      {
+        "fold": 5,
+        "runs": 48,
+        "accuracy": 0.9375,
+        "macro_f1": 0.9372086247086248
+      }
+    ]
+  },
+  "decision_note": "Normal class weighting and thresholds did not improve the prior nested outer-fold argmax baseline. This pipeline adds run-summary candidates and condition-aware stress tests for both Packet and Flow; results are development diagnostics, not evidence of a final-test accuracy increase."
+}
