@@ -448,7 +448,21 @@ class NetworkActionController(ControllerBase):
                                 "success": False, "status": "error",
                                 "message": "Invalid JSON", "error": str(exc)
                             }).encode("utf-8"))
-        result = self.monitor.execute_shadow_api_verdict(payload)
+        if not isinstance(payload, dict):
+            return Response(status=400, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "error",
+                                "message": "JSON object required"
+                            }).encode("utf-8"))
+        try:
+            result = self.monitor.execute_shadow_api_verdict(payload)
+        except Exception as exc:
+            self.monitor.logger.exception("Shadow verdict enforcement failed")
+            return Response(status=500, content_type="application/json",
+                            charset="utf-8", body=json.dumps({
+                                "success": False, "status": "error",
+                                "message": str(exc)
+                            }).encode("utf-8"))
         return Response(status=200 if result.get("success") else 400,
                         content_type="application/json", charset="utf-8",
                         body=json.dumps(result).encode("utf-8"))

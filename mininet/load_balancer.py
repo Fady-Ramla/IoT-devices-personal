@@ -24,6 +24,7 @@ class TcpLoadBalancer:
         self.idle_timeout = float(idle_timeout)
         self.stats_file = os.environ.get("SECUREIOT_LB_STATS_FILE", DEFAULT_STATS)
         self.lock = threading.Lock()
+        self._heartbeat_stop = threading.Event()
         self.next_backend = 0
         self.stats = {
             "requests_total": 0, "requests_active": 0,
@@ -55,9 +56,11 @@ class TcpLoadBalancer:
         directory = os.path.dirname(self.stats_file) or "."
         os.makedirs(directory, exist_ok=True)
         with self.lock:
+            now = time.time()
+            self.stats["heartbeat_at"] = now
             data = dict(self.stats)
             data["backends"] = list(self.stats["backends"])
-            data["updated_at"] = time.time()
+            data["updated_at"] = now
         fd, tmp = tempfile.mkstemp(prefix=".lb-stats.", suffix=".tmp", dir=directory)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -217,13 +220,22 @@ class TcpLoadBalancer:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((self.listen_host, self.listen_port))
         server.listen(128)
+        threading.Thread(target=self._heartbeat_loop, daemon=True).start()
         print(f"LOAD_BALANCER_READY listen={self.listen_host}:{self.listen_port} stats_file={self.stats_file}", flush=True)
         try:
             while True:
                 client, address = server.accept()
                 threading.Thread(target=self.handle, args=(client, address), daemon=True).start()
         finally:
+            self._heartbeat_stop.set()
             server.close()
+
+    def _heartbeat_loop(self):
+        while not self._heartbeat_stop.wait(1.0):
+            try:
+                self.write_stats()
+            except OSError:
+                pass
 
 def parse_backends(value):
     return [(host, int(port)) for host, port in (item.rsplit(":", 1) for item in value.split(","))]

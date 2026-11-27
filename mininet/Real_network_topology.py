@@ -335,7 +335,7 @@ def start_live_iot_web_api(net, ingest_token):
 
 
 def start_ssh_backends(net):
-    """Ensure h4/h20 accept TCP/22 with the configurable demo account."""
+    """Ensure h4/h20 accept TCP/2222 with the configurable demo account."""
     if (not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", SSH_DEMO_USERNAME)
             or not SSH_DEMO_PASSWORD
             or "\n" in SSH_DEMO_PASSWORD
@@ -348,8 +348,8 @@ def start_ssh_backends(net):
         host = net.get(host_id)
         address = HOSTS[host_id]["ip"].split("/", 1)[0]
         listening = host.cmd(
-            "ss -lntH '( sport = :22 )' 2>/dev/null | grep -F "
-            + shlex.quote(address + ":22") + " || true"
+            "ss -lntH '( sport = :2222 )' 2>/dev/null | grep -F "
+            + shlex.quote(address + ":2222") + " || true"
         )
         if not listening.strip():
             binaries = host.cmd(
@@ -369,7 +369,7 @@ def start_ssh_backends(net):
                 "printf '%%s\\n' %s | chpasswd && "
                 "install -d -m 700 /run/secureiot/ssh && "
                 "touch %s && chmod 600 %s && umask 077; "
-                "( /usr/sbin/sshd -D -e -o ListenAddress=%s "
+                "( /usr/sbin/sshd -D -e -o ListenAddress=%s -o Port=2222 "
                 "-o PasswordAuthentication=yes -o KbdInteractiveAuthentication=no "
                 "-o PermitRootLogin=no -o UsePAM=no "
                 "-o PidFile=/tmp/sshd-%s.pid 2>&1 | "
@@ -384,8 +384,8 @@ def start_ssh_backends(net):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             listening = host.cmd(
-                "ss -lntH '( sport = :22 )' 2>/dev/null | grep -F "
-                + shlex.quote(address + ":22") + " || true"
+                "ss -lntH '( sport = :2222 )' 2>/dev/null | grep -F "
+                + shlex.quote(address + ":2222") + " || true"
             )
             if listening.strip():
                 break
@@ -394,9 +394,9 @@ def start_ssh_backends(net):
             tail = host.cmd(
                 "tail -n 20 /run/secureiot/ssh/secureiot-sshd-%s.log 2>/dev/null" % host_id
             )
-            raise RuntimeError("%s sshd did not listen on %s:22; %s" %
+            raise RuntimeError("%s sshd did not listen on %s:2222; %s" %
                                (host_id, address, tail.strip()))
-    info("*** SSH backends ready: h4:22 primary, h20:22 standby; demo user=%s.\n"
+    info("*** SSH backends ready: h4:2222 primary, h20:2222 standby; demo user=%s.\n"
          % SSH_DEMO_USERNAME)
 
 
@@ -430,14 +430,15 @@ def start_demo_services(net, live_iot_api=False):
     if listening.strip():
         raise RuntimeError("Could not stop existing SSH load balancer on h38:2222")
     lb.cmd(
-        f"python3 {load_balancer} --listen-port 5000 "
+        f"SECUREIOT_LB_STATS_FILE=/tmp/secureiot-lb-http-stats.json "
+        f"python3 {load_balancer} --listen-host 10.10.20.100 --listen-port 5000 "
         "--backends 10.10.20.2:5000,10.10.20.8:5000 "
         "> /tmp/lb-5000.log 2>&1 &"
     )
     lb.cmd(
         f"SECUREIOT_LB_STATS_FILE=/tmp/secureiot-lb-ssh-stats.json "
         f"python3 {load_balancer} --listen-host 10.10.20.100 --listen-port 2222 "
-        "--backends 10.10.20.4:22,10.10.20.20:22 "
+        "--backends 10.10.20.4:2222,10.10.20.20:2222 "
         "--strategy primary-backup --idle-timeout 0 "
         "> /tmp/lb-2222.log 2>&1 &"
     )

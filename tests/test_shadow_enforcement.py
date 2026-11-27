@@ -1,5 +1,7 @@
 import ast
+import hmac
 import ipaddress
+import json
 import logging
 import os
 from pathlib import Path
@@ -24,6 +26,25 @@ namespace = {
 exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])),
              str(ROOT / "traffic_monitor_merged.py"), "exec"), namespace)
 
+route_class = next(node for node in TREE.body
+                   if isinstance(node, ast.ClassDef)
+                   and node.name == "NetworkActionController")
+route_method = next(node for node in route_class.body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "shadow_verdict")
+route_method.decorator_list = []
+
+
+class FakeResponse:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+route_namespace = {"json": json, "hmac": hmac, "Response": FakeResponse}
+exec(compile(ast.fix_missing_locations(ast.Module(
+    body=[route_method], type_ignores=[])),
+    str(ROOT / "traffic_monitor_merged.py"), "exec"), route_namespace)
+
 
 class ShadowMonitorHarness:
     execute_shadow_api_verdict = namespace["execute_shadow_api_verdict"]
@@ -33,6 +54,7 @@ class ShadowEnforcementTests(unittest.TestCase):
     def setUp(self):
         self.monitor = ShadowMonitorHarness()
         self.monitor.logger = logging.getLogger("test.shadow.enforcement")
+        self.monitor.control_token = "test-control-token"
         self.monitor.shadow_seen_request_ids = set()
 
         self.mac = "00:00:00:00:00:05"
@@ -85,6 +107,51 @@ class ShadowEnforcementTests(unittest.TestCase):
         result = self.monitor.execute_shadow_api_verdict(self.payload)
         self.assertTrue(result["success"])
         self.monitor.execute_security_action.assert_called_once()
+
+    def test_shadow_http_route_returns_success_json_for_valid_verdict(self):
+        result = {"success": True, "status": "executed", "action": "BLOCK_DEVICE"}
+        self.monitor.execute_shadow_api_verdict = Mock(return_value=result)
+        req = SimpleNamespace(
+            headers={"X-SecureIoT-Token": self.monitor.control_token},
+            body=json.dumps(self.payload).encode("utf-8"),
+        )
+        response = route_namespace["shadow_verdict"](
+            SimpleNamespace(monitor=self.monitor), req
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertEqual(json.loads(response.body), result)
+        self.monitor.execute_shadow_api_verdict.assert_called_once_with(self.payload)
+
+    def test_shadow_http_route_returns_rejection_reason_as_json(self):
+        rejection = {
+            "success": False, "status": "rejected",
+            "message": "source IP is outside enforcement allowlist",
+        }
+        self.monitor.execute_shadow_api_verdict = Mock(return_value=rejection)
+        req = SimpleNamespace(
+            headers={"X-SecureIoT-Token": self.monitor.control_token},
+            body=json.dumps(self.payload).encode("utf-8"),
+        )
+        response = route_namespace["shadow_verdict"](
+            SimpleNamespace(monitor=self.monitor), req
+        )
+        self.assertEqual(response.status, 400)
+        self.assertEqual(json.loads(response.body), rejection)
+
+    def test_shadow_http_route_rejects_non_object_json_as_json(self):
+        req = SimpleNamespace(
+            headers={"X-SecureIoT-Token": self.monitor.control_token},
+            body=b"[]",
+        )
+        response = route_namespace["shadow_verdict"](
+            SimpleNamespace(monitor=self.monitor), req
+        )
+        self.assertEqual(response.status, 400)
+        self.assertEqual(json.loads(response.body), {
+            "success": False, "status": "error",
+            "message": "JSON object required",
+        })
 
     def test_legacy_allowlist_rejects_unlisted_ip(self):
         os.environ["SHADOW_ENFORCEMENT_IPS"] = "10.10.10.99"

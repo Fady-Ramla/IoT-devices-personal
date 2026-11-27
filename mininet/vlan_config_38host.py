@@ -78,7 +78,7 @@ SERVICE_PAIRS = {
     "dns":      {"primary": "h1", "backup": "h17", "port": 53,   "vlan": VLAN_DNS},
     "http_api": {"primary": "h2", "backup": "h18", "port": 5000, "vlan": VLAN_SERVICES},
     "https":    {"primary": "h3", "backup": "h19", "port": 443,  "vlan": VLAN_SERVICES},
-    "ssh":      {"primary": "h4", "backup": "h20", "port": 22,   "vlan": VLAN_SERVICES},
+    "ssh":      {"primary": "h4", "backup": "h20", "port": 2222, "vlan": VLAN_SERVICES},
 }
 LOAD_BALANCER = {"host": "h38", "frontends": (5000, 443, 2222)}
 

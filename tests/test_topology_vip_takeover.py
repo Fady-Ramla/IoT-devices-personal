@@ -160,7 +160,7 @@ class FlowHarness:
     def _shortest_path(self, src, dst):
         return [src] if src == dst else [src, dst]
 
-    def _vip_backend(self, service):
+    def _vip_backend(self, service, backup_first=False):
         if int(service[3]) == 53:
             return "10.10.30.2", "dns-backend-mac", 53
         return "10.10.20.2", "backend-mac", 5000
@@ -241,6 +241,7 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         self.assertEqual(config.LOAD_BALANCER["frontends"], (5000, 443, 2222))
         self.assertEqual(config.SERVICE_PAIRS["dns"]["port"], 53)
         self.assertEqual(config.SERVICE_PAIRS["dns"]["vlan"], 30)
+        self.assertEqual(config.SERVICE_PAIRS["ssh"]["port"], 2222)
 
     def test_dispatch_match_covers_tcp_and_both_dns_transports(self):
         services = class_value("VIP_SERVICES")
@@ -302,10 +303,15 @@ class TopologyVipTakeoverTests(unittest.TestCase):
         backend = BackendHarness()._vip_backend(service)
         self.assertEqual(backend, ("10.10.20.8", "m8", 5000))
 
-    def test_ssh_frontend_maps_to_backend_port_22(self):
+    def test_ssh_frontend_maps_to_backend_port_2222(self):
         service = ("10.10.20.100", 20, 6, 2222)
         backend = BackendHarness()._vip_backend(service)
-        self.assertEqual(backend, ("10.10.20.4", "m4", 22))
+        self.assertEqual(backend, ("10.10.20.4", "m4", 2222))
+
+    def test_ssh_lb_failure_prefers_configured_backup_backend(self):
+        service = ("10.10.20.100", 20, 6, 2222)
+        backend = BackendHarness()._vip_backend(service, backup_first=True)
+        self.assertEqual(backend, ("10.10.20.20", "m20", 2222))
 
     def test_dns_backend_selection_uses_vlan30_after_gateway_dnat(self):
         harness = BackendHarness()

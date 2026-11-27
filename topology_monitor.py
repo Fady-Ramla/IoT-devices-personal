@@ -75,7 +75,7 @@ except ImportError:
             "dns": {"primary": "h1", "backup": "h17", "port": 53, "vlan": 30},
             "http_api": {"primary": "h2", "backup": "h18", "port": 5000, "vlan": 20},
             "https": {"primary": "h3", "backup": "h19", "port": 443, "vlan": 20},
-            "ssh": {"primary": "h4", "backup": "h20", "port": 22, "vlan": 20},
+            "ssh": {"primary": "h4", "backup": "h20", "port": 2222, "vlan": 20},
         }
         LOAD_BALANCER = {"host": "h38", "frontends": (53, 5000, 443, 2222)}
         def host_ip(host):
@@ -121,6 +121,15 @@ VLAN_PORT_MAP_FILE = Path(os.getenv(
 OFPVID_PRESENT = 0x1000
 OFPVID_NONE = 0x0000
 VLAN_PORT_MAP_POLL_INTERVAL = 1
+LB_HEALTH_POLL_INTERVAL = 2
+LB_HEALTH_TIMEOUT = 5
+LB_HEALTH_STARTUP_GRACE = 20
+LB_HEALTH_STATS_FILES = {
+    5000: "/tmp/secureiot-lb-http-stats.json",
+    443: "/tmp/secureiot-lb-https-stats.json",
+    2222: "/tmp/secureiot-lb-ssh-stats.json",
+    53: "/tmp/secureiot-lb-dns-stats.json",
+}
 
 NORMAL_PRIORITY = 10
 REROUTE_PRIORITY = 100
@@ -132,9 +141,8 @@ HTTP_ACTIVITY_PORTS = frozenset(
     ).split(",") if value.strip()
 )
 DNS_ACTIVITY_PORTS = frozenset({53})
-SSH_ACTIVITY_PORT = 22
-# SSH clients use the dedicated h38 TCP frontend; only that frontend may open
-# TCP/22 connections to the primary/standby SSH servers.
+SSH_ACTIVITY_PORT = 2222
+# SSH clients use the dedicated h38 TCP frontend and backend service port.
 SSH_FRONTEND_HOST_ID = "h38"
 SSH_FRONTEND_IP = "10.10.20.100"
 SSH_FRONTEND_PORT = 2222
@@ -354,6 +362,9 @@ class TopologyMonitor(app_manager.RyuApp):
         self.vip_takeover_dispatch = {}
         self.vip_takeover_flows = {}
         self.lb_health_takeover_active = False
+        self.lb_health_failed_ports = set()
+        self.lb_health_states = {}
+        self.lb_health_started_at = time.monotonic()
         # High-priority OpenFlow guards enforce the SSH frontend/backend path.
         # Keys are (dpid, rule-key); values are the exact matches to delete on
         # VLAN-map refresh. Device-wide blocks retain a higher priority.
@@ -400,11 +411,68 @@ class TopologyMonitor(app_manager.RyuApp):
             self._congestion_reoptimization_loop
         )
         self.vlan_map_thread = hub.spawn(self._vlan_port_map_loop)
+        self.lb_health_thread = hub.spawn(self._lb_health_loop)
 
         self.logger.info("TopologyMonitor initialized")
         self.logger.info("Forwarding owner: TopologyMonitor")
         self.logger.info("CLFF: %s",
                          "available" if self.clff else "NOT available")
+
+    def _lb_health_is_healthy(self, stats_file, now=None):
+        """Return whether an LB heartbeat is recent; missing/bad JSON is down."""
+        try:
+            payload = json.loads(Path(stats_file).read_text(encoding="utf-8"))
+            heartbeat = float(payload.get("heartbeat_at", 0))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return False
+        now = time.time() if now is None else float(now)
+        age = now - heartbeat
+        return 0 <= age <= LB_HEALTH_TIMEOUT
+
+    def _lb_health_loop(self):
+        """Detect stale service LB heartbeats and steer new flows via VIPs."""
+        while True:
+            try:
+                if not self.vlan_map_ready or not self.full_topology_discovered:
+                    hub.sleep(LB_HEALTH_POLL_INTERVAL)
+                    continue
+
+                now = time.time()
+                elapsed = time.monotonic() - self.lb_health_started_at
+                for port, stats_file in LB_HEALTH_STATS_FILES.items():
+                    healthy = self._lb_health_is_healthy(stats_file, now)
+                    if (
+                        port not in self.lb_health_states
+                        and not healthy
+                        and elapsed < LB_HEALTH_STARTUP_GRACE
+                    ):
+                        continue
+                    self.lb_health_states[port] = healthy
+
+                self.lb_health_failed_ports = {
+                    port for port, healthy in self.lb_health_states.items()
+                    if not healthy
+                }
+                if self.lb_health_failed_ports:
+                    result = self.activate_vip_takeover(reason="lb_health")
+                    if result.get("success"):
+                        self.lb_health_takeover_active = True
+                    else:
+                        self.logger.warning(
+                            "LB health VIP takeover pending: ports=%s result=%s",
+                            sorted(self.lb_health_failed_ports), result,
+                        )
+                elif self.lb_health_takeover_active:
+                    result = self.deactivate_vip_takeover(reason="lb_health")
+                    if result.get("success"):
+                        self.lb_health_takeover_active = False
+                    else:
+                        self.logger.warning(
+                            "LB health VIP takeover cleanup pending: %s", result,
+                        )
+            except Exception:
+                self.logger.exception("Load-balancer health monitor failed")
+            hub.sleep(LB_HEALTH_POLL_INTERVAL)
 
     def _vlan_port_map_loop(self):
         last_signature = None
@@ -1654,7 +1722,7 @@ class TopologyMonitor(app_manager.RyuApp):
         return True
 
     def _install_ssh_policy_rules(self, datapath):
-        """Restrict SSH clients to h38:2222 and backend TCP/22 to h38.
+        """Restrict SSH clients to h38:2222 and backend TCP/2222 to h38.
 
         Access rules use the validated host identities. Trunk guards use
         original source IPv4 subnets because the gateway rewrites VLAN tags
@@ -4126,7 +4194,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
         return entries, first_actions
 
-    def _vip_backend(self, service):
+    def _vip_backend(self, service, backup_first=False):
         """Select an eligible backend using its actual backend VLAN."""
         backend_pairs = {
             ("10.10.20.100", 20, 6, 5000):
@@ -4145,12 +4213,13 @@ class TopologyMonitor(app_manager.RyuApp):
         if not candidates:
             return None
 
-        port = 22 if int(service[3]) == 2222 else int(service[3])
+        port = int(service[3])
         backend_vlan = (
             30 if port == 53 and service[0] == "10.10.20.100"
             else int(service[1])
         )
 
+        candidates = tuple(reversed(candidates)) if backup_first else candidates
         for backend_ip in candidates:
             backend_mac = self.ip_to_mac.get(backend_ip)
             if not backend_mac:
@@ -4171,9 +4240,6 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _handle_vip_packet(self, datapath, msg, pkt, vlan_id, defer=False):
         """Install a bidirectional VIP path and rewrite the first packet."""
-        if not self.vip_takeover_active:
-            return False
-
         ip_pkt = pkt.get_protocol(ipv4.ipv4)
         eth_pkt = pkt.get_protocol(ethernet.ethernet)
 
@@ -4198,6 +4264,11 @@ class TopologyMonitor(app_manager.RyuApp):
         )
 
         if service not in self.VIP_DISPATCH_SERVICES:
+            return False
+        if (
+            not self.vip_takeover_active
+            and int(service[3]) not in getattr(self, "lb_health_failed_ports", set())
+        ):
             return False
 
         # The PacketIn event loop must remain free to process BarrierReply
@@ -4234,7 +4305,12 @@ class TopologyMonitor(app_manager.RyuApp):
             eth_pkt.dst,
         )
 
-        selected = self._vip_backend(service)
+        selected = self._vip_backend(
+            service,
+            backup_first=(int(service[3]) in getattr(
+                self, "lb_health_failed_ports", set()
+            )),
+        )
         if selected is None:
             self.logger.warning(
                 "VIP takeover has no eligible backend for %s", service
