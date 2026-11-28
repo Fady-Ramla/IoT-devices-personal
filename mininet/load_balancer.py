@@ -10,6 +10,56 @@ import threading
 import time
 
 DEFAULT_STATS = "/var/tmp/secureiot-lb-stats.json"
+DEFAULT_SSH = "10.10.20.4:22,10.10.20.20:22"
+DEFAULT_DNS = "10.10.30.2:53,10.10.30.17:53"
+DNS_HEALTH_QUERY = (
+    b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+    b"\x07example\x03com\x00\x00\x01\x00\x01"
+)
+
+
+def dns_bind_address(cli_address=None):
+    if cli_address:
+        return cli_address
+    return os.getenv("LB_DNS_BIND_ADDRESS", "10.10.20.100")
+
+
+class Pool:
+    """Small compatibility pool used by the DNS forwarding tests."""
+    def __init__(self, backends):
+        self.backends = tuple(backends)
+        self.healthy = set()
+
+    def candidates(self):
+        return [backend for backend in self.backends if backend in self.healthy]
+
+    def mark_failed(self, backend):
+        self.healthy.discard(backend)
+
+
+class DNSPool(Pool):
+    pass
+
+
+def forward_dns(query, client_address, client_socket, pool, timeout=1.0):
+    """Forward a DNS query and fail over when a response has a wrong ID."""
+    if not isinstance(query, bytes) or len(query) < 12:
+        return False
+    for backend in pool.candidates():
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as upstream:
+                upstream.settimeout(timeout)
+                upstream.sendto(query, backend)
+                response, _ = upstream.recvfrom(65535)
+            if (len(response) < 12 or response[:2] != query[:2]
+                    or not (response[2] & 0x80)):
+                pool.mark_failed(backend)
+                continue
+            client_socket.sendto(response, client_address)
+            return True
+        except OSError:
+            pool.mark_failed(backend)
+    return False
 
 class TcpLoadBalancer:
     def __init__(self, listen_host, listen_port, backends, health_timeout=1.0,

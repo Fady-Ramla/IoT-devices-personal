@@ -145,6 +145,7 @@ SSH_ACTIVITY_PORT = 2222
 # SSH clients use the dedicated h38 TCP frontend and backend service port.
 SSH_FRONTEND_HOST_ID = "h38"
 SSH_FRONTEND_IP = "10.10.20.100"
+VIP_TAKEOVER_MAC = "02:00:00:20:00:64"
 SSH_FRONTEND_PORT = 2222
 SSH_BACKEND_SOURCE_IP = SSH_FRONTEND_IP
 SSH_ACTIVITY_PORTS = frozenset({SSH_ACTIVITY_PORT, SSH_FRONTEND_PORT})
@@ -255,6 +256,12 @@ class EventPacketInObserved(controller_event.EventBase):
 # ================================================================
 
 class TopologyMonitor(app_manager.RyuApp):
+    VIP_FLOW_IDLE_TIMEOUT = 60
+    VIP_FLOW_HARD_TIMEOUT = 300
+    VIP_TAKEOVER_PRIORITY = 49990
+    # Directional takeover flows must beat SSH policy (49999) and the
+    # deny-cache flows (50001), while dispatch PacketIns stay at 49990.
+    VIP_STEERING_PRIORITY = 50002
     VIP_SERVICES = {
         ("10.10.20.100", 20, 6, 5000), ("10.10.20.100", 20, 6, 443),
         ("10.10.20.100", 20, 6, 2222), ("10.10.30.100", 30, 6, 53),
@@ -1023,6 +1030,14 @@ class TopologyMonitor(app_manager.RyuApp):
         desc = msg.desc
         port_no = desc.port_no
 
+        port_name = self._decode_port_name(desc.name)
+        if self._is_security_mirror_port(dpid, port_no, port_name):
+            if msg.reason == ofp.OFPPR_DELETE:
+                self.port_desc.pop((dpid, port_no), None)
+            else:
+                self.port_desc[(dpid, port_no)] = port_name
+            return
+
         if self._is_special_port(port_no):
             return
 
@@ -1030,8 +1045,7 @@ class TopologyMonitor(app_manager.RyuApp):
             self.port_desc.pop((dpid, port_no), None)
             down = True
         else:
-            self.port_desc[(dpid, port_no)] = \
-                self._decode_port_name(desc.name)
+            self.port_desc[(dpid, port_no)] = port_name
             down = bool(desc.state & ofp.OFPPS_LINK_DOWN) or \
                 bool(desc.config & ofp.OFPPC_PORT_DOWN)
 
@@ -2301,10 +2315,33 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _learn_host(self, dpid, in_port, src_mac, pkt=None, vlan_id=None):
 
+        try:
+            dpid, in_port = int(dpid), int(in_port)
+        except (TypeError, ValueError):
+            return False
+
         if self.is_inter_switch_port(dpid, in_port):
             return False
 
         if vlan_id not in ALLOWED_VLANS:
+            return False
+
+        profile = getattr(self, "vlan_port_map", {}).get((dpid, in_port))
+        if not isinstance(profile, dict):
+            return False
+        if profile.get("role") == "security_mirror":
+            return False
+        if profile.get("kind") == "access":
+            if profile.get("vlan_id") != vlan_id:
+                return False
+            if profile.get("role") not in {"endpoint", "infrastructure"}:
+                return False
+        elif profile.get("kind") == "trunk":
+            if profile.get("role") != "gateway":
+                return False
+            if vlan_id not in profile.get("allowed_vlans", frozenset()):
+                return False
+        else:
             return False
 
         known_vlan = self.mac_vlan.get(src_mac)
@@ -2551,17 +2588,45 @@ class TopologyMonitor(app_manager.RyuApp):
 
     def _learn_from_arp(self, dpid, in_port, arp_pkt, vlan_id):
 
-        if self.is_inter_switch_port(dpid, in_port):
-            return
+        learned = self._learn_host(
+            dpid, in_port, arp_pkt.src_mac, vlan_id=vlan_id
+        )
+        if not learned:
+            return False
 
-        self._learn_host(dpid, in_port, arp_pkt.src_mac, vlan_id=vlan_id)
-        self._learn_ip(arp_pkt.src_ip, arp_pkt.src_mac, vlan_id)
+        profile = getattr(self, "vlan_port_map", {}).get(
+            (int(dpid), int(in_port)), {}
+        )
+        if profile.get("kind") == "access":
+            self._learn_ip(arp_pkt.src_ip, arp_pkt.src_mac, vlan_id)
+        return True
 
     def _try_proxy_arp(self, datapath, in_port, arp_pkt, vlan_id):
-        """Answer an ARP request from the controller. True if answered."""
+        """Answer ARP requests, including the takeover-safe VIP identity."""
 
         if arp_pkt.dst_ip == arp_pkt.src_ip:
             return False
+
+        # When h38 is blocked, its learned MAC must not remain the ARP owner
+        # of the VIP.  Use a stable virtual MAC that is not subject to the
+        # h38 source-MAC drop.  The normal VIP PacketIn path consumes this MAC
+        # as the frontend identity and rewrites traffic toward the backend.
+        if (
+            arp_pkt.opcode == arp.ARP_REQUEST
+            and arp_pkt.dst_ip == "10.10.20.100"
+            and getattr(self, "vip_takeover_active", False)
+            and int(vlan_id) == 20
+        ):
+            target_mac = VIP_TAKEOVER_MAC
+            self._send_arp_reply(
+                datapath, in_port,
+                arp_pkt.src_mac, arp_pkt.src_ip,
+                target_mac, arp_pkt.dst_ip, vlan_id)
+            self.logger.info(
+                "VIP takeover proxy ARP reply: vip=%s mac=%s switch=s%d in_port=%s",
+                arp_pkt.dst_ip, target_mac, int(datapath.id), in_port,
+            )
+            return True
 
         target_mac = self.ip_to_mac.get(arp_pkt.dst_ip)
 
@@ -2678,6 +2743,16 @@ class TopologyMonitor(app_manager.RyuApp):
         root = state["root"]
 
         ports = set(self._collect_host_ports(dpid, in_port))
+        try:
+            destination = ":".join(
+                f"{byte:02x}" for byte in bytes(msg.data)[:6]
+            )
+        except Exception:
+            destination = ""
+        if self._is_broadcast_or_multicast(destination):
+            ports.update(self._get_gateway_trunk_ports(
+                dpid, in_port=in_port, vlan_id=vlan_id
+            ))
 
         if self._clff_usable() and self.clff.get_tree(root) is not None:
 
@@ -2721,7 +2796,8 @@ class TopologyMonitor(app_manager.RyuApp):
         for _mac, (host_dpid, host_port) in list(
                 self.host_location.items()):
 
-            if host_dpid == dpid and self.is_host_port(dpid, host_port):
+            if (host_dpid == dpid
+                    and self._is_forwarding_access_port(dpid, host_port)):
                 ports.add(host_port)
 
         ports.discard(in_port)
@@ -2737,7 +2813,7 @@ class TopologyMonitor(app_manager.RyuApp):
             if port_dpid != dpid:
                 continue
 
-            if self.is_host_port(dpid, port_no):
+            if self._is_forwarding_access_port(dpid, port_no):
                 ports.add(port_no)
 
         return ports
@@ -2790,6 +2866,14 @@ class TopologyMonitor(app_manager.RyuApp):
     # Port classification
     # ============================================================
 
+    def _is_security_mirror_port(self, dpid, port_no, port_name=None):
+        profile = getattr(self, "vlan_port_map", {}).get((int(dpid), int(port_no)))
+        if isinstance(profile, dict) and profile.get("role") == "security_mirror":
+            return True
+        if port_name is None:
+            port_name = getattr(self, "port_desc", {}).get((int(dpid), int(port_no)), "")
+        return "sec-mir-" in str(port_name).lower()
+
     def is_inter_switch_port(self, dpid, port_no):
 
         try:
@@ -2812,7 +2896,50 @@ class TopologyMonitor(app_manager.RyuApp):
         if port_no <= 0 or self._is_special_port(port_no):
             return False
 
-        return not self.is_inter_switch_port(dpid, port_no)
+        if self.is_inter_switch_port(dpid, port_no):
+            return False
+        if self._is_security_mirror_port(dpid, port_no):
+            return False
+        profile = getattr(self, "vlan_port_map", {}).get((int(dpid), port_no))
+        return (
+            isinstance(profile, dict)
+            and profile.get("kind") == "access"
+            and profile.get("role") == "endpoint"
+        )
+
+    def _is_forwarding_access_port(self, dpid, port_no):
+        try:
+            dpid, port_no = int(dpid), int(port_no)
+        except (TypeError, ValueError):
+            return False
+        if port_no <= 0 or self._is_special_port(port_no):
+            return False
+        if self.is_inter_switch_port(dpid, port_no):
+            return False
+        if self._is_security_mirror_port(dpid, port_no):
+            return False
+        profile = getattr(self, "vlan_port_map", {}).get((dpid, port_no))
+        return (
+            isinstance(profile, dict)
+            and profile.get("kind") == "access"
+            and profile.get("role") in {"endpoint", "infrastructure"}
+        )
+
+    def _get_gateway_trunk_ports(self, dpid, in_port=None, vlan_id=None):
+        if not getattr(self, "vlan_map_ready", False):
+            return set()
+        ports = set()
+        for (port_dpid, port_no), profile in getattr(self, "vlan_port_map", {}).items():
+            if int(port_dpid) != int(dpid) or not isinstance(profile, dict):
+                continue
+            if profile.get("kind") != "trunk" or profile.get("role") != "gateway":
+                continue
+            if in_port is not None and int(port_no) == int(in_port):
+                continue
+            if vlan_id is not None and int(vlan_id) not in profile.get("allowed_vlans", frozenset()):
+                continue
+            ports.add(int(port_no))
+        return ports
 
     def _is_special_port(self, port_no):
 
@@ -3961,6 +4088,7 @@ class TopologyMonitor(app_manager.RyuApp):
             "error": transaction["send_error"],
         }
 
+    @set_ev_cls(ofp_event.EventOFPErrorMsg, MAIN_DISPATCHER)
     def security_openflow_error_handler(self, ev):
         """Associate an OpenFlow error with its pending batch."""
         message = ev.msg
@@ -3986,6 +4114,7 @@ class TopologyMonitor(app_manager.RyuApp):
 
             transaction["event"].set()
 
+    @set_ev_cls(ofp_event.EventOFPBarrierReply, MAIN_DISPATCHER)
     def security_barrier_reply_handler(self, ev):
         """Complete a batch only when its matching BarrierReply arrives."""
         message = ev.msg
@@ -4183,7 +4312,7 @@ class TopologyMonitor(app_manager.RyuApp):
             flow_mod = parser.OFPFlowMod(
                 datapath=datapath,
                 table_id=0,
-                priority=self.VIP_TAKEOVER_PRIORITY + 1,
+                priority=self.VIP_STEERING_PRIORITY,
                 match=match,
                 instructions=[
                     parser.OFPInstructionActions(
@@ -5500,7 +5629,7 @@ class TopologyMonitor(app_manager.RyuApp):
         result.update({
             "target_type": "load_balancer",
             "emergency_failover": bool(
-                result.get("vip_takeover", {}).get("success")),
+                (result.get("vip_takeover") or {}).get("success")),
         })
         return result
 

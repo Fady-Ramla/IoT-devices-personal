@@ -7,11 +7,13 @@ and never pushes telemetry directly to the dashboard API.
 """
 import argparse
 import json
+import os
 import random
 import threading
 import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.request
 
 
 def make_reading(role, rng):
@@ -34,6 +36,24 @@ def make_reading(role, rng):
     if role == "vibration_sensor":
         return {"vibration_mm_s": round(rng.uniform(0.1, 2.5), 3), "machine_status": "normal"}
     return {"status": "online", "value": round(rng.random(), 4)}
+
+
+def send_telemetry(url, payload):
+    """POST one telemetry envelope, attaching the token only when configured."""
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "SecureIoT-Lab-Simulator/1.0",
+    }
+    token = os.environ.get("IOT_INGEST_TOKEN", "")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    request = urllib.request.Request(
+        url, data=body, headers=headers, method="POST"
+    )
+    with urllib.request.urlopen(request, timeout=3) as response:
+        response.read(4096)
+        return response.status
 
 
 def serve_sensor(device_id, role, listen_host, listen_port):
